@@ -174,7 +174,7 @@ function buildQuotaDisplay() {
 
   if (total === 0) {
     return {
-      quotaText: '暂无微信提醒次数',
+      quotaText: '暂无本机估算次数',
       hasQuota: false
     }
   }
@@ -185,7 +185,7 @@ function buildQuotaDisplay() {
   if (weeklyReport > 0) parts.push(`周报${weeklyReport}次`)
 
   return {
-    quotaText: `已累积：${parts.join('、')}`,
+    quotaText: `本机估算：${parts.join('、')}`,
     hasQuota: true
   }
 }

@@ -90,13 +90,13 @@
           <view class="template-badge {{item.authorized ? 'authorized' : 'unauthorized'}}">
             {{item.authorized ? '已授权' : '未授权'}}
           </view>
-          <view wx:if="{{item.authorized && item.quota > 0}}" class="template-quota">剩余{{item.quota}}次</view>
+          <view wx:if="{{item.authorized && item.quota > 0}}" class="template-quota">约{{item.quota}}次</view>
         </view>
       </view>
       <view class="subscribe-quota">
-        <view class="quota-title">剩余推送次数</view>
+        <view class="quota-title">本机估算次数</view>
         <view class="quota-meta">{{subscription.quotaText}}</view>
-        <view class="quota-hint">完成用药确认、记录测量等操作时，会引导你授权下次提醒，累积推送次数。</view>
+        <view class="quota-hint">该次数基于本机授权记录估算，微信实际可推送次数以订阅消息服务为准。</view>
       </view>
       <view class="subscribe-hint">
         开启后，微信会在用药、测量和周报时间向你推送通知。未开启时，你仍可在提醒中心查看待办。

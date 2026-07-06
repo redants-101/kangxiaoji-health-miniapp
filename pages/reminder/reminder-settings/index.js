@@ -45,7 +45,7 @@ Page({
   /**
    * 刷新订阅消息授权状态展示。
    * 从本地存储读取授权记录，覆盖云端返回的 subscription 字段。
-   * 同时展示剩余订阅次数和各模板独立授权状态。
+   * 同时展示本机估算授权次数和各模板独立授权状态。
    * @returns {void}
    */
   refreshSubscriptionDisplay() {
@@ -77,8 +77,8 @@ Page({
             total: totalQuota
           },
           quotaText: totalQuota > 0
-            ? `剩余推送次数：用药${medicineQuota}次、测量${measureQuota}次、周报${weeklyReportQuota}次`
-            : '暂无推送次数，完成用药确认等操作时可累积'
+            ? `本机估算：用药${medicineQuota}次、测量${measureQuota}次、周报${weeklyReportQuota}次`
+            : '暂无本机估算次数，完成用药确认等操作后可累积授权参考'
         }
       })
     } catch (e) { /* 页面可能已销毁 */ }
