@@ -1,0 +1,46 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载角色选项</view>
+    <view class="state-meta">请稍候，本人使用和帮家人管理两种流程会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">角色选项加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="role-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view class="eyebrow">角色选择</view>
+    <view class="title">你想如何使用？</view>
+    <view class="subtitle">选择后会进入对应流程。角色后续可以在"我的"里调整。</view>
+  </view>
+
+  <view class="role-list">
+    <button
+      wx:for="{{roles}}"
+      wx:key="key"
+      class="role-card {{selectedRole === item.key ? 'active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="selectRole"
+    >
+      <view class="role-icon">
+        <image wx:if="{{item.iconSrc}}" class="role-icon-img" src="{{item.iconSrc}}" mode="aspectFit" />
+        <text wx:else>{{item.icon}}</text>
+      </view>
+      <view class="role-main">
+        <view class="role-title">{{item.title}}</view>
+        <view class="role-meta">{{item.meta}}</view>
+      </view>
+      <view class="role-check">{{selectedRole === item.key ? '✓' : ''}}</view>
+    </button>
+  </view>
+
+  <view class="section">
+    <notice-bar text="帮家人管理时，需要对方先发起邀请并授权可查看范围。" />
+  </view>
+
+  <fixed-action text="继续" disabled="{{!selectedRole}}" bindactiontap="continueNext" />
+</view>

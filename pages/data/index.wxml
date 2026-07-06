@@ -1,0 +1,19 @@
+<view class="entry-page">
+  <view class="entry-header">
+    <view class="entry-title">数据管理</view>
+    <view class="entry-subtitle">管理您的健康数据</view>
+  </view>
+
+  <view class="entry-cards">
+    <view class="entry-card" bindtap="goToDataManage">
+      <view class="card-icon data-icon">
+        <view class="icon-text">DM</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">数据管理</view>
+        <view class="card-desc">导出、备份或删除健康数据</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,261 @@
+.page-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 32rpx;
+  background: #f2f5f2;
+}
+
+.state-panel {
+  text-align: center;
+  padding: 48rpx 32rpx;
+  border-radius: 20rpx;
+  background: #ffffff;
+  border: 1rpx solid #dfe7e1;
+}
+
+.state-title {
+  color: #14201a;
+  font-size: 32rpx;
+  font-weight: 900;
+  margin-bottom: 16rpx;
+}
+
+.state-meta {
+  color: #65756d;
+  font-size: 24rpx;
+  margin-bottom: 24rpx;
+  line-height: 1.5;
+}
+
+.state-button {
+  min-width: 200rpx;
+  height: 80rpx;
+  border-radius: 12rpx;
+  background: #168957;
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.record-bg-page {
+  min-height: 100vh;
+  padding: 24rpx 32rpx 120rpx;
+  background: #f2f5f2;
+}
+
+.form-section {
+  margin-bottom: 32rpx;
+}
+
+.form-title {
+  color: #14201a;
+  font-size: 36rpx;
+  font-weight: 900;
+  margin-bottom: 32rpx;
+}
+
+.form-group {
+  margin-bottom: 28rpx;
+}
+
+.form-label {
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.glucose-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.glucose-input {
+  flex: 1;
+  min-width: 0;
+  height: 80rpx;
+  padding: 0 16rpx;
+  border: 1rpx solid #dfe7e1;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #14201a;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.glucose-input.input-error {
+  border-color: #c8463a;
+  background: #fef5f5;
+}
+
+.glucose-unit {
+  color: #65756d;
+  font-size: 24rpx;
+  width: 100rpx;
+  flex: 0 0 100rpx;
+  text-align: left;
+}
+
+.meal-tag-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.meal-tag-button {
+  width: 100%;
+  min-width: 0;
+  height: 80rpx;
+  padding: 0;
+  border: 1rpx solid #dfe7e1;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #65756d;
+  font-size: 24rpx;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.meal-tag-button.meal-tag-active {
+  border-color: #168957;
+  background: #e5f4ec;
+  color: #0e6f45;
+  font-weight: 700;
+}
+
+.time-picker {
+  width: 100%;
+  height: 80rpx;
+  padding: 0 16rpx;
+  border: 1rpx solid #dfe7e1;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #14201a;
+  font-size: 28rpx;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.quick-time-row {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.quick-time-btn {
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  background: #f6f8f6;
+  border: 1rpx solid #dfe7e1;
+  color: #14201a;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.quick-time-btn.active {
+  background: #e5f4ec;
+  border-color: #168957;
+  color: #168957;
+}
+
+.field-error-notice {
+  display: none;
+  margin-top: 12rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.form-textarea {
+  width: 100%;
+  height: 120rpx;
+  padding: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #14201a;
+  font-size: 26rpx;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.error-text {
+  color: #c8463a;
+  font-size: 22rpx;
+  margin-top: 8rpx;
+}
+
+.summary-tip {
+  display: flex;
+  gap: 12rpx;
+  padding: 16rpx;
+  border-radius: 12rpx;
+  margin-top: 16rpx;
+}
+
+.summary-tip.warn {
+  background: #fef5f5;
+  border: 1rpx solid #f0d5d3;
+}
+
+.summary-tip.normal {
+  background: #e5f4ec;
+  border: 1rpx solid #b4dec7;
+}
+
+.tip-icon {
+  font-size: 28rpx;
+  min-width: 28rpx;
+}
+
+.tip-text {
+  color: #14201a;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16rpx 32rpx 32rpx;
+  background: #ffffff;
+  border-top: 1rpx solid #dfe7e1;
+  display: flex;
+  gap: 16rpx;
+  box-sizing: border-box;
+}
+
+.action-bar button {
+  flex: 1;
+  height: 80rpx;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.secondary-button {
+  background: #f6f8f6;
+  color: #65756d;
+  border: 1rpx solid #dfe7e1;
+}
+
+.primary-button {
+  background: #168957;
+  color: #ffffff;
+}
+
+.primary-button[disabled] {
+  background: #b4dec7;
+  color: #ffffff;
+  opacity: 0.6;
+}

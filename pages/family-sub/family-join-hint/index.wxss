@@ -1,0 +1,77 @@
+.hint-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: 48rpx;
+  background: #f8faf8;
+}
+
+.hint-panel {
+  padding: 30rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #cbe5d6;
+  background: #ecf7f0;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.step-panel {
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.step-row,
+.bottom-actions {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.step-row {
+  min-height: 112rpx;
+  padding: 24rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+}
+
+.step-row:last-child {
+  border-bottom: 0;
+}
+
+.step-index {
+  width: 48rpx;
+  height: 48rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #168957;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.step-title {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 850;
+}
+
+.step-meta {
+  margin-top: 8rpx;
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.bottom-actions {
+  margin-top: 36rpx;
+}
+
+.secondary-button,
+.primary-button {
+  flex: 1;
+}

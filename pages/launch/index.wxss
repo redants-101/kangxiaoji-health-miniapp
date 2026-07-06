@@ -1,0 +1,33 @@
+.launch-page {
+  min-height: 100vh;
+  padding: 96rpx 48rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 24rpx;
+  background: #f2f5f2;
+  color: #1f2d25;
+}
+
+.launch-title {
+  font-size: 44rpx;
+  font-weight: 700;
+}
+
+.launch-meta {
+  font-size: 28rpx;
+  color: #65756d;
+  text-align: center;
+}
+
+.retry-button {
+  min-width: 180rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: 8rpx;
+  background: #168957;
+  color: #ffffff;
+  font-size: 28rpx;
+}

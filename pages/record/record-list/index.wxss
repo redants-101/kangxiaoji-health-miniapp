@@ -1,0 +1,112 @@
+.record-list-page {
+  min-height: 100vh;
+  padding: 24rpx 32rpx;
+  background: #f2f5f2;
+}
+
+.list-header {
+  margin-bottom: 24rpx;
+}
+
+.list-title {
+  color: #14201a;
+  font-size: 36rpx;
+  font-weight: 900;
+  margin-bottom: 16rpx;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12rpx;
+}
+
+.filter-button {
+  padding: 8rpx 16rpx;
+  border: 1rpx solid #dfe7e1;
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: #65756d;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.filter-button.filter-active {
+  border-color: #168957;
+  background: #e5f4ec;
+  color: #0e6f45;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 16rpx;
+}
+
+.empty-icon {
+  font-size: 80rpx;
+}
+
+.empty-text {
+  color: #65756d;
+  font-size: 28rpx;
+}
+
+.record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.record-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx;
+  border-radius: 12rpx;
+  background: #ffffff;
+  border: 1rpx solid #dfe7e1;
+}
+
+.record-icon {
+  width: 40rpx;
+  height: 40rpx;
+  min-width: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.record-icon-img {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.record-content {
+  flex: 1;
+}
+
+.record-title {
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 700;
+  margin-bottom: 4rpx;
+}
+
+.record-meta {
+  color: #65756d;
+  font-size: 22rpx;
+}
+
+.record-created {
+  color: #8a9790;
+  font-size: 20rpx;
+  margin-top: 4rpx;
+}
+
+.record-arrow {
+  color: #b4dec7;
+  font-size: 32rpx;
+}

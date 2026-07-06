@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "数据管理",
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index"
+  }
+}

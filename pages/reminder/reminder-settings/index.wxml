@@ -1,0 +1,112 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载提醒设置</view>
+    <view class="state-meta">提醒开关和时间设置会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">提醒设置加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="settings-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view>
+      <view class="eyebrow">提醒</view>
+      <view class="title">提醒设置</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">提醒类型</view>
+    <view class="setting-panel">
+      <view wx:for="{{reminders}}" wx:key="key" class="setting-row">
+        <view class="setting-main">
+          <view class="setting-title">{{item.title}}</view>
+          <view class="setting-meta">{{item.meta}}</view>
+        </view>
+        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleReminder" />
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">提醒时间</view>
+      <view class="section-tip">点击修改</view>
+    </view>
+    <view class="setting-panel">
+      <view wx:for="{{timePlans}}" wx:key="id" class="time-row">
+        <view class="time-label">{{item.label}}</view>
+        <picker mode="time" value="{{item.time}}" data-id="{{item.id}}" bindchange="changeTimePlan">
+          <view class="time-value">{{item.time}}</view>
+        </picker>
+      </view>
+    </view>
+  </view>
+
+  <view class="reset-section">
+    <button class="reset-button" bindtap="resetToDefault">恢复默认设置</button>
+  </view>
+
+  <view class="section">
+    <view class="section-title">免打扰</view>
+    <view class="setting-panel">
+      <view class="setting-row">
+        <view class="setting-main">
+          <view class="setting-title">免打扰模式</view>
+          <view class="setting-meta">开启后，提醒中心不弹窗提示，仍可在列表中查看待办</view>
+        </view>
+        <switch checked="{{quietMode}}" color="#168957" bindchange="toggleQuietMode" />
+      </view>
+      <view wx:if="{{quietMode}}" class="quiet-hint">
+        已开启免打扰模式，到期提醒不会弹窗，请在提醒中心主动查看。
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">微信提醒</view>
+    <view class="setting-panel">
+      <view class="setting-row subscribe-row">
+        <view class="setting-main">
+          <view class="setting-title">订阅消息授权</view>
+          <view class="setting-meta">当前状态：{{subscription.status}}</view>
+        </view>
+        <button
+          wx:if="{{!subscription.allSubscribed}}"
+          class="subscribe-button {{pendingAction === 'subscribe' ? 'is-loading' : ''}}"
+          disabled="{{!!pendingAction}}"
+          loading="{{pendingAction === 'subscribe'}}"
+          bindtap="handleSubscribe"
+        >去开启</button>
+        <view wx:else class="subscribe-badge">已开启</view>
+      </view>
+      <view class="template-status-list">
+        <view wx:for="{{subscription.templateStatus}}" wx:key="key" class="template-status-row">
+          <view class="template-label">{{item.label}}</view>
+          <view class="template-badge {{item.authorized ? 'authorized' : 'unauthorized'}}">
+            {{item.authorized ? '已授权' : '未授权'}}
+          </view>
+          <view wx:if="{{item.authorized && item.quota > 0}}" class="template-quota">剩余{{item.quota}}次</view>
+        </view>
+      </view>
+      <view class="subscribe-quota">
+        <view class="quota-title">剩余推送次数</view>
+        <view class="quota-meta">{{subscription.quotaText}}</view>
+        <view class="quota-hint">完成用药确认、记录测量等操作时，会引导你授权下次提醒，累积推送次数。</view>
+      </view>
+      <view class="subscribe-hint">
+        开启后，微信会在用药、测量和周报时间向你推送通知。未开启时，你仍可在提醒中心查看待办。
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="提醒仅用于辅助记录和服药提示，不提供医疗建议。紧急情况请及时就医。" level="warn" />
+  </view>
+
+  <fixed-action text="保存设置" loading="{{pendingAction === 'save'}}" bindactiontap="saveSettings" />
+</view>

@@ -1,0 +1,70 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载邀请页</view>
+    <view class="state-meta">家属身份、授权范围和邀请预览会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">邀请页加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="invite-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view>
+      <view class="eyebrow">家庭协同</view>
+      <view class="title">邀请家属</view>
+    </view>
+    <button class="head-button" bindtap="goFamily" aria-label="返回家庭页">家庭</button>
+  </view>
+  <view class="subtitle">选择家属身份和授权范围，生成一次性邀请。家属加入后只能查看你授权的内容。</view>
+
+  <view class="section">
+    <view class="section-title">家属身份</view>
+    <view class="relation-grid">
+      <button wx:for="{{relations}}" wx:key="key" class="relation-tile {{selectedRelation === item.key ? 'active' : ''}}" data-key="{{item.key}}" bindtap="selectRelation" aria-label="选择{{item.label}}身份">
+        <view class="relation-name">{{item.label}}</view>
+        <view class="relation-meta">{{item.meta}}</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">授权范围</view>
+      <button class="link-button" bindtap="selectAllScopes" aria-label="全选授权范围">全选</button>
+    </view>
+    <view class="scope-panel">
+      <view wx:for="{{scopes}}" wx:key="key" class="scope-row">
+        <view class="scope-main">
+          <view class="scope-title">{{item.title}}</view>
+          <view class="scope-meta">{{item.meta}}</view>
+        </view>
+        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleScope" />
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="invite-card">
+      <view class="card-label">邀请预览</view>
+      <view class="card-title">{{invitePreview.title}}</view>
+      <view class="card-meta">{{invitePreview.meta}}</view>
+      <view class="expire-row">
+        <view>有效期</view>
+        <view>{{invitePreview.expire}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="邀请链接 24 小时内有效，仅可绑定 1 位家属。授权范围可在家庭页随时修改或撤销。" />
+  </view>
+
+  <view class="share-actions">
+    <button class="secondary-button" bindtap="copyInvite" aria-label="复制邀请说明">复制邀请说明</button>
+    <button class="primary-button" open-type="share" aria-label="通过微信分享邀请">微信分享</button>
+  </view>
+</view>

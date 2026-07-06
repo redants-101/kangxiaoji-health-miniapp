@@ -1,0 +1,41 @@
+<view class="entry-page">
+  <view class="entry-header">
+    <view class="entry-title">健康记录</view>
+    <view class="entry-subtitle">选择要记录的指标类型</view>
+  </view>
+
+  <view class="entry-cards">
+    <view class="entry-card" bindtap="goToBloodPressure">
+      <view class="card-icon bp-icon">
+        <view class="icon-text">BP</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">血压记录</view>
+        <view class="card-desc">记录收缩压、舒张压和心率</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToBloodGlucose">
+      <view class="card-icon bg-icon">
+        <view class="icon-text">GL</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">血糖记录</view>
+        <view class="card-desc">记录空腹、餐后血糖数值</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToRecordList">
+      <view class="card-icon list-icon">
+        <view class="icon-text">LS</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">记录列表</view>
+        <view class="card-desc">查看和管理历史记录</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+  </view>
+</view>

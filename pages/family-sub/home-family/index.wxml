@@ -1,0 +1,94 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载家属视角</view>
+    <view class="state-meta">已授权成员的记录、用药状态和周报会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">家属视角加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="family-home {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="home-head">
+    <view>
+      <view class="eyebrow">家属视角</view>
+      <view class="title">当前查看：{{member.name}}</view>
+    </view>
+    <button class="switch-button" bindtap="goFamily" aria-label="切换家属成员">切换</button>
+  </view>
+  <view class="subtitle">已授权：{{member.scopeText}}</view>
+
+  <view class="alert-panel">
+    <view>
+      <view class="alert-label">今日关注</view>
+      <view class="alert-title">{{todayAlert.title}}</view>
+      <view class="alert-meta">{{todayAlert.meta}}</view>
+    </view>
+    <button class="alert-button" bindtap="goMedConfirm" aria-label="查看今日关注详情">查看</button>
+  </view>
+
+  <view class="section">
+    <view class="section-title">快捷查看</view>
+    <view class="quick-grid">
+      <quick-action icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
+      <quick-action icon="用药" icon-src="/assets/icons/icon-medication.png" title="用药" route="medList" bindactiontap="handleQuickAction" />
+      <quick-action icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">最新记录</view>
+      <button class="link-button" bindtap="goRecordList" aria-label="查看全部记录">全部</button>
+    </view>
+    <view class="metric-stack">
+      <metric-card
+        wx:for="{{latestMetrics}}"
+        wx:key="label"
+        label="{{item.label}}"
+        value="{{item.value}}"
+        unit="{{item.unit}}"
+        meta="{{item.meta}}"
+        status="{{item.status}}"
+        statusType="{{item.statusType}}"
+        route="recordDetail"
+        bindcardtap="handleMetricTap"
+      />
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">今日用药</view>
+    <view class="medicine-panel">
+      <block wx:if="{{medicineLogs && medicineLogs.length}}">
+        <button wx:for="{{medicineLogs}}" wx:key="id" class="medicine-row" data-action="{{item.action}}" bindtap="handleMedicineTap" aria-label="{{item.time}} {{item.name}}，{{item.statusText}}">
+          <view>
+            <view class="medicine-title">{{item.time}} {{item.name}}</view>
+            <view class="medicine-meta">{{item.dosage}} · {{item.statusText}}</view>
+          </view>
+          <view class="medicine-status {{item.statusType}}">{{item.actionText}}</view>
+        </button>
+      </block>
+      <view wx:else class="empty-panel">
+        <image class="empty-icon" src="/assets/icons/icon-empty.png" mode="aspectFit" />
+        <view class="empty-title">今天暂无用药待办</view>
+        <view class="empty-meta">授权成员添加用药计划或产生确认记录后，会在这里展示。</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section report-panel">
+    <view>
+      <view class="section-title">本周周报</view>
+      <view class="report-meta">{{reportSummary}}</view>
+    </view>
+    <button class="report-button" bindtap="goReport" aria-label="查看本周周报">查看周报</button>
+  </view>
+
+  <view class="section">
+    <notice-bar text="家属看到的是被授权的记录和提醒状态，康小记不提供诊断、治疗、处方或急救判断。" level="warn" />
+  </view>
+</view>

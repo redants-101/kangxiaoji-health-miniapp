@@ -1,0 +1,9 @@
+<view class="coming-soon {{adaptive.scaleClass}}">
+  <view class="coming-soon-card">
+    <view class="coming-soon-icon">{{icon}}</view>
+    <view class="coming-soon-title">{{title || '功能开发中'}}</view>
+    <view class="coming-soon-desc">{{description}}</view>
+    <view wx:if="{{showNotify}}" class="coming-soon-action" bindtap="handleNotifyTap">订阅上线通知</view>
+  </view>
+  <view class="coming-soon-hint">你仍可正常使用首页记录、用药管理等功能</view>
+</view>

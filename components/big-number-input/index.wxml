@@ -1,0 +1,15 @@
+<view class="field">
+  <view class="field-label">{{label}}</view>
+  <view class="input-shell {{error ? 'has-error' : ''}}">
+    <input
+      class="bp-input"
+      value="{{value}}"
+      type="{{inputType}}"
+      placeholder="{{placeholder}}"
+      bindinput="onInput"
+    />
+    <text wx:if="{{unit}}" class="unit">{{unit}}</text>
+  </view>
+  <view wx:if="{{hint && !error}}" class="hint">{{hint}}</view>
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+</view>

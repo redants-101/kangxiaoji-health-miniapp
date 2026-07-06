@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "角色选择",
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index",
+    "fixed-action": "/components/fixed-action/index"
+  }
+}

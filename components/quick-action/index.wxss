@@ -1,0 +1,103 @@
+:host {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.quick-action {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 168rpx;
+  padding: 28rpx 12rpx 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  color: #14201a;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03);
+}
+
+.quick-action.button-hover,
+.quick-action.btn-hover,
+.quick-action.is-pressed {
+  background: #f3f8f5;
+  border-color: #b4dec7;
+  box-shadow: 0 1rpx 6rpx rgba(0, 0, 0, 0.03);
+}
+
+.quick-icon {
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #168957;
+  font-size: 40rpx;
+  font-weight: 900;
+}
+
+.quick-icon-img {
+  width: 64rpx;
+  height: 64rpx;
+  display: block;
+}
+
+.quick-title {
+  font-size: 30rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.quick-desc {
+  color: #65756d;
+  font-size: 23rpx;
+  line-height: 1.35;
+}
+
+.ui-scale-large .quick-action {
+  min-height: 200rpx;
+  padding: 32rpx 16rpx 28rpx;
+  gap: 12rpx;
+}
+
+.ui-scale-large .quick-icon {
+  width: 84rpx;
+  height: 84rpx;
+  font-size: 46rpx;
+}
+
+.ui-scale-large .quick-icon-img {
+  width: 76rpx;
+  height: 76rpx;
+}
+
+.ui-scale-large .quick-title {
+  font-size: 34rpx;
+}
+
+.ui-scale-elder .quick-action {
+  min-height: 224rpx;
+  padding: 36rpx 16rpx 32rpx;
+  gap: 14rpx;
+  border-width: 2rpx;
+}
+
+.ui-scale-elder .quick-icon {
+  width: 96rpx;
+  height: 96rpx;
+  font-size: 52rpx;
+}
+
+.ui-scale-elder .quick-icon-img {
+  width: 88rpx;
+  height: 88rpx;
+}
+
+.ui-scale-elder .quick-title {
+  font-size: 38rpx;
+  font-weight: 900;
+}

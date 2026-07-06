@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "康小记",
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index"
+  }
+}

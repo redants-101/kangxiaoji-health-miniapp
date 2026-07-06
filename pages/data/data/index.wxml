@@ -1,0 +1,106 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载数据管理</view>
+    <view class="state-meta">数据摘要会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="data-page {{adaptive.scaleClass}}">
+  <view class="section">
+    <view class="section-title">数据概览</view>
+    <view class="summary-grid">
+      <view wx:for="{{summary}}" wx:key="label" class="summary-card">
+        <view class="summary-value">{{item.value}}</view>
+        <view class="summary-label">{{item.label}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">数据导出</view>
+    <view class="export-panel">
+      <view class="format-label">选择导出格式</view>
+      <view class="format-row">
+        <button
+          wx:for="{{formatOptions}}"
+          wx:key="key"
+          class="format-card {{exportFormat === item.key ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="selectFormat"
+        >
+          <view class="format-name">{{item.label}}</view>
+          <view class="format-desc">{{item.desc}}</view>
+        </button>
+      </view>
+      <button class="export-button" loading="{{exporting}}" bindtap="handleExport">
+        {{exporting ? '导出中…' : '导出全部数据'}}
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">数据删除</view>
+    <view class="action-panel">
+      <button class="action-card danger" data-scope="health" bindtap="handleDeleteData">
+        <view class="action-icon delete-icon">
+          <image class="icon-img" src="/assets/icons/icon-delete.png" mode="aspectFit" />
+        </view>
+        <view class="action-content">
+          <view class="action-title">删除健康记录</view>
+          <view class="action-meta">血压、血糖记录及统计</view>
+        </view>
+        <view class="action-chevron">›</view>
+      </button>
+      <button class="action-card danger" data-scope="medication" bindtap="handleDeleteData">
+        <view class="action-icon delete-icon">
+          <image class="icon-img" src="/assets/icons/icon-medication.png" mode="aspectFit" />
+        </view>
+        <view class="action-content">
+          <view class="action-title">删除用药数据</view>
+          <view class="action-meta">用药计划及确认记录</view>
+        </view>
+        <view class="action-chevron">›</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title danger-title">账号操作</view>
+    <view class="action-panel">
+      <button class="action-card danger" bindtap="handleClearAccount">
+        <view class="action-icon clear-icon">
+          <image class="icon-img" src="/assets/icons/icon-clear-account.png" mode="aspectFit" />
+        </view>
+        <view class="action-content">
+          <view class="action-title">注销账号</view>
+          <view class="action-meta">删除所有数据，不可恢复</view>
+        </view>
+        <view class="action-chevron">›</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="数据操作不可撤销，删除前请确认已导出备份。注销账号后将返回首页重新开始。" level="warn" />
+  </view>
+</view>
+
+<view wx:if="{{showExportResult}}" class="export-modal">
+  <view class="modal-mask" bindtap="closeExportResult"></view>
+  <view class="modal-body">
+    <view class="modal-title">导出结果</view>
+    <scroll-view class="modal-scroll" scroll-y>
+      <text class="modal-text" user-select>{{exportResult}}</text>
+    </scroll-view>
+    <view class="modal-actions">
+      <button class="modal-btn copy-btn" bindtap="copyExportResult">复制内容</button>
+      <button class="modal-btn close-btn" bindtap="closeExportResult">关闭</button>
+    </view>
+  </view>
+</view>

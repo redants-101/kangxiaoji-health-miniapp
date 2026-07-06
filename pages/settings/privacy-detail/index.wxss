@@ -1,0 +1,39 @@
+.detail-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: 150rpx;
+  background: #f8faf8;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.detail-panel {
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.detail-block {
+  padding: 28rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+}
+
+.detail-block:last-child {
+  border-bottom: 0;
+}
+
+.block-title {
+  color: #14201a;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.block-line {
+  margin-top: 18rpx;
+  color: #65756d;
+  font-size: 27rpx;
+  line-height: 1.55;
+}

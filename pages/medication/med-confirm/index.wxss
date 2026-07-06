@@ -1,0 +1,77 @@
+.confirm-page {
+  min-height: 100vh;
+  padding: 24rpx 32rpx;
+  background: #f8faf8;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.title {
+  color: #14201a;
+  font-size: 48rpx;
+  font-weight: 900;
+  line-height: 1.12;
+}
+
+.subtitle {
+  margin-top: 14rpx;
+  color: #65756d;
+  font-size: 28rpx;
+  line-height: 1.55;
+}
+
+.med-panel {
+  margin-top: 36rpx;
+  padding: 36rpx 30rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #cbe5d6;
+  background: #ecf7f0;
+  overflow: hidden;
+}
+
+.plan-label {
+  display: inline-block;
+  color: #0e6f45;
+  font-size: 22rpx;
+  font-weight: 700;
+  background: #d4eddf;
+  border-radius: 999rpx;
+  padding: 4rpx 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.time {
+  color: #65756d;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.drug-name {
+  margin-top: 16rpx;
+  color: #14201a;
+  font-size: 54rpx;
+  font-weight: 900;
+  line-height: 1.12;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dosage {
+  margin-top: 14rpx;
+  color: #65756d;
+  font-size: 30rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-stack {
+  margin-top: 36rpx;
+  display: grid;
+  gap: 18rpx;
+}
+
+.section {
+  margin-top: 32rpx;
+}

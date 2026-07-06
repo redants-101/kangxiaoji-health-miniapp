@@ -1,0 +1,94 @@
+.entry-page {
+  min-height: 100vh;
+  background: #F2F5F2;
+  padding: 32rpx;
+}
+
+.entry-header {
+  margin-bottom: 40rpx;
+}
+
+.entry-title {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #1A1A1A;
+  margin-bottom: 12rpx;
+}
+
+.entry-subtitle {
+  font-size: 28rpx;
+  color: #65756D;
+}
+
+.entry-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.entry-card {
+  background: #FFFFFF;
+  border-radius: 16rpx;
+  padding: 32rpx;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.card-icon {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+}
+
+.profile-icon {
+  background: #E8F5E9;
+}
+
+.privacy-icon {
+  background: #FFF3E0;
+}
+
+.settings-icon {
+  background: #E3F2FD;
+}
+
+.feedback-icon {
+  background: #FCE4EC;
+}
+
+.help-icon {
+  background: #F3E5F5;
+}
+
+.icon-text {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #168957;
+}
+
+.card-content {
+  flex: 1;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: #1A1A1A;
+  margin-bottom: 8rpx;
+}
+
+.card-desc {
+  font-size: 26rpx;
+  color: #65756D;
+}
+
+.card-arrow {
+  font-size: 48rpx;
+  color: #C8C9CC;
+  margin-left: 16rpx;
+}

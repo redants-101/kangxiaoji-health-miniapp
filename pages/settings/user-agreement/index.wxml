@@ -1,0 +1,56 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载用户服务协议</view>
+    <view class="state-meta">请稍候，服务边界和使用规则会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">用户服务协议加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="legal-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view class="eyebrow">康小记</view>
+    <view class="title">用户服务协议</view>
+    <view class="subtitle">{{summary}}</view>
+    <view class="meta-row">
+      <view>更新日期：{{updatedAt}}</view>
+      <view>生效日期：{{effectiveAt}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="康小记是家庭健康记录工具，不提供诊断、治疗、处方、用药决策或急救判断。" level="warn" />
+  </view>
+
+  <view wx:if="{{sections.length}}" class="section">
+    <view class="toc-title">目录</view>
+    <view class="toc-list">
+      <view wx:for="{{sections}}" wx:for-item="section" wx:key="title" class="toc-item" data-index="{{index}}" bindtap="scrollToSection">
+        <view class="toc-index">{{index + 1}}</view>
+        <view class="toc-text">{{section.title}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="legal-panel">
+      <view wx:for="{{sections}}" wx:for-item="section" wx:key="title" class="legal-block" id="section-{{index}}">
+        <view class="block-head">
+          <view class="block-index">{{index + 1}}</view>
+          <view class="block-title">{{section.title}}</view>
+        </view>
+        <view wx:for="{{section.items}}" wx:for-item="line" wx:key="*this" class="block-line">{{line}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="如对服务规则有疑问，可通过小程序「帮助反馈」入口联系我们。" />
+  </view>
+
+  <fixed-action text="返回" bindactiontap="goBack" />
+</view>

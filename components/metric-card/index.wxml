@@ -1,0 +1,10 @@
+<view class="metric-card" bindtap="onTap" aria-label="{{label}}，{{value}}{{unit}}，{{meta}}，{{status}}" role="button">
+  <view class="metric-main">
+    <view class="metric-label">{{label}}</view>
+    <view class="metric-value">
+      {{value}}<text wx:if="{{unit}}" class="metric-unit">{{unit}}</text>
+    </view>
+    <view wx:if="{{meta}}" class="metric-meta">{{meta}}</view>
+  </view>
+  <view wx:if="{{status}}" class="metric-status {{statusType}}">{{status}}</view>
+</view>

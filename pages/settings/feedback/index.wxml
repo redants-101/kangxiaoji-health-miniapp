@@ -1,0 +1,70 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载反馈页</view>
+    <view class="state-meta">反馈类型和表单项会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">反馈页加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="feedback-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view class="eyebrow">支持</view>
+    <view class="title">意见反馈</view>
+    <view class="subtitle">描述遇到的问题或建议。请不要填写身份证、医保号、病历或诊疗细节。</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">问题类型<text class="required">*</text></view>
+    <view class="type-row">
+      <button
+        wx:for="{{types}}"
+        wx:key="value"
+        class="type-pill {{activeType === item.value ? 'active' : ''}} {{errors.type ? 'error' : ''}}"
+        data-key="{{item.value}}"
+        bindtap="selectType"
+      >{{item.label}}</button>
+    </view>
+    <view wx:if="{{errors.type}}" class="field-error">{{errors.type}}</view>
+  </view>
+
+  <view class="form-panel">
+    <view class="field">
+      <label class="field-label">问题描述<text class="required">*</text></label>
+      <textarea
+        class="text-area {{errors.content ? 'has-error' : ''}}"
+        maxlength="{{300}}"
+        value="{{form.content}}"
+        placeholder="请输入问题描述，5-300字"
+        data-field="content"
+        bindinput="handleInput"
+        auto-height
+      ></textarea>
+      <view class="counter {{contentLength > 280 ? 'near-limit' : ''}}">
+        {{contentLength || 0}}/{{MAX_CONTENT_LENGTH || 300}}
+      </view>
+      <view wx:if="{{errors.content}}" class="field-error">{{errors.content}}</view>
+    </view>
+    <view class="field">
+      <label class="field-label">联系方式，可选</label>
+      <input
+        class="text-input {{errors.contact ? 'has-error' : ''}}"
+        value="{{form.contact}}"
+        placeholder="手机号或微信号"
+        data-field="contact"
+        bindinput="handleInput"
+      />
+      <view wx:if="{{errors.contact}}" class="field-error">{{errors.contact}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="反馈不会用于医疗判断；紧急或身体不适请及时就医。" level="warn" />
+  </view>
+
+  <fixed-action text="提交反馈" loading="{{pendingAction === 'submit'}}" bindactiontap="submitFeedback" />
+</view>

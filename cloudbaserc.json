@@ -1,0 +1,19 @@
+{
+  "envId": "kangxiaoji-d5gw2k203f0488a9e",
+  "functionRoot": "./cloudfunctions",
+  "functions": [
+    {
+      "name": "healthApi",
+      "runtime": "Nodejs16.13",
+      "timeout": 60
+    }
+  ],
+  "ai": {
+    "defaultAgent": "{{env.AI_DEFAULT_AGENT}}",
+    "agents": {
+      "codebuddy": {
+        "type": "none"
+      }
+    }
+  }
+}

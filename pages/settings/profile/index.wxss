@@ -1,0 +1,155 @@
+.profile-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: 150rpx;
+  background: #f8faf8;
+}
+
+.form-panel,
+.focus-panel,
+.preview-panel {
+  margin-top: 30rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+}
+
+.form-panel {
+  padding: 28rpx;
+  overflow: hidden;
+}
+
+.text-input {
+  box-sizing: border-box;
+}
+
+.field {
+  margin-bottom: 30rpx;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.input-error {
+  border-color: #c8463a;
+  background: #fff8f7;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.pill {
+  min-height: 68rpx;
+  padding: 0 22rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #f6f8f6;
+  color: #14201a;
+  font-size: 26rpx;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1;
+}
+
+.pill.active {
+  border-color: #b4dec7;
+  background: #e5f4ec;
+  color: #0e6f45;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.focus-panel {
+  overflow: hidden;
+}
+
+.focus-row,
+.preview-panel {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+}
+
+.focus-row {
+  width: 100%;
+  margin: 0 -32rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  min-height: 118rpx;
+  justify-content: space-between;
+  padding-top: 22rpx;
+  padding-bottom: 22rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+  text-align: left;
+}
+
+.focus-row:last-child {
+  border-bottom: 0;
+}
+
+.focus-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.focus-title,
+.preview-title {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 850;
+}
+
+.focus-meta,
+.preview-meta {
+  margin-top: 8rpx;
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.check-mark {
+  width: 44rpx;
+  height: 44rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 3rpx solid #c7d3cc;
+  color: #ffffff;
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.check-mark.checked {
+  background: #168957;
+  border-color: #168957;
+}
+
+.preview-panel {
+  padding: 26rpx;
+}
+
+.avatar {
+  width: 78rpx;
+  height: 78rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #168957;
+  color: #ffffff;
+  font-size: 32rpx;
+  font-weight: 900;
+}

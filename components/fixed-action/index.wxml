@@ -1,0 +1,3 @@
+<view class="fixed-action">
+  <button class="action-button {{disabled ? 'is-disabled' : ''}} {{loading ? 'is-loading' : ''}}" hover-class="button-hover" disabled="{{disabled || loading}}" loading="{{loading}}" bindtap="onTap" aria-label="{{text}}">{{text}}</button>
+</view>

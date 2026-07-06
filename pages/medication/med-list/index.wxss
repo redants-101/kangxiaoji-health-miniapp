@@ -1,0 +1,660 @@
+.med-page {
+  min-height: 100vh;
+  padding: 24rpx 32rpx 150rpx;
+  background: #f8faf8;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.med-page.layout-wide {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.eyebrow {
+  color: #168957;
+  font-size: 24rpx;
+  font-weight: 700;
+  margin-bottom: 10rpx;
+  letter-spacing: 1rpx;
+}
+
+.title {
+  color: #14201a;
+  font-size: 44rpx;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.add-button {
+  min-width: 120rpx;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.batch-btn {
+  color: #168957;
+  font-size: 26rpx;
+  font-weight: 700;
+  padding: 8rpx 20rpx;
+  border: 1rpx solid #b4dec7;
+  border-radius: 999rpx;
+  background: #e5f4ec;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.section-title {
+  margin-bottom: 18rpx;
+  color: #14201a;
+  font-size: 32rpx;
+  font-weight: 850;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+
+.section-header .section-title {
+  margin-bottom: 0;
+}
+
+.section-link {
+  color: #168957;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+/* ====== 今日待确认卡片 ====== */
+.card-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+}
+
+.med-card {
+  width: 100%;
+  background: #ffffff;
+  border: 1rpx solid #dfe7e1;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* 第一行：药名 + 剂量 + 进度 */
+.card-row-primary {
+  display: flex;
+  align-items: baseline;
+  gap: 14rpx;
+  min-width: 0;
+}
+
+.card-name {
+  color: #14201a;
+  font-size: 34rpx;
+  font-weight: 850;
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-dosage {
+  color: #65756d;
+  font-size: 28rpx;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-progress {
+  flex-shrink: 0;
+  color: #168957;
+  font-size: 24rpx;
+  font-weight: 800;
+  background: #e5f4ec;
+  border-radius: 999rpx;
+  padding: 6rpx 14rpx;
+  white-space: nowrap;
+}
+
+/* 时间轴 */
+.card-timeline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 24rpx;
+  position: relative;
+  overflow: hidden;
+}
+
+.time-node {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+/* 连接线 */
+.time-node::before {
+  content: '';
+  position: absolute;
+  top: 16rpx;
+  left: 0;
+  right: 0;
+  height: 4rpx;
+  background: #e0e8e2;
+}
+
+.time-node:first-child::before {
+  left: 50%;
+}
+
+.time-node:last-child::before {
+  right: 50%;
+}
+
+.time-node.is-done::before {
+  background: #168957;
+}
+
+/* 节点圆点 */
+.node-dot {
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 50%;
+  background: #e0e8e2;
+  border: 4rpx solid #ffffff;
+  box-shadow: 0 0 0 2rpx #d0dad3;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.time-node.is-done .node-dot {
+  background: #168957;
+  box-shadow: 0 0 0 2rpx #168957;
+}
+
+.time-node.is-pending .node-dot {
+  background: #ffffff;
+  border: 4rpx solid #b36b00;
+  box-shadow: 0 0 0 2rpx #f0d8a8;
+}
+
+.node-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 10rpx;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.node-time {
+  color: #14201a;
+  font-size: 26rpx;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.node-label {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #8a9790;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.time-node.is-done .node-label {
+  color: #168957;
+}
+
+.time-node.is-pending .node-label {
+  color: #b36b00;
+  font-weight: 700;
+}
+
+/* 操作栏 */
+.card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #eef2ef;
+  gap: 16rpx;
+}
+
+.action-highlight {
+  color: #b36b00;
+  font-size: 30rpx;
+  font-weight: 800;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-btn {
+  flex-shrink: 0;
+  color: #ffffff;
+  background: #168957;
+  border-radius: 999rpx;
+  padding: 14rpx 36rpx;
+  font-size: 28rpx;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* ====== 用药计划列表 ====== */
+.list-panel {
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.plan-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 28rpx 24rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+  background: transparent;
+  text-align: left;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.plan-row:last-child {
+  border-bottom: 0;
+}
+
+.plan-icon {
+  flex-shrink: 0;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 14rpx;
+  background: #e5f4ec;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plan-icon-img {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.plan-row.is-disabled {
+  opacity: 0.55;
+}
+
+.plan-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.plan-name {
+  color: #14201a;
+  font-size: 32rpx;
+  font-weight: 850;
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-schedule {
+  margin-top: 4rpx;
+  color: #65756d;
+  font-size: 24rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-status {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  font-weight: 700;
+  border-radius: 999rpx;
+  padding: 4rpx 14rpx;
+  white-space: nowrap;
+}
+
+.plan-status.status-active {
+  color: #0e6f45;
+  background: #e5f4ec;
+}
+
+.plan-status.status-stopped {
+  color: #8a9790;
+  background: #eef2ef;
+}
+
+.plan-arrow {
+  flex-shrink: 0;
+  width: 18rpx;
+  height: 18rpx;
+  border-top: 4rpx solid #b0bab3;
+  border-right: 4rpx solid #b0bab3;
+  transform: rotate(45deg);
+}
+
+/* ====== 服药记录列表 ====== */
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 24rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+  min-width: 0;
+}
+
+.confirm-row:last-child {
+  border-bottom: 0;
+}
+
+.confirm-icon {
+  flex-shrink: 0;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-icon.icon-taken {
+  background: #e5f4ec;
+}
+
+.confirm-icon.icon-skipped {
+  background: #fef5f5;
+}
+
+.confirm-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+}
+
+.icon-taken .confirm-dot {
+  background: #168957;
+}
+
+.icon-skipped .confirm-dot {
+  background: #c8463a;
+}
+
+.confirm-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.confirm-name {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirm-dosage {
+  color: #65756d;
+  font-size: 26rpx;
+  font-weight: 400;
+  margin-left: 8rpx;
+}
+
+.confirm-meta {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 6rpx;
+}
+
+.confirm-time {
+  color: #8a9790;
+  font-size: 24rpx;
+  flex-shrink: 0;
+}
+
+.confirm-status {
+  font-size: 22rpx;
+  font-weight: 700;
+  border-radius: 999rpx;
+  padding: 2rpx 12rpx;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.confirm-status.status-taken {
+  color: #0e6f45;
+  background: #e5f4ec;
+}
+
+.confirm-status.status-skipped {
+  color: #a33a30;
+  background: #fef5f5;
+}
+
+.confirm-revoke {
+  flex-shrink: 0;
+  color: #8a9790;
+  font-size: 22rpx;
+  font-weight: 700;
+  padding: 6rpx 16rpx;
+  border: 1rpx solid #dfe7e1;
+  border-radius: 999rpx;
+}
+
+.confirm-revoke:active {
+  color: #b36b00;
+  border-color: #f0d8a8;
+  background: #fef9f0;
+}
+
+/* ====== 今日服药记录空状态 ====== */
+.confirm-empty {
+  padding: 40rpx 32rpx;
+  text-align: center;
+}
+
+.confirm-empty-text {
+  color: #14201a;
+  font-size: 29rpx;
+  font-weight: 700;
+}
+
+.confirm-empty-hint {
+  margin-top: 12rpx;
+  color: #8a9790;
+  font-size: 25rpx;
+  line-height: 1.5;
+}
+
+/* ====== 空状态 ====== */
+.empty-panel {
+  padding: 48rpx 32rpx;
+  text-align: center;
+}
+
+.empty-icon {
+  width: 120rpx;
+  height: 120rpx;
+  margin-bottom: 16rpx;
+}
+
+.empty-title {
+  color: #14201a;
+  font-size: 31rpx;
+  font-weight: 900;
+}
+
+.empty-meta {
+  margin-top: 14rpx;
+  color: #65756d;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+/* ====== 大字体模式适配 ====== */
+.med-page.ui-scale-large .page-head {
+  align-items: flex-start;
+}
+
+.med-page.ui-scale-large .card-name {
+  font-size: 36rpx;
+}
+
+.med-page.ui-scale-large .card-dosage {
+  font-size: 30rpx;
+}
+
+.med-page.ui-scale-large .node-time {
+  font-size: 30rpx;
+}
+
+.med-page.ui-scale-large .node-label {
+  font-size: 26rpx;
+}
+
+.med-page.ui-scale-large .action-highlight {
+  font-size: 32rpx;
+}
+
+.med-page.ui-scale-large .action-btn {
+  font-size: 30rpx;
+  padding: 16rpx 40rpx;
+}
+
+.med-page.ui-scale-large .plan-name {
+  font-size: 34rpx;
+}
+
+.med-page.ui-scale-large .plan-schedule {
+  font-size: 28rpx;
+}
+
+/* ====== 老年模式适配 ====== */
+.med-page.ui-scale-elder .page-head {
+  align-items: flex-start;
+}
+
+.med-page.ui-scale-elder .title {
+  font-size: 50rpx;
+}
+
+.med-page.ui-scale-elder .add-button {
+  font-size: 32rpx;
+  min-width: 140rpx;
+}
+
+.med-page.ui-scale-elder .section-title {
+  font-size: 36rpx;
+}
+
+.med-page.ui-scale-elder .med-card {
+  padding: 32rpx;
+}
+
+.med-page.ui-scale-elder .card-name {
+  font-size: 40rpx;
+  max-width: 45%;
+}
+
+.med-page.ui-scale-elder .card-dosage {
+  font-size: 32rpx;
+}
+
+.med-page.ui-scale-elder .card-progress {
+  font-size: 26rpx;
+  padding: 8rpx 16rpx;
+}
+
+.med-page.ui-scale-elder .node-dot {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.med-page.ui-scale-elder .node-time {
+  font-size: 32rpx;
+}
+
+.med-page.ui-scale-elder .node-label {
+  font-size: 28rpx;
+}
+
+.med-page.ui-scale-elder .action-highlight {
+  font-size: 34rpx;
+}
+
+.med-page.ui-scale-elder .action-btn {
+  font-size: 32rpx;
+  padding: 18rpx 44rpx;
+}
+
+.med-page.ui-scale-elder .plan-row {
+  padding: 32rpx 24rpx;
+  gap: 16rpx;
+}
+
+.med-page.ui-scale-elder .plan-icon {
+  width: 72rpx;
+  height: 72rpx;
+}
+
+.med-page.ui-scale-elder .plan-icon-img {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.med-page.ui-scale-elder .plan-name {
+  font-size: 38rpx;
+  max-width: 40%;
+}
+
+.med-page.ui-scale-elder .plan-schedule {
+  font-size: 30rpx;
+}
+
+.med-page.ui-scale-elder .plan-arrow {
+  width: 22rpx;
+  height: 22rpx;
+  border-width: 5rpx;
+}

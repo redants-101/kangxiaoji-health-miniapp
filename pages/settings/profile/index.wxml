@@ -1,0 +1,75 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载基础资料</view>
+    <view class="state-meta">请稍候，称呼、角色和关注项目会在加载后显示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">基础资料加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="profile-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view class="eyebrow">基础资料</view>
+    <view class="title">只填写必要信息</view>
+    <view class="subtitle">用于记录展示和家属识别，不需要身份证、医保或病历信息。</view>
+  </view>
+
+  <view class="form-panel">
+    <view class="field">
+      <label class="field-label">称呼</label>
+      <input class="text-input {{errors.name ? 'input-error' : ''}}" value="{{profile.name}}" placeholder="例如：妈妈" data-field="name" focus="{{focusField === 'name'}}" bindinput="handleInput" />
+      <view wx:if="{{errors.name}}" class="field-error">{{errors.name}}</view>
+    </view>
+    <view class="field">
+      <label class="field-label">出生年份，可选</label>
+      <input class="text-input {{errors.birthYear ? 'input-error' : ''}}" type="number" maxlength="4" value="{{profile.birthYear}}" placeholder="例如：1965" data-field="birthYear" focus="{{focusField === 'birthYear'}}" bindinput="handleInput" />
+      <view wx:if="{{errors.birthYear}}" class="field-error">{{errors.birthYear}}</view>
+    </view>
+    <view class="field">
+      <label class="field-label">角色</label>
+      <view class="pill-row">
+        <button
+          wx:for="{{roles}}"
+          wx:key="key"
+          class="pill {{profile.role === item.key ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="selectRole"
+        >{{item.label}}</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">关注项目</view>
+    <view class="focus-panel">
+      <button wx:for="{{focusItems}}" wx:key="key" class="focus-row" data-key="{{item.key}}" bindtap="toggleFocus">
+        <view class="focus-main">
+          <view class="focus-title">{{item.title}}</view>
+          <view class="focus-meta">{{item.meta}}</view>
+        </view>
+        <view class="check-mark {{item.checked ? 'checked' : ''}}">{{item.checked ? '✓' : ''}}</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">家属可见称呼</view>
+    <view class="preview-panel">
+      <view class="avatar">{{avatarText}}</view>
+      <view>
+        <view class="preview-title">{{profile.name || '妈妈'}}</view>
+        <view class="preview-meta">家属首页会显示这个称呼和你授权的记录范围。</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="康小记只用于记录和提醒，不采集身份证、医保卡或完整病历。" />
+  </view>
+
+  <fixed-action text="完成并进入首页" loading="{{pendingAction === 'save'}}" bindactiontap="saveProfile" />
+</view>

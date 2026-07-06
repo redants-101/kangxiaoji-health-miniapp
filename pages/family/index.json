@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "家庭",
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index",
+    "fixed-action": "/components/fixed-action/index",
+    "coming-soon": "/components/coming-soon/index"
+  }
+}

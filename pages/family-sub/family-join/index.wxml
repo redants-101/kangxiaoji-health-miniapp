@@ -1,0 +1,66 @@
+<block wx:if="{{isLoading}}">
+  <view class="page-state {{adaptive.scaleClass}}">
+    <view class="state-panel">
+      <view class="state-title">正在加载加入信息</view>
+      <view class="state-meta">邀请范围、身份说明和加入确认会在加载后展示。</view>
+    </view>
+  </view>
+</block>
+<block wx:elif="{{loadError}}">
+  <view class="page-state {{adaptive.scaleClass}}">
+    <view class="state-panel">
+      <view class="state-title">加入信息加载失败</view>
+      <view class="state-meta">{{loadError}}</view>
+      <button class="state-button" bindtap="reloadPage">重新加载</button>
+    </view>
+  </view>
+</block>
+<block wx:else>
+  <view class="join-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="invite-panel">
+    <view class="eyebrow">家庭邀请</view>
+    <view class="title">{{inviteTitle}}</view>
+    <view class="subtitle">{{inviteSubtitle}}</view>
+    <view class="invite-status">邀请有效 · 剩余 {{remainHours}} 小时</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">可查看内容</view>
+    <view class="scope-panel">
+      <view wx:for="{{scopes}}" wx:key="key" class="scope-row">
+        <view class="scope-icon">✓</view>
+        <view>
+          <view class="scope-title">{{item.title}}</view>
+          <view class="scope-meta">{{item.meta}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">加入身份</view>
+    <view class="identity-panel">
+      <view class="identity-row">
+        <view class="avatar">{{identity.initial}}</view>
+        <view>
+          <view class="identity-title">{{identity.title}}</view>
+          <view class="identity-meta">{{identity.meta}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <button class="agree-row" bindtap="toggleAgree">
+      <view class="checkbox {{agreed ? 'checked' : ''}}">{{agreed ? '✓' : ''}}</view>
+      <view>我已知晓：康小记仅用于家庭健康记录和提醒，不提供诊断、治疗、处方或急救判断。</view>
+    </button>
+  </view>
+
+  <view class="section">
+    <notice-bar text="加入家庭后，对方可随时修改或撤销你的查看权限。" />
+  </view>
+
+  <fixed-action text="加入家庭" disabled="{{!agreed || !!pendingAction}}" loading="{{pendingAction === 'join'}}" bindactiontap="joinFamily" />
+  </view>
+</block>

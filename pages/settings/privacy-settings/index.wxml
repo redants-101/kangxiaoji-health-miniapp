@@ -1,0 +1,87 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载隐私与授权</view>
+    <view class="state-meta">敏感信息授权项、管理入口和授权日志会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">隐私与授权加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="privacy-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view>
+      <view class="eyebrow">敏感信息保护</view>
+      <view class="title">隐私与授权</view>
+    </view>
+    <button class="head-button" bindtap="goPrivacyPolicy" aria-label="查看隐私政策">政策</button>
+  </view>
+  <view class="subtitle">健康记录、用药记录和家庭授权属于敏感个人信息，仅在你确认授权后用于记录、提醒和按授权共享。</view>
+
+  <view class="status-panel">
+    <view>
+      <view class="status-label">当前状态</view>
+      <view class="status-title">已完成基础授权</view>
+      <view class="status-meta">已同意隐私政策，已绑定 2 位家属。</view>
+    </view>
+    <view class="status-badge active">生效中</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">授权项目</view>
+    <view class="auth-panel">
+      <view wx:for="{{permissions}}" wx:key="key" class="auth-row">
+        <view class="row-main">
+          <image wx:if="{{item.iconSrc}}" class="row-icon" src="{{item.iconSrc}}" mode="aspectFit" />
+          <view>
+            <view class="row-title">{{item.title}}</view>
+            <view class="row-meta">{{item.meta}}</view>
+          </view>
+        </view>
+        <view class="row-side">
+          <view class="state {{item.enabled ? 'active' : 'off'}}">{{item.enabled ? '已授权' : '未授权'}}</view>
+          <switch checked="{{item.enabled}}" color="#168957" disabled="{{item.locked}}" data-key="{{item.key}}" bindchange="togglePermission" />
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">管理入口</view>
+    <view class="link-panel">
+      <button wx:for="{{links}}" wx:key="label" class="link-row" data-route="{{item.route}}" bindtap="goRoute" aria-label="{{item.label}}，{{item.meta}}">
+        <view class="row-main">
+          <image wx:if="{{item.iconSrc}}" class="row-icon" src="{{item.iconSrc}}" mode="aspectFit" />
+          <view>
+            <view class="link-title">{{item.label}}</view>
+            <view class="link-meta">{{item.meta}}</view>
+          </view>
+        </view>
+        <view class="chevron">›</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">最近授权记录</view>
+      <button class="link-button" bindtap="toggleAllLogs" aria-label="{{showAllAuthLogs ? '收起授权日志' : '展开全部授权日志'}}">{{showAllAuthLogs ? '收起' : '全部'}}</button>
+    </view>
+    <view class="log-panel">
+      <view wx:for="{{visibleLogs}}" wx:key="id" class="log-row">
+        <view class="log-dot"></view>
+        <view>
+          <view class="log-title">{{item.title}}</view>
+          <view class="log-meta">{{item.time}} · {{item.meta}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="撤销必要授权后，相关记录、提醒或家属共享能力可能无法继续使用。" level="warn" />
+  </view>
+</view>

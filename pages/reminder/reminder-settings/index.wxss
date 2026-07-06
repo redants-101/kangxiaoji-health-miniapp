@@ -1,0 +1,257 @@
+.settings-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: 150rpx;
+  background: #f8faf8;
+}
+
+.settings-page.layout-wide {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.page-head,
+.section-head,
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.page-head {
+  align-items: flex-start;
+}
+
+.page-head .title {
+  color: #14201a;
+  font-size: 40rpx;
+  font-weight: 900;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.section-title {
+  color: #14201a;
+  font-size: 32rpx;
+  font-weight: 900;
+  margin-bottom: 18rpx;
+}
+
+.section-head {
+  margin-bottom: 18rpx;
+}
+
+.setting-panel {
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.setting-row {
+  width: 100%;
+  min-height: 116rpx;
+  padding: 22rpx 24rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+  text-align: left;
+}
+
+.setting-row:last-child {
+  border-bottom: 0;
+}
+
+.setting-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.setting-title {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 850;
+}
+
+.setting-meta {
+  margin-top: 8rpx;
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  min-height: 88rpx;
+  padding: 22rpx 24rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+}
+
+.time-row:last-child {
+  border-bottom: 0;
+}
+
+.time-label {
+  color: #14201a;
+  font-size: 30rpx;
+}
+
+.time-value {
+  color: #65756d;
+  font-size: 28rpx;
+}
+
+.settings-page.ui-scale-elder .setting-row,
+.settings-page.ui-scale-elder .time-row {
+  align-items: flex-start;
+}
+
+.subscribe-row {
+  align-items: center;
+}
+
+.subscribe-button {
+  flex: 0 0 auto;
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+  background: #168957;
+  color: #ffffff;
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.subscribe-button.is-loading {
+  opacity: 0.7;
+}
+
+.subscribe-button[disabled] {
+  background: #a8c9b6;
+  color: #ffffff;
+}
+
+.subscribe-badge {
+  flex: 0 0 auto;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background: #e5f4ec;
+  color: #0e6f45;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.subscribe-hint {
+  padding: 18rpx 24rpx 22rpx;
+  color: #65756d;
+  font-size: 24rpx;
+  line-height: 1.55;
+  background: #f6f8f6;
+  border-top: 1rpx solid #dfe7e1;
+}
+
+.subscribe-quota {
+  padding: 20rpx 24rpx;
+  background: #f0f7f2;
+  border-top: 1rpx solid #dfe7e1;
+}
+
+.quota-title {
+  color: #168957;
+  font-size: 26rpx;
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}
+
+.quota-meta {
+  color: #14201a;
+  font-size: 26rpx;
+  line-height: 1.5;
+  margin-bottom: 8rpx;
+}
+
+.quota-hint {
+  color: #65756d;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.template-status-list {
+  padding: 16rpx 24rpx;
+  background: #fafcfb;
+  border-top: 1rpx solid #dfe7e1;
+}
+
+.template-status-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 10rpx 0;
+}
+
+.template-label {
+  flex: 1;
+  color: #14201a;
+  font-size: 26rpx;
+}
+
+.template-badge {
+  flex: 0 0 auto;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.template-badge.authorized {
+  background: #e5f4ec;
+  color: #0e6f45;
+}
+
+.template-badge.unauthorized {
+  background: #fff4df;
+  color: #9a5d00;
+}
+
+.template-quota {
+  flex: 0 0 auto;
+  color: #65756d;
+  font-size: 22rpx;
+}
+
+.quiet-hint {
+  padding: 16rpx 24rpx 20rpx;
+  color: #9a5d00;
+  font-size: 24rpx;
+  line-height: 1.5;
+  background: #fff4df;
+  border-top: 1rpx solid #efd18b;
+}
+
+.section-tip {
+  color: #65756d;
+  font-size: 24rpx;
+}
+
+.reset-section {
+  margin-top: 24rpx;
+  text-align: center;
+}
+
+.reset-button {
+  display: inline-block;
+  padding: 16rpx 40rpx;
+  border-radius: 999rpx;
+  background: #f6f8f6;
+  color: #65756d;
+  font-size: 26rpx;
+  font-weight: 700;
+  border: 1rpx solid #dfe7e1;
+}
+
+.reset-button:active {
+  background: #eef2ee;
+}

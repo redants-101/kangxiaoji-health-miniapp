@@ -1,0 +1,41 @@
+<view class="record-list-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="list-header">
+    <view class="list-title">历史记录</view>
+    <view class="filter-row">
+      <button
+        wx:for="{{filters}}"
+        wx:key="key"
+        class="filter-button {{activeFilter === item.key ? 'filter-active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="handleFilterChange"
+      >
+        {{item.label}}
+      </button>
+    </view>
+  </view>
+
+  <view wx:if="{{!visibleRecords.length}}" class="empty-state">
+    <view class="empty-icon">📋</view>
+    <view class="empty-text">暂无记录</view>
+  </view>
+
+  <view wx:else class="record-list">
+    <view
+      wx:for="{{visibleRecords}}"
+      wx:key="id"
+      class="record-item"
+      bindtap="handleRecordTap"
+      data-id="{{item.id}}"
+    >
+      <view class="record-icon">
+        <image class="record-icon-img" src="{{item.type === 'bp' ? '/assets/icons/icon-bp.png' : '/assets/icons/icon-bg.png'}}" mode="aspectFit" />
+      </view>
+      <view class="record-content">
+        <view class="record-title">{{item.title}}</view>
+        <view class="record-meta">{{item.time}} · {{item.tag}}</view>
+        <view class="record-created">创建于 {{item.createdAt || '未知'}}</view>
+      </view>
+      <view class="record-arrow">›</view>
+    </view>
+  </view>
+</view>

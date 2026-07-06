@@ -1,0 +1,169 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载首页</view>
+    <view class="state-meta">今日待办、最新记录和周概览会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">首页加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <view wx:if="{{loadErrorDetail}}" class="state-detail" bindtap="copyErrorDetail" aria-label="点击复制错误详情">{{loadErrorDetail}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="home-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="home-header">
+    <view>
+      <view class="eyebrow">{{eyebrow}}</view>
+      <view class="title">{{title}}</view>
+    </view>
+    <button class="bell-button" bindtap="goReminder" aria-label="进入提醒中心">提醒</button>
+  </view>
+
+  <view wx:if="{{isFirstTime}}" class="section">
+    <view class="empty-guide">
+      <view class="empty-guide-icon">📋</view>
+      <view class="empty-guide-title">开始第一次记录</view>
+      <view class="empty-guide-desc">记录血压和血糖，随时掌握健康变化</view>
+      <button class="empty-guide-cta" bindtap="goRecordBp" aria-label="开始记录血压">记血压</button>
+      <button class="empty-guide-cta secondary" bindtap="goRecordBg" aria-label="开始记录血糖">记血糖</button>
+    </view>
+  </view>
+
+  <view wx:if="{{!isFirstTime}}" class="today-panel">
+    <view class="panel-label">今日待办</view>
+    <button
+      wx:for="{{todayTasks}}"
+      wx:key="id"
+      class="task-row"
+      data-route="{{item.route}}"
+      data-plan-id="{{item.planId}}"
+      data-log-id="{{item.logId}}"
+      bindtap="handleTaskTap"
+      aria-label="{{item.title}}，{{item.meta}}，{{item.actionText}}"
+    >
+      <view>
+        <view class="task-title">{{item.title}}</view>
+        <view class="task-meta">{{item.meta}}</view>
+      </view>
+      <view class="task-action">{{item.actionText}}</view>
+    </button>
+  </view>
+
+  <view class="section">
+    <view class="section-title">快速记录</view>
+    <view class="quick-panel">
+      <view class="quick-grid">
+        <quick-action
+          wx:for="{{quickActions}}"
+          wx:key="route"
+          icon="{{item.icon}}"
+          icon-src="{{item.iconSrc}}"
+          title="{{item.title}}"
+          route="{{item.route}}"
+          bindactiontap="handleQuickAction"
+        />
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">最新记录</view>
+      <button class="link-button" bindtap="goRecordList" aria-label="查看全部历史记录">全部</button>
+    </view>
+    <view class="metric-stack">
+      <view wx:for="{{latestMetrics}}" wx:key="label" class="metric-item-wrap">
+        <metric-card
+          wx:if="{{item.hasData}}"
+          label="{{item.label}}"
+          value="{{item.value}}"
+          unit="{{item.unit}}"
+          meta="{{item.meta}}"
+          status="{{item.status}}"
+          status-type="{{item.statusType}}"
+          record-id="{{item.id}}"
+          route="{{item.route}}"
+          bindcardtap="handleMetricTap"
+        />
+        <view wx:else class="metric-empty-card">
+          <view class="metric-empty-label">{{item.label}}</view>
+          <view class="metric-empty-value">暂无数据</view>
+          <view class="metric-empty-hint">点击「记{{item.label}}」开始记录</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section overview-panel">
+    <view class="section-head">
+      <view class="section-title">本周概览</view>
+      <button class="report-button" bindtap="goReport" aria-label="查看健康趋势">查看趋势</button>
+    </view>
+    <view class="overview-row" wx:if="{{weeklyOverview.length > 0}}">
+      <block wx:for="{{weeklyGroups}}" wx:key="group" wx:for-item="group">
+        <view class="overview-group-label">{{group.group}}</view>
+        <view wx:for="{{group.items}}" wx:key="*this" class="overview-pill">{{item}}</view>
+      </block>
+    </view>
+    <view class="overview-empty" wx:elif="{{weeklyEmptyHint}}">
+      <view class="overview-empty-text">{{weeklyEmptyHint}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="{{noticeText}}" />
+  </view>
+
+  <view class="floating-record" bindtap="toggleQuickRecord" aria-label="快捷记录">
+    <view class="floating-record-icon">+</view>
+  </view>
+
+  <view class="quick-record-mask {{showQuickRecord ? 'visible' : ''}}" bindtap="closeQuickRecord"></view>
+  <view class="quick-record-panel {{showQuickRecord ? 'visible' : ''}}">
+    <view class="quick-record-title">选择记录类型</view>
+    <view class="quick-record-options">
+      <button class="quick-record-option" bindtap="goRecordBp" aria-label="记录血压">
+        <view class="option-icon">🩺</view>
+        <view class="option-label">记血压</view>
+      </button>
+      <button class="quick-record-option" bindtap="goRecordBg" aria-label="记录血糖">
+        <view class="option-icon">🩸</view>
+        <view class="option-label">记血糖</view>
+      </button>
+    </view>
+    <button class="quick-record-cancel" bindtap="closeQuickRecord">取消</button>
+  </view>
+
+  <view wx:if="{{showOnboarding}}" class="onboarding-overlay">
+    <view class="onboarding-card">
+      <view wx:if="{{onboardingStep === 1}}" class="onboarding-content">
+        <view class="onboarding-icon">📋</view>
+        <view class="onboarding-title">快速记录健康数据</view>
+        <view class="onboarding-desc">点击「记血压」或「记血糖」，一键记录测量结果，支持晨起、睡前等多种场景</view>
+      </view>
+      <view wx:elif="{{onboardingStep === 2}}" class="onboarding-content">
+        <view class="onboarding-icon"><image class="onboarding-icon-img" src="/assets/icons/icon-medication.png" mode="aspectFit" /></view>
+        <view class="onboarding-title">用药提醒不遗漏</view>
+        <view class="onboarding-desc">添加用药计划后，每日自动提醒服药，家人也可远程确认</view>
+      </view>
+      <view wx:elif="{{onboardingStep === 3}}" class="onboarding-content">
+        <view class="onboarding-icon">👨‍👩‍👧</view>
+        <view class="onboarding-title">家人共享更安心</view>
+        <view class="onboarding-desc">邀请家人加入，共同关注健康变化，异常记录及时通知</view>
+      </view>
+      <view class="onboarding-footer">
+        <view class="onboarding-dots">
+          <view class="dot {{onboardingStep === 1 ? 'active' : ''}}"></view>
+          <view class="dot {{onboardingStep === 2 ? 'active' : ''}}"></view>
+          <view class="dot {{onboardingStep === 3 ? 'active' : ''}}"></view>
+        </view>
+        <view class="onboarding-actions">
+          <button class="onboarding-skip" bindtap="skipOnboarding">跳过</button>
+          <button class="onboarding-next" bindtap="nextOnboardingStep">{{onboardingStep === 3 ? '开始使用' : '下一步'}}</button>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

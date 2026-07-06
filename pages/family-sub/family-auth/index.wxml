@@ -1,0 +1,84 @@
+<block wx:if="{{isLoading}}">
+  <view class="page-state {{adaptive.scaleClass}}">
+    <view class="state-panel">
+      <view class="state-title">正在加载家属权限</view>
+      <view class="state-meta">可查看范围、提醒规则和最近查看记录会在加载后展示。</view>
+    </view>
+  </view>
+</block>
+<block wx:elif="{{loadError}}">
+  <view class="page-state {{adaptive.scaleClass}}">
+    <view class="state-panel">
+      <view class="state-title">家属权限加载失败</view>
+      <view class="state-meta">{{loadError}}</view>
+      <button class="state-button" bindtap="reloadPage">重新加载</button>
+    </view>
+  </view>
+</block>
+<block wx:else>
+  <view class="auth-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="member-panel">
+    <view class="member-row">
+      <view class="avatar">女</view>
+      <view class="member-main">
+        <view class="member-name">{{member.name}}</view>
+        <view class="member-meta">{{member.relation}} · {{member.role}}</view>
+      </view>
+      <view class="member-status">{{member.status}}</view>
+    </view>
+    <view class="member-desc">{{member.desc}}</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">可查看内容</view>
+    <view class="scope-panel">
+      <view wx:for="{{scopes}}" wx:key="key" class="scope-row">
+        <view class="row-main">
+          <view class="scope-title">{{item.title}}</view>
+          <view class="scope-meta">{{item.meta}}</view>
+        </view>
+        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleScope" />
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">提醒给家属</view>
+    <view class="scope-panel">
+      <view wx:for="{{noticeRules}}" wx:key="key" class="scope-row">
+        <view class="row-main">
+          <view class="scope-title">{{item.title}}</view>
+          <view class="scope-meta">{{item.meta}}</view>
+        </view>
+        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleNoticeRule" />
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">最近查看</view>
+      <button class="link-button" bindtap="goFamily">返回家庭</button>
+    </view>
+    <view class="activity-panel">
+      <view wx:for="{{activities}}" wx:key="id" class="activity-row">
+        <view class="activity-dot"></view>
+        <view>
+          <view class="activity-title">{{item.title}}</view>
+          <view class="activity-meta">{{item.time}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="家属只能看到你授权的记录和提醒状态。康小记不提供诊断、治疗或处方建议。" />
+  </view>
+
+  <view class="section">
+    <button class="danger-button {{pendingAction ? 'is-disabled' : ''}} {{pendingAction === 'revoke' ? 'is-loading' : ''}}" disabled="{{!!pendingAction}}" loading="{{pendingAction === 'revoke'}}" bindtap="revokeAuth">解除授权</button>
+  </view>
+
+  <fixed-action text="保存权限" disabled="{{pendingAction === 'revoke'}}" loading="{{pendingAction === 'save'}}" bindactiontap="saveAuth" />
+  </view>
+</block>

@@ -1,0 +1,38 @@
+# Windows
+[Dd]esktop.ini
+Thumbs.db
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+
+# Node.js
+node_modules/
+cloudfunctions/**/node_modules/
+
+# WeChat Mini Program
+/miniprogram_npm/
+project.private.config.json
+
+# Test
+coverage/
+
+# Environment
+.env.local
+.mcp.json
+
+# Local AI/tool workspaces
+.agents/
+.codebuddy/
+.codex/
+.rules/
+.tmp-automator/
+.tmp-runner/
+.trae/
+.windsurf/
+codebuddy-plugin/
+rules/

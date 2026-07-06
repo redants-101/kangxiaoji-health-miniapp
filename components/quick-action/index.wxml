@@ -1,0 +1,8 @@
+<view class="quick-action" hover-class="button-hover" bindtap="onTap" aria-label="{{title}}，{{desc}}" role="button">
+  <view class="quick-icon" aria-hidden="true">
+    <image wx:if="{{iconSrc}}" class="quick-icon-img" src="{{iconSrc}}" mode="aspectFit" />
+    <text wx:else>{{icon}}</text>
+  </view>
+  <view class="quick-title">{{title}}</view>
+  <view wx:if="{{desc}}" class="quick-desc">{{desc}}</view>
+</view>

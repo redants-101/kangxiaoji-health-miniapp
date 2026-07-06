@@ -1,0 +1,7 @@
+{
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index",
+    "metric-card": "/components/metric-card/index"
+  },
+  "navigationBarTitleText": "趋势"
+}

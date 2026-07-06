@@ -1,0 +1,129 @@
+{
+  "appid": "wxcb641f745311f6fb",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "cloudfunctionRoot": "./cloudfunctions/",
+  "projectname": "health-record-miniapp-mvp",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "compileHotReLoad": true,
+    "compileWorklet": false,
+    "uglifyFileName": true,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "libVersion": "3.14.3",
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": ".agents"
+      },
+      {
+        "type": "folder",
+        "value": ".codebuddy"
+      },
+      {
+        "type": "folder",
+        "value": ".rules"
+      },
+      {
+        "type": "folder",
+        "value": ".tmp-automator"
+      },
+      {
+        "type": "folder",
+        "value": ".tmp-runner"
+      },
+      {
+        "type": "folder",
+        "value": ".trae"
+      },
+      {
+        "type": "folder",
+        "value": ".windsurf"
+      },
+      {
+        "type": "folder",
+        "value": "codebuddy-plugin"
+      },
+      {
+        "type": "folder",
+        "value": "cloudfunctions"
+      },
+      {
+        "type": "folder",
+        "value": "docs"
+      },
+      {
+        "type": "folder",
+        "value": "rules"
+      },
+      {
+        "type": "folder",
+        "value": "scripts"
+      },
+      {
+        "type": "folder",
+        "value": "templates"
+      },
+      {
+        "type": "file",
+        "value": ".env.local"
+      },
+      {
+        "type": "file",
+        "value": ".mcp.json"
+      },
+      {
+        "type": "file",
+        "value": "CODEBUDDY.md"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
+      },
+      {
+        "type": "file",
+        "value": "cloudbaserc.json"
+      },
+      {
+        "type": "file",
+        "value": "package.json"
+      },
+      {
+        "type": "file",
+        "value": "service-regression-test.txt"
+      },
+      {
+        "type": "file",
+        "value": "skills-lock.json"
+      },
+      {
+        "type": "folder",
+        "value": "pages/reminder/reminder"
+      }
+    ],
+    "include": []
+  },
+  "editorSetting": {}
+}

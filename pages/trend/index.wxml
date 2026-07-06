@@ -1,0 +1,278 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载趋势数据</view>
+    <view class="state-meta">请稍候，系统正在整理近 7 天到 90 天的记录变化。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">趋势数据加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="trend-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="trend-header">
+    <view class="subtitle">查看 7 天、30 天、90 天记录变化。趋势仅用于回顾，不用于诊断、治疗或处方判断。</view>
+  </view>
+
+  <!-- 指标 + 时间范围 切换（三行两列，血压血糖合并） -->
+  <view class="filter-grid">
+    <view class="filter-row">
+      <button
+        class="filter-cell metric {{activeMetric === 'bpBg' ? 'active' : ''}}"
+        data-key="bpBg"
+        bindtap="selectMetric"
+        aria-label="查看血压血糖趋势"
+      >血压血糖</button>
+      <button
+        class="filter-cell range {{activeRange === '7d' ? 'active' : ''}}"
+        data-key="7d"
+        bindtap="selectRange"
+        aria-label="切换到7天时间范围"
+      >7天</button>
+    </view>
+    <view class="filter-row">
+      <button
+        class="filter-cell metric {{activeMetric === 'medication' ? 'active' : ''}}"
+        data-key="medication"
+        bindtap="selectMetric"
+        aria-label="查看用药趋势"
+      >用药</button>
+      <button
+        class="filter-cell range {{activeRange === '30d' ? 'active' : ''}}"
+        data-key="30d"
+        bindtap="selectRange"
+        aria-label="切换到30天时间范围"
+      >30天</button>
+    </view>
+    <view class="filter-row">
+      <view class="filter-cell metric spacer"></view>
+      <button
+        class="filter-cell range {{activeRange === '90d' ? 'active' : ''}}"
+        data-key="90d"
+        bindtap="selectRange"
+        aria-label="切换到90天时间范围"
+      >90天</button>
+    </view>
+  </view>
+
+  <!-- 空数据提示 -->
+  <view wx:if="{{emptyHint}}" class="trend-empty">
+    <view class="trend-empty-icon">📊</view>
+    <view class="trend-empty-text">{{emptyHint}}</view>
+  </view>
+
+  <!-- 摘要指标卡片 -->
+  <view wx:if="{{!emptyHint && summaryMetrics}}" class="trend-summary">
+    <!-- 用药摘要 -->
+    <block wx:if="{{activeMetric === 'medication'}}">
+      <view class="summary-item">
+        <view class="summary-label">服药率</view>
+        <view class="summary-value">{{summaryMetrics.complianceRate || 0}}</view>
+        <view class="summary-unit">%</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">已服</view>
+        <view class="summary-value">{{summaryMetrics.takenCount || 0}}</view>
+        <view class="summary-unit">次</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">跳过</view>
+        <view class="summary-value">{{summaryMetrics.skippedCount || 0}}</view>
+        <view class="summary-unit">次</view>
+      </view>
+    </block>
+    <!-- 血压血糖摘要 -->
+    <block wx:else>
+      <view class="summary-item">
+        <view class="summary-label">{{period}}记录</view>
+        <view class="summary-value">{{summaryMetrics.recordCount || 0}}</view>
+        <view class="summary-unit">次</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">血压</view>
+        <view class="summary-value">{{summaryMetrics.bpCount || 0}}</view>
+        <view class="summary-unit">次</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">血糖</view>
+        <view class="summary-value">{{summaryMetrics.bgCount || 0}}</view>
+        <view class="summary-unit">次</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 统计摘要 -->
+  <view wx:if="{{summary.length > 0}}" class="trend-section">
+    <view class="section-title">统计摘要</view>
+    <view wx:for="{{summary}}" wx:key="label" class="summary-group">
+      <view class="summary-group-label">{{item.label}}</view>
+      <view class="summary-group-items">
+        <view wx:for="{{item.items}}" wx:for-item="metric" wx:key="label" class="metric-row">
+          <view class="metric-label">{{metric.label}}</view>
+          <view class="metric-value">{{metric.value}}<text wx:if="{{metric.unit}}" class="metric-unit"> {{metric.unit}}</text></view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 关注项 -->
+  <view wx:if="{{focusItems.length > 0}}" class="trend-section">
+    <view class="section-title">关注项</view>
+    <view wx:for="{{focusItems}}" wx:key="id" class="focus-item">
+      <view class="focus-header">
+        <view class="focus-type">{{item.type}}</view>
+        <view class="focus-value">{{item.value}} {{item.unit}}</view>
+      </view>
+      <view class="focus-time">{{item.time}}</view>
+      <view class="focus-reason">{{item.reason}}</view>
+    </view>
+  </view>
+
+  <!-- 趋势图表：血压血糖双图表 -->
+  <view wx:if="{{activeMetric === 'bpBg'}}" class="trend-section">
+    <view class="section-title">趋势图表</view>
+
+    <!-- 血压图表 -->
+    <view wx:if="{{bpChart.hasData}}" class="chart-panel bp-chart">
+      <view class="chart-head">
+        <view>
+          <view class="chart-title">血压 (mmHg)</view>
+          <view class="chart-legend">
+            <view class="legend-item"><view class="legend-dot dot-systolic"></view>收缩压</view>
+            <view class="legend-item"><view class="legend-dot dot-diastolic"></view>舒张压</view>
+          </view>
+        </view>
+        <view class="chart-ref">正常 90-140</view>
+      </view>
+      <!-- 参考线：动态计算位置 -->
+      <view class="chart-canvas" aria-role="img" aria-label="{{bpChart.chartA11yLabel}}">
+        <view wx:if="{{bpChart.refSystolicHighTop}}" class="ref-line ref-warn-high" style="top: {{bpChart.refSystolicHighTop}};" aria-hidden="true"></view>
+        <view wx:if="{{bpChart.refSystolicLowTop}}" class="ref-line ref-warn-low" style="top: {{bpChart.refSystolicLowTop}};" aria-hidden="true"></view>
+        <view wx:if="{{bpChart.refDiastolicHighTop}}" class="ref-line ref-warn-high ref-line-sub" style="top: {{bpChart.refDiastolicHighTop}};" aria-hidden="true"></view>
+        <view wx:if="{{bpChart.refDiastolicLowTop}}" class="ref-line ref-warn-low ref-line-sub" style="top: {{bpChart.refDiastolicLowTop}};" aria-hidden="true"></view>
+        <view class="grid-line line-1" aria-hidden="true"></view>
+        <view class="grid-line line-2" aria-hidden="true"></view>
+        <view class="chart-bars dual-bars" aria-hidden="true">
+          <view wx:for="{{bpChart.systolicBars}}" wx:key="id" class="bar-group">
+            <view class="bar-pair">
+              <view class="bar-track">
+                <view class="bar-fill fill-systolic {{item.status === 'high' ? 'bar-warn-high' : item.status === 'low' ? 'bar-warn-low' : ''}}" style="height: {{item.height}}%;"></view>
+              </view>
+              <view class="bar-track">
+                <view class="bar-fill fill-diastolic {{bpChart.diastolicBars[index].status === 'high' ? 'bar-warn-high' : bpChart.diastolicBars[index].status === 'low' ? 'bar-warn-low' : ''}}" style="height: {{bpChart.diastolicBars[index].height}}%;"></view>
+              </view>
+            </view>
+            <view class="bar-label">{{item.label}}</view>
+            <view class="bar-values">
+              <text class="bar-val-sys">{{item.valueText}}</text>
+              <text class="bar-val-dia">/{{bpChart.diastolicBars[index].valueText}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 血糖图表 -->
+    <view wx:if="{{bgChart.hasData}}" class="chart-panel bg-chart">
+      <view class="chart-head">
+        <view>
+          <view class="chart-title">血糖 (mmol/L)</view>
+        </view>
+        <view class="chart-ref">正常 3.9-7.0</view>
+      </view>
+      <!-- 参考线：动态计算位置 -->
+      <view class="chart-canvas" aria-role="img" aria-label="{{bgChart.chartA11yLabel}}">
+        <view wx:if="{{bgChart.refHighTop}}" class="ref-line ref-warn-high" style="top: {{bgChart.refHighTop}};" aria-hidden="true"></view>
+        <view wx:if="{{bgChart.refLowTop}}" class="ref-line ref-warn-low" style="top: {{bgChart.refLowTop}};" aria-hidden="true"></view>
+        <view class="grid-line line-1" aria-hidden="true"></view>
+        <view class="grid-line line-2" aria-hidden="true"></view>
+        <view class="chart-bars" aria-hidden="true">
+          <view wx:for="{{bgChart.chartBars}}" wx:key="id" class="bar-item">
+            <view class="bar-track">
+              <view class="bar-fill fill-bg {{item.status === 'high' ? 'bar-warn-high' : item.status === 'low' ? 'bar-warn-low' : ''}}" style="height: {{item.height}}%;"></view>
+            </view>
+            <view class="bar-label">{{item.label}}</view>
+            <view class="bar-value">{{item.valueText}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 血压血糖都无数据 -->
+    <view wx:if="{{!bpChart.hasData && !bgChart.hasData}}" class="chart-panel">
+      <view class="chart-empty-text">暂无血压血糖趋势数据</view>
+    </view>
+  </view>
+
+  <!-- 趋势图表：单指标（用药等） -->
+  <view wx:elif="{{chartBars.length > 0}}" class="trend-section">
+    <view class="section-title">趋势图表</view>
+    <view class="chart-panel">
+      <view class="chart-head">
+        <view>
+          <view class="metric-label">{{currentSummary.label || ''}}</view>
+          <view class="metric-value-lg">{{currentSummary.value || ''}}</view>
+        </view>
+        <view class="chart-ref-wrapper">
+          <view wx:if="{{currentSummary.badge}}" class="summary-badge">{{currentSummary.badge}}</view>
+          <view wx:if="{{activeMetric === 'medication'}}" class="chart-ref">达标 ≥80%</view>
+        </view>
+      </view>
+      <view class="chart-canvas" aria-role="img" aria-label="{{chartA11yLabel}}">
+        <!-- 用药参考线 -->
+        <view wx:if="{{activeMetric === 'medication' && medChart.refComplianceHighTop}}" class="ref-line ref-med-high" style="top: {{medChart.refComplianceHighTop}};" aria-hidden="true"></view>
+        <view wx:if="{{activeMetric === 'medication' && medChart.refComplianceLowTop}}" class="ref-line ref-med-low" style="top: {{medChart.refComplianceLowTop}};" aria-hidden="true"></view>
+        <view class="grid-line line-1" aria-hidden="true"></view>
+        <view class="grid-line line-2" aria-hidden="true"></view>
+        <view class="chart-bars" aria-hidden="true">
+          <view wx:for="{{chartBars}}" wx:key="id" class="bar-item">
+            <view class="bar-track">
+              <view class="bar-fill {{activeMetric === 'medication' ? (item.status === 'high' ? 'fill-medication-excellent' : item.status === 'low' ? 'bar-warn-low' : 'fill-medication') : ''}} {{activeMetric !== 'medication' && item.status === 'high' ? 'bar-warn-high' : ''}} {{activeMetric !== 'medication' && item.status === 'low' ? 'bar-warn-low' : ''}}" style="height: {{item.height}}%;"></view>
+            </view>
+            <view class="bar-label">{{item.label}}</view>
+            <view class="bar-value">{{item.valueText}}{{activeMetric === 'medication' ? '%' : ''}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 记录列表 -->
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">近期记录</view>
+      <button class="link-button" bindtap="goRecordList" aria-label="查看全部历史记录">全部</button>
+    </view>
+    <view wx:if="{{latestMetrics.length > 0}}" class="metric-stack">
+      <view wx:for="{{latestMetrics}}" wx:key="id" class="metric-item-wrap">
+        <metric-card
+          wx:if="{{item.hasData}}"
+          label="{{item.label}}"
+          value="{{item.value}}"
+          unit="{{item.unit}}"
+          meta="{{item.meta}}"
+          status="{{item.status}}"
+          status-type="{{item.statusType}}"
+          record-id="{{item.id}}"
+          route="{{item.route}}"
+          bindcardtap="handleMetricTap"
+        />
+      </view>
+    </view>
+    <view wx:else class="record-empty">
+      <view class="record-empty-text">暂无记录</view>
+    </view>
+  </view>
+
+  <!-- 免责声明 -->
+  <view class="section">
+    <notice-bar text="康小记仅基于你记录的数据做回顾，不构成诊断、治疗或处方建议。" />
+  </view>
+
+  <!-- 分享按钮 -->
+  <view wx:if="{{!emptyHint}}" class="trend-actions">
+    <button class="share-button" bindtap="handleShare">分享报告</button>
+  </view>
+</view>

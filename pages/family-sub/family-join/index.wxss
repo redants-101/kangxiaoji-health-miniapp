@@ -1,0 +1,128 @@
+.join-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: 150rpx;
+  background: #f8faf8;
+}
+
+.invite-panel {
+  padding: 30rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #cbe5d6;
+  background: #ecf7f0;
+}
+
+.invite-status {
+  display: inline-flex;
+  margin-top: 24rpx;
+  padding: 12rpx 18rpx;
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: #0e6f45;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.scope-panel,
+.identity-panel {
+  margin-top: 18rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.scope-row,
+.identity-row,
+.agree-row {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.scope-row {
+  min-height: 112rpx;
+  padding: 22rpx 24rpx;
+  border-bottom: 1rpx solid #dfe7e1;
+}
+
+.scope-row:last-child {
+  border-bottom: 0;
+}
+
+.scope-icon,
+.checkbox {
+  width: 44rpx;
+  height: 44rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.scope-icon {
+  background: #e5f4ec;
+  color: #0e6f45;
+}
+
+.scope-title,
+.identity-title {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 850;
+}
+
+.scope-meta,
+.identity-meta {
+  margin-top: 8rpx;
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.identity-panel {
+  padding: 24rpx;
+}
+
+.avatar {
+  width: 76rpx;
+  height: 76rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #168957;
+  color: #ffffff;
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.agree-row {
+  width: 100%;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  color: #14201a;
+  font-size: 27rpx;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.checkbox {
+  border: 3rpx solid #c7d3cc;
+  color: #ffffff;
+}
+
+.checkbox.checked {
+  border-color: #168957;
+  background: #168957;
+}

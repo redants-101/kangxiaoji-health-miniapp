@@ -1,0 +1,35 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载隐私摘要</view>
+    <view class="state-meta">请稍候，敏感信息处理范围和用户权利会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">隐私摘要加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="detail-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view class="eyebrow">隐私保护</view>
+    <view class="title">隐私政策摘要</view>
+    <view class="subtitle">用于快速了解康小记处理健康记录、提醒和家庭授权信息的范围。</view>
+  </view>
+
+  <view class="section">
+    <view class="detail-panel">
+      <view wx:for="{{sections}}" wx:key="title" class="detail-block">
+        <view class="block-title">{{item.title}}</view>
+        <view wx:for="{{item.items}}" wx:key="*this" class="block-line">{{item}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="血压、血糖、用药记录和家庭授权信息可能属于敏感个人信息。你可以删除记录、撤销家属授权或注销账号。" level="warn" />
+  </view>
+
+  <fixed-action text="返回确认" bindactiontap="backToPrivacy" />
+</view>

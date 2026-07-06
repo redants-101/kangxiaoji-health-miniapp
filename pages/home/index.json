@@ -1,0 +1,8 @@
+{
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index",
+    "metric-card": "/components/metric-card/index",
+    "quick-action": "/components/quick-action/index"
+  },
+  "navigationBarTitleText": "今天"
+}

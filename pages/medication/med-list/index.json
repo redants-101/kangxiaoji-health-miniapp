@@ -1,0 +1,7 @@
+{
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index",
+    "fixed-action": "/components/fixed-action/index"
+  },
+  "navigationBarTitleText": "用药提醒"
+}

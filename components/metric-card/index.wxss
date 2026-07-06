@@ -1,0 +1,71 @@
+.metric-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 24rpx;
+  border-radius: 20rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  text-align: left;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.03);
+  box-sizing: border-box;
+}
+
+.metric-card:active {
+  opacity: 0.94;
+  transform: translateY(2rpx);
+}
+
+.metric-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.metric-label {
+  color: #65756d;
+  font-size: 24rpx;
+  margin-bottom: 10rpx;
+}
+
+.metric-value {
+  color: #14201a;
+  font-size: 50rpx;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.metric-unit {
+  margin-left: 8rpx;
+  color: #65756d;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.metric-meta {
+  margin-top: 10rpx;
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.4;
+}
+
+.metric-status {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  background: #e5f4ec;
+  color: #0e6f45;
+  padding: 12rpx 18rpx;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.metric-status.warn {
+  background: #fff4df;
+  color: #9a5d00;
+}
+
+.metric-status.danger {
+  background: #fdebea;
+  color: #c8463a;
+}

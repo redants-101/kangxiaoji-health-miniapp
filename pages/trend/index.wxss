@@ -1,0 +1,604 @@
+.trend-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  background: #f8faf8;
+}
+
+.trend-page.layout-wide {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.trend-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.trend-page.ui-scale-elder .trend-header {
+  flex-direction: column;
+}
+
+.title {
+  color: #14201a;
+  font-size: 48rpx;
+  font-weight: 900;
+  line-height: 1.12;
+}
+
+.subtitle {
+  margin-top: 14rpx;
+  color: #65756d;
+  font-size: 28rpx;
+  line-height: 1.55;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.section-head,
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.section-title {
+  color: #14201a;
+  font-size: 32rpx;
+  font-weight: 850;
+}
+
+/* ─── 指标/时间 三行两列切换 ──────────────────────────────── */
+
+.filter-grid {
+  margin-top: 28rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.filter-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.filter-cell {
+  flex: 1;
+  border-radius: 16rpx;
+  background: #ffffff;
+  border: 1rpx solid #dfe7e1;
+  color: #14201a;
+  font-size: 28rpx;
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.filter-cell.active {
+  background: #e5f4ec;
+  border-color: #b4dec7;
+  color: #0e6f45;
+  font-weight: 800;
+}
+
+/* 指标列样式微调 */
+.filter-cell.metric.active {
+  border-color: #168957;
+}
+
+/* 时间列样式微调 */
+.filter-cell.range.active {
+  border-color: #168957;
+}
+
+/* 占位格：与按钮等宽但不显示边框和背景 */
+.filter-cell.spacer {
+  visibility: hidden;
+  border: none;
+  background: transparent;
+}
+
+/* 适老化：按钮加大 */
+.trend-page.ui-scale-elder .filter-cell {
+  min-height: 100rpx;
+  font-size: 32rpx;
+}
+
+.trend-page.ui-scale-elder .filter-row {
+  gap: 18rpx;
+}
+
+/* ─── 空数据提示 ──────────────────────────────── */
+
+.trend-empty {
+  text-align: center;
+  padding: 64rpx 32rpx;
+  margin-top: 36rpx;
+}
+
+.trend-empty-icon {
+  font-size: 72rpx;
+  margin-bottom: 20rpx;
+}
+
+.trend-empty-text {
+  color: #65756d;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+/* ─── 摘要指标卡片（从周报迁入） ─────────────────── */
+
+.trend-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12rpx;
+  margin-top: 28rpx;
+}
+
+.summary-item {
+  padding: 24rpx;
+  border-radius: 12rpx;
+  background: #ffffff;
+  border: 1rpx solid #dfe7e1;
+  text-align: center;
+}
+
+.summary-label {
+  color: #65756d;
+  font-size: 22rpx;
+  margin-bottom: 8rpx;
+}
+
+.summary-value {
+  color: #168957;
+  font-size: 40rpx;
+  font-weight: 900;
+}
+
+.summary-unit {
+  color: #65756d;
+  font-size: 20rpx;
+  margin-top: 4rpx;
+}
+
+/* ─── 统计摘要（从周报迁入） ──────────────────────── */
+
+.trend-section {
+  margin-top: 32rpx;
+}
+
+.summary-group {
+  background: #ffffff;
+  border-radius: 12rpx;
+  border: 1rpx solid #dfe7e1;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.summary-group-label {
+  color: #168957;
+  font-size: 28rpx;
+  font-weight: 800;
+  margin-bottom: 16rpx;
+  padding-bottom: 12rpx;
+  border-bottom: 1rpx solid #e8ede9;
+}
+
+.summary-group-items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12rpx 24rpx;
+}
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8rpx 0;
+}
+
+.metric-label {
+  color: #65756d;
+  font-size: 24rpx;
+}
+
+.metric-value {
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.metric-unit {
+  color: #65756d;
+  font-size: 20rpx;
+  font-weight: 400;
+}
+
+/* ─── 关注项（从周报迁入） ──────────────────────── */
+
+.focus-item {
+  background: #fff8f0;
+  border-radius: 12rpx;
+  border: 1rpx solid #f0dcc4;
+  padding: 20rpx 24rpx;
+  margin-bottom: 12rpx;
+}
+
+.focus-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.focus-type {
+  color: #c45a1c;
+  font-size: 24rpx;
+  font-weight: 800;
+  background: #fff0e0;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.focus-value {
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.focus-time {
+  color: #65756d;
+  font-size: 22rpx;
+  margin-bottom: 8rpx;
+}
+
+.focus-reason {
+  color: #c45a1c;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+/* ─── 趋势图表 ──────────────────────────────── */
+
+.chart-panel {
+  margin-top: 16rpx;
+  padding: 28rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+}
+
+/* 双图表间距 */
+.bp-chart + .bg-chart {
+  margin-top: 24rpx;
+}
+
+.chart-title {
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 8rpx;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  color: #65756d;
+  font-size: 22rpx;
+}
+
+.legend-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 4rpx;
+}
+
+.dot-systolic {
+  background: #168957;
+}
+
+.dot-diastolic {
+  background: #6bc4a0;
+}
+
+.chart-ref {
+  color: #65756d;
+  font-size: 22rpx;
+  background: #f0f5f2;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.chart-empty-text {
+  color: #65756d;
+  font-size: 26rpx;
+  text-align: center;
+  padding: 48rpx 0;
+}
+
+.metric-value-lg {
+  color: #14201a;
+  font-size: 42rpx;
+  font-weight: 900;
+}
+
+.summary-badge {
+  border-radius: 999rpx;
+  background: #e5f4ec;
+  color: #0e6f45;
+  padding: 12rpx 18rpx;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.chart-canvas {
+  height: 380rpx;
+  margin-top: 26rpx;
+  position: relative;
+  border-left: 3rpx solid #d8e3dc;
+  border-bottom: 3rpx solid #d8e3dc;
+  overflow: hidden;
+}
+
+.grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1rpx;
+  background: #e8eee9;
+}
+
+.line-1 {
+  top: 100rpx;
+}
+
+.line-2 {
+  top: 200rpx;
+}
+
+/* ─── 参考线（异常阈值虚线，位置由动态 top 百分比控制） ────── */
+
+.ref-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2rpx;
+  z-index: 2;
+  background: repeating-linear-gradient(90deg, #d4840a 0, #d4840a 12rpx, transparent 12rpx, transparent 24rpx);
+}
+
+/* 偏高阈值线：橙色虚线 */
+.ref-warn-high {
+  background: repeating-linear-gradient(90deg, #d4840a 0, #d4840a 12rpx, transparent 12rpx, transparent 24rpx);
+}
+
+/* 偏低阈值线：蓝色虚线 */
+.ref-warn-low {
+  background: repeating-linear-gradient(90deg, #3a88b8 0, #3a88b8 12rpx, transparent 12rpx, transparent 24rpx);
+}
+
+/* 舒张压参考线：短划线样式区分 */
+.ref-line-sub {
+  height: 1rpx;
+  opacity: 0.7;
+  background: repeating-linear-gradient(90deg, currentColor 0, currentColor 8rpx, transparent 8rpx, transparent 20rpx);
+}
+
+/* ─── 柱状条 ──────────────────────────────── */
+
+.chart-bars {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-end;
+  gap: 16rpx;
+  padding: 18rpx 20rpx 16rpx 12rpx;
+}
+
+.chart-bars.dual-bars {
+  gap: 12rpx;
+}
+
+.bar-item {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10rpx;
+}
+
+/* 双柱组：收缩压+舒张压并列 */
+.bar-group {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8rpx;
+}
+
+.bar-pair {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  gap: 6rpx;
+}
+
+.bar-pair .bar-track {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 2rpx;
+}
+
+.bar-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 6rpx;
+}
+
+.bar-fill {
+  width: 100%;
+  min-height: 24rpx;
+  border-radius: 14rpx 14rpx 0 0;
+  background: linear-gradient(180deg, #52b07f 0%, #168957 100%);
+  transition: background 0.3s ease;
+}
+
+/* 收缩压填充色 */
+.fill-systolic {
+  background: linear-gradient(180deg, #52b07f 0%, #168957 100%);
+}
+
+/* 舒张压填充色 */
+.fill-diastolic {
+  background: linear-gradient(180deg, #8ed4b3 0%, #6bc4a0 100%);
+}
+
+/* 血糖填充色 */
+.fill-bg {
+  background: linear-gradient(180deg, #52b07f 0%, #168957 100%);
+}
+
+/* 用药服药率填充色：蓝绿色系，区别于血压血糖的纯绿 */
+.fill-medication {
+  background: linear-gradient(180deg, #4dc9b0 0%, #1a9e85 100%);
+}
+
+/* 用药优秀达标（>=90%）：亮绿色系 */
+.fill-medication-excellent {
+  background: linear-gradient(180deg, #3dd9a0 0%, #0fa870 100%);
+}
+
+/* 用药达标参考线：绿色虚线 */
+.ref-med-high {
+  background: repeating-linear-gradient(90deg, #168957 0, #168957 12rpx, transparent 12rpx, transparent 24rpx);
+}
+
+/* 用药警示参考线：橙色虚线 */
+.ref-med-low {
+  background: repeating-linear-gradient(90deg, #d4840a 0, #d4840a 12rpx, transparent 12rpx, transparent 24rpx);
+}
+
+/* 图表头部右侧：参考值+徽章并排 */
+.chart-ref-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+/* ─── 异常预警色 ──────────────────────────────── */
+
+.bar-warn-high {
+  background: linear-gradient(180deg, #f0a040 0%, #d4840a 100%) !important;
+}
+
+.bar-warn-low {
+  background: linear-gradient(180deg, #60a8d8 0%, #3a88b8 100%) !important;
+}
+
+.bar-label {
+  color: #65756d;
+  font-size: 24rpx;
+}
+
+.bar-value {
+  color: #14201a;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+/* 双柱值显示 */
+.bar-values {
+  display: flex;
+  gap: 2rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.bar-val-sys {
+  color: #168957;
+}
+
+.bar-val-dia {
+  color: #6bc4a0;
+}
+
+/* ─── 记录列表（metric-card 卡片风格，与首页一致） ──────── */
+
+.link-button {
+  color: #168957;
+  background: transparent;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.metric-stack {
+  display: grid;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.metric-item-wrap {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.record-empty {
+  padding: 48rpx;
+  text-align: center;
+}
+
+.record-empty-text {
+  color: #65756d;
+  font-size: 26rpx;
+}
+
+/* ─── 分享按钮（从周报迁入） ──────────────────────── */
+
+.trend-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+  padding-bottom: 48rpx;
+}
+
+.share-button {
+  flex: 1;
+  height: 80rpx;
+  border-radius: 12rpx;
+  background: #168957;
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+/* ─── 适老化适配 ──────────────────────────────── */
+
+.trend-page.ui-scale-large .filter-options,
+.trend-page.ui-scale-elder .filter-options {
+  gap: 12rpx;
+}

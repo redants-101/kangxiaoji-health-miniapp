@@ -1,0 +1,30 @@
+<view class="entry-page">
+  <view class="entry-header">
+    <view class="entry-title">用药管理</view>
+    <view class="entry-subtitle">管理您的用药计划和提醒</view>
+  </view>
+
+  <view class="entry-cards">
+    <view class="entry-card" bindtap="goToMedList">
+      <view class="card-icon med-icon">
+        <view class="icon-text">ML</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">用药提醒</view>
+        <view class="card-desc">查看用药计划和时间</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToMedEdit">
+      <view class="card-icon edit-icon">
+        <view class="icon-text">ME</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">添加用药</view>
+        <view class="card-desc">创建新的用药计划</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+  </view>
+</view>

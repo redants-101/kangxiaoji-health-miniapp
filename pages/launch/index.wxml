@@ -1,0 +1,5 @@
+<view class="launch-page">
+  <view class="launch-title">康小记</view>
+  <view class="launch-meta">{{loadError ? loadError : '正在读取云端状态'}}</view>
+  <button wx:if="{{loadError}}" class="retry-button" bindtap="routeByCloudState">重试</button>
+</view>

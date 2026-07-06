@@ -1,0 +1,244 @@
+.family-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: 150rpx;
+  background: #f8faf8;
+}
+
+.family-page.layout-wide {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.page-head,
+.section-head,
+.member-row,
+.member-actions,
+.invite-panel {
+  display: flex;
+  align-items: center;
+}
+
+.page-head,
+.section-head,
+.invite-panel {
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.header-button,
+.preview-button,
+.invite-button {
+  flex: 0 0 auto;
+}
+
+.share-panel {
+  margin-top: 30rpx;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 28rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #cbe5d6;
+  background: #ecf7f0;
+}
+
+.share-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.share-label,
+.scope-label,
+.last-seen {
+  color: #65756d;
+  font-size: 24rpx;
+}
+
+.share-title {
+  margin-top: 8rpx;
+  color: #14201a;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.share-meta {
+  margin-top: 10rpx;
+  color: #4f6258;
+  font-size: 25rpx;
+  line-height: 1.5;
+}
+
+.preview-button {
+  flex: 0 0 auto;
+  min-width: 168rpx;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.member-list {
+  display: grid;
+  gap: 18rpx;
+}
+
+.member-card,
+.invite-panel {
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+}
+
+.member-card {
+  padding: 26rpx;
+}
+
+.member-row {
+  gap: 18rpx;
+}
+
+.avatar {
+  width: 76rpx;
+  height: 76rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e5f4ec;
+  color: #0e6f45;
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.member-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.member-name {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 850;
+}
+
+.member-role,
+.scope-text,
+.invite-meta {
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.member-role {
+  margin-top: 8rpx;
+}
+
+.status-badge {
+  flex: 0 0 auto;
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+  background: #e5f4ec;
+  color: #0e6f45;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.scope-box {
+  margin-top: 22rpx;
+  padding: 20rpx;
+  border-radius: 16rpx;
+  background: #f6f8f6;
+}
+
+.scope-text {
+  margin-top: 6rpx;
+  color: #14201a;
+}
+
+.member-actions {
+  margin-top: 22rpx;
+  gap: 16rpx;
+}
+
+.secondary-action,
+.danger-action {
+  flex: 1;
+}
+
+.last-seen {
+  margin-top: 18rpx;
+}
+
+.invite-panel {
+  margin-top: 18rpx;
+  padding: 26rpx;
+}
+
+.invite-title {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 850;
+}
+
+.empty-panel {
+  padding: 48rpx 32rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  text-align: center;
+}
+
+.empty-title {
+  color: #14201a;
+  font-size: 31rpx;
+  font-weight: 900;
+}
+
+.empty-meta {
+  margin-top: 14rpx;
+  color: #65756d;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.invite-meta {
+  margin-top: 8rpx;
+}
+
+.invite-button {
+  min-width: 148rpx;
+  background: #168957;
+  color: #ffffff;
+  border-color: #168957;
+}
+
+.family-page.ui-scale-large .page-head,
+.family-page.ui-scale-large .member-row,
+.family-page.ui-scale-elder .page-head,
+.family-page.ui-scale-elder .member-row {
+  align-items: flex-start;
+}
+
+.family-page.ui-scale-large .share-panel,
+.family-page.ui-scale-large .invite-panel,
+.family-page.ui-scale-elder .share-panel,
+.family-page.ui-scale-elder .invite-panel,
+.family-page.ui-scale-large .member-actions,
+.family-page.ui-scale-elder .member-actions {
+  flex-direction: column;
+}
+
+.family-page.ui-scale-elder .preview-button,
+.family-page.ui-scale-elder .secondary-action,
+.family-page.ui-scale-elder .danger-action {
+  width: 100%;
+}
+
+.family-page.ui-scale-elder .avatar {
+  width: 88rpx;
+  height: 88rpx;
+  font-size: 34rpx;
+}

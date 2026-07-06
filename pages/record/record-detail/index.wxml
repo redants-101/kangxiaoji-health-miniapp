@@ -1,0 +1,33 @@
+<view class="record-detail-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view wx:if="{{!record}}" class="empty-state">
+    <view class="empty-icon">📋</view>
+    <view class="empty-text">记录不存在</view>
+  </view>
+  <view wx:else class="detail-content">
+    <view class="detail-header">
+      <view class="detail-title">{{record.title}}</view>
+    </view>
+
+    <view class="detail-card">
+      <view class="detail-value">{{record.value}}</view>
+      <view class="detail-unit">{{record.unit}}</view>
+      <view class="detail-status {{record.statusType}}">{{record.status}}</view>
+    </view>
+
+    <view wx:if="{{record.tip}}" class="detail-tip {{record.tipLevel}}">
+      <view class="tip-icon">{{record.tipLevel === 'warn' ? '⚠️' : 'ℹ️'}}</view>
+      <view class="tip-text">{{record.tip}}</view>
+    </view>
+
+    <view class="detail-list">
+      <view wx:for="{{details}}" wx:key="label" class="detail-item">
+        <view class="item-label">{{item.label}}</view>
+        <view class="item-value">{{item.value}}</view>
+      </view>
+    </view>
+
+    <view class="action-buttons">
+      <button class="danger-button" bindtap="handleDelete">删除记录</button>
+    </view>
+  </view>
+</view>

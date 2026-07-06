@@ -1,0 +1,41 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载邀请说明</view>
+    <view class="state-meta">加入家庭的步骤和使用边界会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">邀请说明加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="hint-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="hint-panel">
+    <view class="eyebrow">等待邀请</view>
+    <view class="title">需要家人先邀请你</view>
+    <view class="subtitle">请让家人在小程序"家庭"页面生成邀请。加入后，你只能查看对方授权给你的内容。</view>
+  </view>
+
+  <view class="section">
+    <view class="step-panel">
+      <view wx:for="{{steps}}" wx:key="title" class="step-row">
+        <view class="step-index">{{index + 1}}</view>
+        <view>
+          <view class="step-title">{{item.title}}</view>
+          <view class="step-meta">{{item.meta}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="家属端不能主动拉取他人健康记录，必须由本人发起邀请并授权。" />
+  </view>
+
+  <view class="bottom-actions">
+    <button class="secondary-button" bindtap="openInviteLink">去加入家庭</button>
+    <button class="primary-button" bindtap="previewFamilyHome">查看家属首页</button>
+  </view>
+</view>

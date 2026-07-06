@@ -1,0 +1,62 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载提醒数据</view>
+    <view class="state-meta">提醒任务会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">提醒数据加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="reminder-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view class="title">提醒中心</view>
+    <button class="settings-button" bindtap="goToReminderSettings">设置</button>
+  </view>
+
+  <view wx:if="{{showSubscribeHint}}" class="subscribe-hint-bar" bindtap="goToReminderSettings">
+    <view class="hint-text">未开启微信提醒，你仍可在这里查看待办。点击前往设置开启。</view>
+    <view class="hint-arrow">›</view>
+  </view>
+
+  <view class="tab-bar">
+    <button
+      wx:for="{{tabs}}"
+      wx:key="key"
+      class="tab-item {{activeTab === item.key ? 'active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="selectTab"
+    >{{item.label}}</button>
+  </view>
+
+  <view class="task-list">
+    <block wx:if="{{visibleTasks.length}}">
+      <button
+        wx:for="{{visibleTasks}}"
+        wx:key="id"
+        class="task-item {{item.status}}"
+        data-route="{{item.route}}"
+        data-plan-id="{{item.planId}}"
+        data-log-id="{{item.logId}}"
+        data-toast="{{item.toast}}"
+        bindtap="handleTask"
+      >
+        <view class="task-time">{{item.time}}</view>
+        <view class="task-content">
+          <view class="task-title">{{item.title}}</view>
+          <view class="task-meta">{{item.meta}}</view>
+        </view>
+        <view class="task-status {{item.status}}">{{item.statusText}}</view>
+      </button>
+    </block>
+    <view wx:else class="empty-panel">
+      <image class="empty-icon" src="/assets/icons/icon-empty.png" mode="aspectFit" />
+      <view class="empty-title">暂无提醒</view>
+      <view class="empty-meta">{{activeTab === 'completed' ? '今天还没有已完成的提醒。' : '添加用药计划或开启提醒后，会在这里展示。'}}</view>
+      <button wx:if="{{activeTab !== 'completed'}}" class="empty-action" bindtap="goAddMedication">添加用药计划</button>
+    </view>
+  </view>
+</view>

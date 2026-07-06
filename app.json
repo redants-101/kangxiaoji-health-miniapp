@@ -1,0 +1,118 @@
+{
+  "pages": [
+    "pages/launch/index",
+    "pages/home/index",
+    "pages/trend/index",
+    "pages/family/index",
+    "pages/me/index"
+  ],
+  "subpackages": [
+    {
+      "root": "pages/record/",
+      "name": "record",
+      "pages": [
+        "index",
+        "record-bp/index",
+        "record-bg/index",
+        "record-detail/index",
+        "record-list/index"
+      ]
+    },
+    {
+      "root": "pages/medication/",
+      "name": "medication",
+      "pages": [
+        "index",
+        "med-list/index",
+        "med-edit/index",
+        "med-confirm/index",
+        "med-history/index"
+      ]
+    },
+    {
+      "root": "pages/reminder/",
+      "name": "reminder",
+      "pages": [
+        "index",
+        "reminder-settings/index"
+      ]
+    },
+    {
+      "root": "pages/data/",
+      "name": "data",
+      "pages": [
+        "index",
+        "data/index"
+      ]
+    },
+    {
+      "root": "pages/family-sub/",
+      "name": "family-sub",
+      "pages": [
+        "index",
+        "family-invite/index",
+        "family-join/index",
+        "family-join-hint/index",
+        "family-auth/index",
+        "home-family/index"
+      ]
+    },
+    {
+      "root": "pages/settings/",
+      "name": "settings",
+      "pages": [
+        "index",
+        "privacy/index",
+        "privacy-detail/index",
+        "privacy-policy/index",
+        "user-agreement/index",
+        "role/index",
+        "privacy-settings/index",
+        "profile/index",
+        "feedback/index",
+        "help/index"
+      ]
+    }
+  ],
+  "window": {
+    "navigationBarTitleText": "康小记",
+    "navigationBarBackgroundColor": "#F2F5F2",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F2F5F2"
+  },
+  "tabBar": {
+    "color": "#65756D",
+    "selectedColor": "#168957",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "assets/icons/tab-home.png",
+        "selectedIconPath": "assets/icons/tab-home-active.png"
+      },
+      {
+        "pagePath": "pages/trend/index",
+        "text": "趋势",
+        "iconPath": "assets/icons/tab-trend.png",
+        "selectedIconPath": "assets/icons/tab-trend-active.png"
+      },
+      {
+        "pagePath": "pages/family/index",
+        "text": "家庭",
+        "iconPath": "assets/icons/tab-family.png",
+        "selectedIconPath": "assets/icons/tab-family-active.png"
+      },
+      {
+        "pagePath": "pages/me/index",
+        "text": "我的",
+        "iconPath": "assets/icons/tab-me.png",
+        "selectedIconPath": "assets/icons/tab-me-active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json"
+}

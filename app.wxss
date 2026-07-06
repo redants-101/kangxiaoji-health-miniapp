@@ -1,0 +1,1064 @@
+page {
+  min-height: 100%;
+  background: #f2f5f2;
+  color: #14201a;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.btn {
+  margin: 0;
+  padding: 0;
+  border-radius: 8rpx;
+  background: transparent;
+  line-height: 1.2;
+}
+
+.btn::after {
+  border: 0;
+}
+
+button,
+.btn,
+.primary-button,
+.secondary-button,
+.danger-button,
+.link-button,
+.state-button,
+.head-button,
+.header-button,
+.bell-button,
+.preview-button,
+.switch-button,
+.alert-button,
+.report-button,
+.add-button,
+.primary-mini,
+.share-button,
+.load-button,
+.edit-button,
+.invite-button,
+.secondary-action,
+.danger-action,
+.quick-action,
+.segment,
+.tag,
+.type-pill,
+.task-row,
+.record-row,
+.action-row,
+.danger-row,
+.setting-row,
+.med-row,
+.plan-row {
+  transition: transform 120ms ease, opacity 120ms ease, box-shadow 120ms ease, background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+button::after,
+.btn::after {
+  border: 0;
+}
+
+.button-hover,
+.btn-hover,
+.is-pressed {
+  opacity: 0.94;
+  transform: translateY(2rpx);
+}
+
+.primary-button.button-hover,
+.primary-button.btn-hover,
+.primary-button.is-pressed,
+.state-button.button-hover,
+.state-button.btn-hover,
+.state-button.is-pressed,
+.head-button.button-hover,
+.head-button.btn-hover,
+.head-button.is-pressed,
+.header-button.button-hover,
+.header-button.btn-hover,
+.header-button.is-pressed,
+.alert-button.button-hover,
+.alert-button.btn-hover,
+.alert-button.is-pressed,
+.report-button.button-hover,
+.report-button.btn-hover,
+.report-button.is-pressed,
+.add-button.button-hover,
+.add-button.btn-hover,
+.add-button.is-pressed,
+.primary-mini.button-hover,
+.primary-mini.btn-hover,
+.primary-mini.is-pressed,
+.invite-button.button-hover,
+.invite-button.btn-hover,
+.invite-button.is-pressed {
+  background: #0e6f45;
+  box-shadow: 0 2rpx 8rpx rgba(22, 137, 87, 0.12);
+}
+
+.quick-action.button-hover,
+.quick-action.btn-hover,
+.quick-action.is-pressed,
+.secondary-button.button-hover,
+.secondary-button.btn-hover,
+.secondary-button.is-pressed,
+.tag.button-hover,
+.tag.btn-hover,
+.tag.is-pressed,
+.type-pill.button-hover,
+.type-pill.btn-hover,
+.type-pill.is-pressed,
+.bell-button.button-hover,
+.bell-button.btn-hover,
+.bell-button.is-pressed,
+.preview-button.button-hover,
+.preview-button.btn-hover,
+.preview-button.is-pressed,
+.switch-button.button-hover,
+.switch-button.btn-hover,
+.switch-button.is-pressed,
+.share-button.button-hover,
+.share-button.btn-hover,
+.share-button.is-pressed,
+.load-button.button-hover,
+.load-button.btn-hover,
+.load-button.is-pressed,
+.edit-button.button-hover,
+.edit-button.btn-hover,
+.edit-button.is-pressed,
+.secondary-action.button-hover,
+.secondary-action.btn-hover,
+.secondary-action.is-pressed,
+.segment.button-hover,
+.segment.btn-hover,
+.segment.is-pressed {
+  background: #f3f8f5;
+  border-color: #b4dec7;
+}
+
+.danger-button.button-hover,
+.danger-button.btn-hover,
+.danger-button.is-pressed,
+.danger-action.button-hover,
+.danger-action.btn-hover,
+.danger-action.is-pressed,
+.danger-row.button-hover,
+.danger-row.btn-hover,
+.danger-row.is-pressed {
+  background: #f8dedb;
+  border-color: #e6aaa5;
+}
+
+.link-button.button-hover,
+.link-button.btn-hover,
+.link-button.is-pressed,
+.med-row.button-hover,
+.med-row.btn-hover,
+.med-row.is-pressed,
+.plan-row.button-hover,
+.plan-row.btn-hover,
+.plan-row.is-pressed,
+.task-row.button-hover,
+.task-row.btn-hover,
+.task-row.is-pressed,
+.record-row.button-hover,
+.record-row.btn-hover,
+.record-row.is-pressed,
+.action-row.button-hover,
+.action-row.btn-hover,
+.action-row.is-pressed,
+.setting-row.button-hover,
+.setting-row.btn-hover,
+.setting-row.is-pressed {
+  background: #f3f8f5;
+}
+
+button[disabled],
+.med-row[disabled],
+.med-row.is-disabled,
+.med-row.disabled,
+.plan-row[disabled],
+.plan-row.is-disabled,
+.plan-row.disabled,
+.btn[disabled],
+.is-disabled,
+.disabled {
+  opacity: 1;
+  color: #8a9790;
+  box-shadow: none;
+  transform: none;
+}
+
+button[disabled].button-hover,
+button[disabled].btn-hover,
+.is-disabled.button-hover,
+.is-disabled.btn-hover,
+.disabled.button-hover,
+.disabled.btn-hover {
+  transform: none;
+}
+
+.is-loading,
+.loading,
+button[loading] {
+  opacity: 0.9;
+  box-shadow: none;
+}
+
+.is-loading.button-hover,
+.loading.button-hover,
+button[loading].button-hover {
+  transform: none;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: 48rpx;
+}
+
+.page.with-fixed-action {
+  padding-bottom: 150rpx;
+}
+
+.eyebrow {
+  color: #168957;
+  font-size: 24rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.title {
+  color: #14201a;
+  font-size: 46rpx;
+  font-weight: 800;
+  line-height: 1.18;
+}
+
+.subtitle {
+  margin-top: 14rpx;
+  color: #65756d;
+  font-size: 28rpx;
+  line-height: 1.55;
+}
+
+.section {
+  margin-top: 32rpx;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+
+.section-title {
+  color: #14201a;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.panel,
+.hero-panel,
+.soft-panel,
+.notice {
+  border-radius: 18rpx;
+  border: 1rpx solid #dfe7e1;
+  padding: 26rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.03);
+}
+
+.panel {
+  background: #ffffff;
+}
+
+.hero-panel {
+  background: #ecf7f0;
+  border-color: #cbe5d6;
+}
+
+.soft-panel {
+  background: #f6f8f6;
+}
+
+.notice {
+  background: #e8f2fb;
+  border-color: #c7ddf0;
+  color: #1c4f7d;
+  font-size: 26rpx;
+  line-height: 1.55;
+}
+
+.notice.warn {
+  background: #fff4df;
+  border-color: #efd18b;
+  color: #9a5d00;
+}
+
+.notice.danger {
+  background: #fdebea;
+  border-color: #efc3bf;
+  color: #c8463a;
+}
+
+.row,
+.metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #dfe7e1;
+}
+
+.row:last-child,
+.metric-row:last-child {
+  border-bottom: 0;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  color: #14201a;
+  font-size: 30rpx;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.row-meta {
+  margin-top: 8rpx;
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.metric-label {
+  color: #65756d;
+  font-size: 24rpx;
+  margin-bottom: 8rpx;
+}
+
+.metric-value {
+  color: #14201a;
+  font-size: 50rpx;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.metric-unit {
+  margin-left: 8rpx;
+  color: #65756d;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.big-value {
+  margin-top: 12rpx;
+  color: #14201a;
+  font-size: 68rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.grid-2,
+.grid-3 {
+  display: grid;
+  gap: 18rpx;
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.quick-tile {
+  min-height: 150rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  border: 1rpx solid #dfe7e1;
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 800;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.03);
+}
+
+.quick-icon {
+  color: #168957;
+  font-size: 34rpx;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.pill {
+  border-radius: 999rpx;
+  background: #f6f8f6;
+  border: 1rpx solid #dfe7e1;
+  color: #14201a;
+  font-size: 25rpx;
+  padding: 14rpx 20rpx;
+}
+
+.pill.active {
+  background: #e5f4ec;
+  border-color: #b4dec7;
+  color: #0e6f45;
+  font-weight: 800;
+}
+
+.field {
+  margin-bottom: 28rpx;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 14rpx;
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.text-input,
+.text-area,
+.big-input {
+  width: 100%;
+  border: 1rpx solid #c7d3cc;
+  border-radius: 16rpx;
+  background: #ffffff;
+  color: #14201a;
+}
+
+.text-input {
+  height: 92rpx;
+  padding: 0 24rpx;
+  font-size: 30rpx;
+}
+
+.text-area {
+  min-height: 180rpx;
+  padding: 22rpx 24rpx;
+  font-size: 30rpx;
+  line-height: 1.45;
+}
+
+.big-input {
+  height: 122rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 24rpx;
+}
+
+.big-input input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  color: #14201a;
+  font-size: 60rpx;
+  font-weight: 900;
+}
+
+.unit {
+  color: #65756d;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.check-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  color: #14201a;
+  font-size: 28rpx;
+  line-height: 1.5;
+}
+
+.checkbox {
+  width: 38rpx;
+  height: 38rpx;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid #168957;
+  border-radius: 10rpx;
+  color: #168957;
+  font-weight: 900;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button,
+.action-button {
+  min-height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0 24rpx;
+  border-radius: 18rpx;
+  font-size: 30rpx;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.primary-button,
+.action-button {
+  background: #168957;
+  color: #ffffff;
+  box-shadow: 0 4rpx 16rpx rgba(22, 137, 87, 0.15);
+}
+
+.secondary-button {
+  background: #ffffff;
+  color: #14201a;
+  border: 1rpx solid #c7d3cc;
+}
+
+.danger-button {
+  background: #fdebea;
+  color: #c8463a;
+}
+
+.primary-button[disabled],
+.primary-button.is-disabled,
+.primary-button.disabled,
+.action-button[disabled],
+.action-button.is-disabled,
+.action-button.disabled,
+.state-button[disabled],
+.state-button.is-disabled,
+.state-button.disabled,
+.alert-button[disabled],
+.alert-button.is-disabled,
+.alert-button.disabled,
+.report-button[disabled],
+.report-button.is-disabled,
+.report-button.disabled,
+.add-button[disabled],
+.add-button.is-disabled,
+.add-button.disabled,
+.primary-mini[disabled],
+.primary-mini.is-disabled,
+.primary-mini.disabled,
+.invite-button[disabled],
+.invite-button.is-disabled,
+.invite-button.disabled {
+  background: #a9b8ae;
+  border-color: #a9b8ae;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.quick-action[disabled],
+.quick-action.is-disabled,
+.quick-action.disabled,
+.type-pill[disabled],
+.type-pill.is-disabled,
+.type-pill.disabled,
+.tag[disabled],
+.tag.is-disabled,
+.tag.disabled,
+.secondary-button[disabled],
+.secondary-button.is-disabled,
+.secondary-button.disabled,
+.head-button[disabled],
+.head-button.is-disabled,
+.head-button.disabled,
+.header-button[disabled],
+.header-button.is-disabled,
+.header-button.disabled,
+.bell-button[disabled],
+.bell-button.is-disabled,
+.bell-button.disabled,
+.preview-button[disabled],
+.preview-button.is-disabled,
+.preview-button.disabled,
+.switch-button[disabled],
+.switch-button.is-disabled,
+.switch-button.disabled,
+.share-button[disabled],
+.share-button.is-disabled,
+.share-button.disabled,
+.load-button[disabled],
+.load-button.is-disabled,
+.load-button.disabled,
+.edit-button[disabled],
+.edit-button.is-disabled,
+.edit-button.disabled,
+.secondary-action[disabled],
+.secondary-action.is-disabled,
+.secondary-action.disabled,
+.segment[disabled],
+.segment.is-disabled,
+.segment.disabled {
+  background: #f3f6f4;
+  border-color: #d8e1dc;
+  color: #8a9790;
+  box-shadow: none;
+}
+
+.danger-button[disabled],
+.danger-button.is-disabled,
+.danger-button.disabled,
+.danger-action[disabled],
+.danger-action.is-disabled,
+.danger-action.disabled {
+  background: #f5eeed;
+  border-color: #e4d6d4;
+  color: #a78d89;
+  box-shadow: none;
+}
+
+.primary-button.is-loading,
+.primary-button.loading,
+.primary-button[loading],
+.action-button.is-loading,
+.action-button.loading,
+.action-button[loading] {
+  background: #2c9667;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.secondary-button.is-loading,
+.secondary-button.loading,
+.secondary-button[loading],
+.danger-button.is-loading,
+.danger-button.loading,
+.danger-button[loading],
+.secondary-action.is-loading,
+.secondary-action.loading,
+.secondary-action[loading],
+.danger-action.is-loading,
+.danger-action.loading,
+.danger-action[loading] {
+  box-shadow: none;
+}
+
+.link-button {
+  background: transparent;
+  color: #168957;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.link-button[disabled],
+.link-button.is-disabled,
+.link-button.disabled {
+  color: #8a9790;
+  background: transparent;
+}
+
+.fixed-action {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 20rpx 32rpx 36rpx;
+  background: rgba(242, 245, 242, 0.96);
+  border-top: 1rpx solid #dfe7e1;
+}
+
+.chart {
+  height: 300rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  padding: 24rpx;
+}
+
+.chart-line {
+  height: 190rpx;
+  border-left: 3rpx solid #d8e3dc;
+  border-bottom: 3rpx solid #d8e3dc;
+  position: relative;
+}
+
+.chart-line::after {
+  content: "";
+  position: absolute;
+  left: 18rpx;
+  right: 18rpx;
+  top: 80rpx;
+  height: 5rpx;
+  background: #168957;
+  border-radius: 999rpx;
+  transform: rotate(-8deg);
+}
+
+.chart-caption {
+  margin-top: 20rpx;
+  color: #65756d;
+  font-size: 24rpx;
+  display: flex;
+  justify-content: space-between;
+}
+
+.page-state {
+  min-height: 100vh;
+  padding: 32rpx;
+  background: #f2f5f2;
+  display: flex;
+  align-items: center;
+}
+
+.state-panel {
+  width: 100%;
+  padding: 40rpx 32rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #dfe7e1;
+  background: #ffffff;
+  text-align: center;
+}
+
+.state-title {
+  color: #14201a;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.state-meta {
+  margin-top: 14rpx;
+  color: #65756d;
+  font-size: 26rpx;
+  line-height: 1.55;
+}
+
+.state-detail {
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  background: #f6f8f6;
+  border: 1rpx dashed #dfe7e1;
+  color: #8a9790;
+  font-size: 22rpx;
+  line-height: 1.5;
+  text-align: left;
+  word-break: break-all;
+  max-height: 200rpx;
+  overflow-y: auto;
+}
+
+.state-button {
+  margin-top: 24rpx;
+  min-height: 92rpx;
+  border-radius: 16rpx;
+  background: #168957;
+  color: #ffffff;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+/* 按钮规范收敛：纯文字命令按钮统一三档尺寸。 */
+.state-button,
+.head-button,
+.header-button,
+.bell-button,
+.link-button,
+.preview-button,
+.switch-button,
+.alert-button,
+.report-button,
+.add-button,
+.primary-mini,
+.share-button,
+.load-button,
+.edit-button,
+.invite-button,
+.secondary-action,
+.danger-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.state-button {
+  padding: 0 24rpx;
+}
+
+.head-button,
+.header-button,
+.bell-button,
+.preview-button,
+.switch-button,
+.alert-button,
+.report-button,
+.add-button,
+.primary-mini,
+.share-button,
+.load-button,
+.edit-button,
+.invite-button {
+  min-height: 80rpx;
+  padding: 0 24rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.edit-button {
+  min-height: 72rpx;
+  padding: 0 20rpx;
+  font-size: 24rpx;
+}
+
+.secondary-action,
+.danger-action {
+  min-height: 88rpx;
+  padding: 0 20rpx;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.head-button,
+.header-button,
+.bell-button,
+.preview-button,
+.switch-button,
+.share-button,
+.load-button,
+.edit-button {
+  color: #168957;
+  background: #ffffff;
+  border: 1rpx solid #c7d3cc;
+}
+
+.secondary-action {
+  color: #168957;
+  background: #ffffff;
+  border: 1rpx solid #b4dec7;
+}
+
+.danger-action {
+  color: #c8463a;
+  background: #fff7f6;
+  border: 1rpx solid #efc3bf;
+}
+
+.alert-button,
+.report-button,
+.add-button,
+.primary-mini,
+.invite-button {
+  color: #ffffff;
+  background: #168957;
+  border: 1rpx solid #168957;
+}
+
+
+.empty-icon {
+  width: 96rpx;
+  height: 96rpx;
+  display: block;
+  margin: 0 auto 18rpx;
+}
+
+.field-error {
+  margin-top: 10rpx;
+  color: #c8463a;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.section-error {
+  margin-top: 12rpx;
+  color: #c8463a;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+/* 第一轮适老化与大字号适配：优先放大通用文本层级和常用交互尺寸。 */
+.ui-scale-large .eyebrow,
+.ui-scale-large .metric-label,
+.ui-scale-large .panel-label,
+.ui-scale-large .field-error,
+.ui-scale-large .section-error,
+.ui-scale-large .state-meta {
+  font-size: 28rpx;
+}
+
+.ui-scale-elder .eyebrow,
+.ui-scale-elder .metric-label,
+.ui-scale-elder .panel-label,
+.ui-scale-elder .field-error,
+.ui-scale-elder .section-error,
+.ui-scale-elder .state-meta {
+  font-size: 30rpx;
+}
+
+.ui-scale-large .title,
+.ui-scale-large .big-value,
+.ui-scale-large .metric-value {
+  font-size: 54rpx;
+}
+
+.ui-scale-elder .title,
+.ui-scale-elder .big-value,
+.ui-scale-elder .metric-value {
+  font-size: 58rpx;
+}
+
+.ui-scale-large .subtitle,
+.ui-scale-large .row-meta,
+.ui-scale-large .notice,
+.ui-scale-large .text-input,
+.ui-scale-large .text-area,
+.ui-scale-large .big-input,
+.ui-scale-large .field-label,
+.ui-scale-large .state-title,
+.ui-scale-large .state-button {
+  font-size: 32rpx;
+}
+
+.ui-scale-elder .subtitle,
+.ui-scale-elder .row-meta,
+.ui-scale-elder .notice,
+.ui-scale-elder .text-input,
+.ui-scale-elder .text-area,
+.ui-scale-elder .big-input,
+.ui-scale-elder .field-label,
+.ui-scale-elder .state-title,
+.ui-scale-elder .state-button {
+  font-size: 34rpx;
+}
+
+.ui-scale-large .text-input,
+.ui-scale-large .big-input,
+.ui-scale-large .state-button {
+  min-height: 104rpx;
+}
+
+.ui-scale-elder .text-input,
+.ui-scale-elder .big-input,
+.ui-scale-elder .state-button {
+  min-height: 112rpx;
+}
+
+.layout-wide {
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.ui-scale-large .primary-button,
+.ui-scale-large .secondary-button,
+.ui-scale-large .danger-button,
+.ui-scale-large .action-button,
+.ui-scale-large .link-button,
+.ui-scale-large .role-card,
+.ui-scale-large .scope-row,
+.ui-scale-elder .primary-button,
+.ui-scale-elder .secondary-button,
+.ui-scale-elder .danger-button,
+.ui-scale-elder .action-button,
+.ui-scale-elder .link-button,
+.ui-scale-elder .role-card,
+.ui-scale-elder .scope-row {
+  min-height: 104rpx;
+}
+
+.ui-scale-elder .section-head,
+.ui-scale-elder .page-head,
+.ui-scale-elder .row,
+.ui-scale-elder .metric-row {
+  align-items: flex-start;
+}
+
+.ui-scale-elder .task-row,
+.ui-scale-elder .med-row,
+.ui-scale-elder .record-row,
+.ui-scale-elder .action-row,
+.ui-scale-elder .setting-row,
+.ui-scale-elder .plan-row {
+  min-height: 120rpx;
+  padding: 28rpx 0;
+  gap: 28rpx;
+}
+
+.ui-scale-elder .primary-button,
+.ui-scale-elder .secondary-button,
+.ui-scale-elder .danger-button,
+.ui-scale-elder .action-button {
+  min-height: 120rpx;
+  font-size: 34rpx;
+  border-radius: 24rpx;
+}
+
+.ui-scale-elder .quick-tile {
+  min-height: 180rpx;
+  gap: 14rpx;
+  font-size: 32rpx;
+}
+
+.ui-scale-elder .section {
+  margin-top: 48rpx;
+}
+
+.ui-scale-elder .row,
+.ui-scale-elder .metric-row {
+  padding: 32rpx 0;
+  gap: 36rpx;
+}
+
+.ui-scale-elder .field-error {
+  display: none;
+}
+
+.ui-scale-elder .field-error-notice {
+  display: block;
+}
+
+.ui-scale-elder .tag-button,
+.ui-scale-elder .meal-tag-button {
+  min-height: 80rpx;
+  padding: 16rpx 28rpx;
+  font-size: 30rpx;
+}
+
+.ui-scale-elder .time-picker {
+  min-height: 100rpx;
+  font-size: 34rpx;
+}
+
+.ui-scale-elder .quick-time-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.ui-scale-elder .quick-time-btn {
+  min-height: 72rpx;
+  padding: 12rpx 24rpx;
+  border-radius: 999rpx;
+  background: #f6f8f6;
+  border: 1rpx solid #dfe7e1;
+  color: #14201a;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.ui-scale-elder .quick-time-btn.active {
+  background: #e5f4ec;
+  border-color: #168957;
+  color: #168957;
+}

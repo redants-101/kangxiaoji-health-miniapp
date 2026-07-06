@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index"
+  },
+  "navigationBarTitleText": "服药确认"
+}

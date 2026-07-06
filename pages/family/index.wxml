@@ -1,0 +1,78 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载家庭协同</view>
+    <view class="state-meta">家属成员、授权范围和共享状态会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">家庭数据加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<!-- 家庭功能开发中，显示敬请期待占位。上线后移除 coming-soon 标签即可恢复下方原始内容 -->
+<coming-soon
+  wx:else
+  title="家庭协同"
+  description="家属共享与授权管理功能正在开发中，上线后你将能邀请家属查看健康记录和用药状态，方便日常陪伴。"
+  icon="👨‍👩‍👧‍👦"
+/>
+<!--
+<view wx:else class="family-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view>
+      <view class="eyebrow">家庭协同</view>
+      <view class="title">家庭</view>
+    </view>
+  </view>
+  <view class="subtitle">授权家属查看记录和提醒状态，方便日常陪伴和复盘。</view>
+
+  <view class="share-panel">
+    <view class="share-main">
+      <view class="share-label">当前共享状态</view>
+      <view class="share-title">已连接 {{familyCount}} 位家属</view>
+      <view class="share-meta">按授权共享血压、血糖、用药确认和周报，不包含诊疗或处方建议。</view>
+    </view>
+    <button class="preview-button" bindtap="previewFamily" aria-label="查看家属视角预览">家属视角</button>
+  </view>
+
+  <view class="section">
+    <view class="section-title">家属成员</view>
+    <view class="member-list">
+      <block wx:if="{{members && members.length}}">
+        <view wx:for="{{members}}" wx:key="id" class="member-card">
+          <view class="member-row">
+            <view class="avatar">{{item.initial}}</view>
+            <view class="member-main">
+              <view class="member-name">{{item.name}}</view>
+              <view class="member-role">{{item.relation}} · {{item.role}}</view>
+            </view>
+            <view class="status-badge">{{item.status}}</view>
+          </view>
+          <view class="scope-box">
+            <view class="scope-label">授权范围</view>
+            <view class="scope-text">{{item.scope}}</view>
+          </view>
+          <view class="member-actions">
+            <button class="secondary-action {{pendingMemberId ? 'is-disabled' : ''}}" data-id="{{item.id}}" disabled="{{!!pendingMemberId}}" bindtap="manageMember" aria-label="管理{{item.name}}的授权权限">管理权限</button>
+            <button class="danger-action {{pendingMemberId ? 'is-disabled' : ''}} {{pendingMemberId === item.id ? 'is-loading' : ''}}" data-id="{{item.id}}" disabled="{{!!pendingMemberId}}" loading="{{pendingMemberId === item.id}}" bindtap="revokeMember" aria-label="解除{{item.name}}的授权">解除授权</button>
+          </view>
+          <view class="last-seen">{{item.lastSeen}}</view>
+        </view>
+      </block>
+      <view wx:else class="empty-panel">
+        <image class="empty-icon" src="/assets/icons/icon-empty.png" mode="aspectFit" />
+        <view class="empty-title">暂无家属成员</view>
+        <view class="empty-meta">发起邀请并授权后，家属才能查看你允许共享的记录和提醒状态。底部主按钮可直接开始邀请。</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="你可以随时取消家属授权。家属看到的是记录和提醒状态，不代表医生诊断或治疗建议。" />
+  </view>
+
+  <fixed-action text="邀请家属" bindactiontap="inviteFamily" />
+</view>
+-->

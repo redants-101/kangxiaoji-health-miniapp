@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "添加用药",
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index",
+    "fixed-action": "/components/fixed-action/index"
+  }
+}

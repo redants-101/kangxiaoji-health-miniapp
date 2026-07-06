@@ -1,0 +1,63 @@
+<view class="entry-page">
+  <view class="entry-header">
+    <view class="entry-title">设置</view>
+    <view class="entry-subtitle">管理您的账户和偏好</view>
+  </view>
+
+  <view class="entry-cards">
+    <view class="entry-card" bindtap="goToProfile">
+      <view class="card-icon profile-icon">
+        <view class="icon-text">PR</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">个人资料</view>
+        <view class="card-desc">查看和管理个人信息</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToPrivacy">
+      <view class="card-icon privacy-icon">
+        <view class="icon-text">PV</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">隐私政策</view>
+        <view class="card-desc">查看隐私政策和使用条款</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToPrivacySettings">
+      <view class="card-icon settings-icon">
+        <view class="icon-text">PS</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">隐私设置</view>
+        <view class="card-desc">管理数据分享和可见性</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToFeedback">
+      <view class="card-icon feedback-icon">
+        <view class="icon-text">FB</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">意见反馈</view>
+        <view class="card-desc">提交问题或建议</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToHelp">
+      <view class="card-icon help-icon">
+        <view class="icon-text">HP</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">帮助中心</view>
+        <view class="card-desc">常见问题和使用指南</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+  </view>
+</view>

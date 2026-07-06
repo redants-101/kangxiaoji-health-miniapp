@@ -1,0 +1,49 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载帮助中心</view>
+    <view class="state-meta">常用入口和常见问题会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">帮助中心加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="help-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+    <view>
+      <view class="eyebrow">支持</view>
+      <view class="title">帮助中心</view>
+    </view>
+    <button class="head-button" bindtap="goFeedback" aria-label="提交反馈">反馈</button>
+  </view>
+
+  <view class="section">
+    <view class="quick-grid">
+      <button wx:for="{{quickLinks}}" wx:key="label" class="quick-tile" data-route="{{item.route}}" bindtap="goQuickLink" aria-label="{{item.label}}，{{item.meta}}">
+        <image wx:if="{{item.iconSrc}}" class="quick-icon" src="{{item.iconSrc}}" mode="aspectFit" />
+        <view class="quick-title">{{item.label}}</view>
+        <view class="quick-meta">{{item.meta}}</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">常见问题</view>
+    <view class="faq-panel">
+      <button wx:for="{{faqs}}" wx:key="id" class="faq-row" data-id="{{item.id}}" bindtap="toggleFaq" aria-label="{{activeFaq === item.id ? '收起' : '展开'}}{{item.question}}">
+        <view class="faq-question">
+          <view class="faq-title">{{item.question}}</view>
+          <view class="faq-icon">{{activeFaq === item.id ? '-' : '+'}}</view>
+        </view>
+        <view wx:if="{{activeFaq === item.id}}" class="faq-answer">{{item.answer}}</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="如身体不适或记录持续偏离个人日常水平，请咨询医生或及时就医。" level="warn" />
+  </view>
+</view>

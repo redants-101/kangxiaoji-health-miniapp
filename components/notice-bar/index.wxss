@@ -1,0 +1,21 @@
+.notice {
+  border-radius: 20rpx;
+  border: 1rpx solid #c7ddf0;
+  background: #e8f2fb;
+  color: #1c4f7d;
+  padding: 24rpx;
+  font-size: 26rpx;
+  line-height: 1.55;
+}
+
+.notice.warn {
+  background: #fff4df;
+  border-color: #efd18b;
+  color: #9a5d00;
+}
+
+.notice.danger {
+  background: #fdebea;
+  border-color: #efc3bf;
+  color: #c8463a;
+}

@@ -1,0 +1,101 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载用药计划</view>
+    <view class="state-meta">请稍候，药品名称、提醒时间和开始日期会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">用药计划加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="med-edit-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="page-head">
+
+  </view>
+
+  <view class="form-panel">
+    <view class="field">
+      <label class="field-label">药品名称</label>
+      <input class="text-input {{errors.name ? 'input-error' : ''}}" value="{{form.name}}" placeholder="例如：二甲双胍" data-field="name" bindinput="handleInput" />
+      <view wx:if="{{errors.name}}" class="field-error">{{errors.name}}</view>
+    </view>
+    <view class="field">
+      <label class="field-label">剂量说明，可选</label>
+      <input class="text-input {{errors.dosage ? 'input-error' : ''}}" value="{{form.dosage}}" placeholder="例如：1片" data-field="dosage" bindinput="handleInput" />
+      <view wx:if="{{errors.dosage}}" class="field-error">{{errors.dosage}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">服药时间</view>
+      <picker mode="time" value="{{timePickerValue}}" bindchange="handleTimePicked" bindcancel="handleDatePickerCancel">
+        <view class="link-button picker-link" aria-label="添加服药提醒时间">添加时间</view>
+      </picker>
+    </view>
+    <view class="time-grid">
+      <view
+        wx:for="{{times}}"
+        wx:key="value"
+        class="time-pill {{item.enabled ? 'active' : ''}} {{item.isConfirmed ? 'is-confirmed' : ''}}"
+        hover-class="time-pill-hover"
+        hover-stay-time="150"
+        data-value="{{item.value}}"
+        bindtap="toggleTime"
+        bindlongpress="handleTimeLongPress"
+        role="button"
+        aria-label="{{item.enabled ? '取消' : '选择'}}{{item.value}}服药时间"
+      >
+        {{item.value}}
+        <view wx:if="{{item.isConfirmed}}" class="confirmed-badge">已确认</view>
+      </view>
+    </view>
+    <picker id="editTimePicker" mode="time" value="{{timePickerValue}}" bindchange="handleEditTimePicked" bindcancel="handleDatePickerCancel" hidden="{{editingTimeIndex < 0}}"></picker>
+    <view wx:if="{{errors.times}}" class="section-error">{{errors.times}}</view>
+    <view class="section-hint">长按自定义时间可修改</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">提醒设置</view>
+    <view class="setting-panel">
+      <view class="setting-row">
+        <view>
+          <view class="setting-title">微信提醒</view>
+          <view class="setting-meta">到点提醒确认是否已服药</view>
+        </view>
+        <switch checked="{{form.subscribe}}" color="#168957" bindchange="toggleSubscribe" />
+      </view>
+      <picker mode="date" value="{{startDateValue}}" bindchange="handleStartDateChange" bindcancel="handleDatePickerCancel">
+        <view class="setting-row">
+          <view>
+            <view class="setting-title">开始日期</view>
+            <view class="setting-meta">长期计划可后续停用</view>
+          </view>
+          <view class="setting-value">{{startDateLabel}}</view>
+        </view>
+      </picker>
+      <picker mode="date" value="{{endDateValue}}" start="{{startDateValue}}" bindchange="handleEndDateChange" bindcancel="handleDatePickerCancel">
+        <view class="setting-row">
+          <view>
+            <view class="setting-title">结束日期</view>
+            <view class="setting-meta">留空表示长期用药</view>
+          </view>
+          <view class="setting-value-group">
+            <view wx:if="{{endDateValue}}" class="setting-clear" catchtap="clearEndDate">清除</view>
+            <view class="setting-value">{{endDateLabel}}</view>
+          </view>
+        </view>
+      </picker>
+    </view>
+    <view wx:if="{{errors.endDate}}" class="section-error">{{errors.endDate}}</view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="用药信息由用户自行记录，请按医生或药师指导用药。" level="warn" />
+  </view>
+
+  <fixed-action text="保存计划" loading="{{pendingAction === 'save'}}" bindactiontap="savePlan" />
+</view>

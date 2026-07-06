@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "帮助中心",
+  "usingComponents": {
+    "notice-bar": "/components/notice-bar/index"
+  }
+}

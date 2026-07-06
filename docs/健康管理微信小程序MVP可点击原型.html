@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>健康管理微信小程序 MVP 可点击原型</title>
+  <style>
+    :root {
+      --bg: #eef3ef;
+      --surface: #fff;
+      --soft: #f6f8f6;
+      --line: #dfe7e1;
+      --text: #14201a;
+      --muted: #65756d;
+      --accent: #168957;
+      --accent-dark: #0e6f45;
+      --accent-soft: #e5f4ec;
+      --warn: #b36b00;
+      --warn-soft: #fff4df;
+      --danger: #c8463a;
+      --danger-soft: #fdebea;
+      --info-soft: #e8f2fb;
+      --radius: 8px;
+      --shadow: 0 18px 50px rgba(22, 42, 31, .14);
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    button, input, textarea { font: inherit; }
+    button { border: 0; cursor: pointer; }
+    svg { stroke: currentColor; }
+    .prototype-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px minmax(420px, 1fr) 330px;
+      gap: 24px;
+      padding: 24px;
+    }
+    .left-panel, .right-panel {
+      background: rgba(255,255,255,.86);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      align-self: start;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    .left-panel { padding: 18px; }
+    .right-panel { padding: 20px; }
+    .brand-block { padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+    .brand-title { margin: 0 0 8px; font-size: 22px; line-height: 1.25; font-weight: 850; }
+    .brand-subtitle { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .nav-group { margin: 16px 0; }
+    .nav-group-title { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 800; }
+    .nav-list { display: grid; gap: 6px; }
+    .nav-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 11px;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      transition: background .16s ease, transform .16s ease;
+    }
+    .nav-item:hover { background: var(--soft); transform: translateX(2px); }
+    .nav-item.is-active { background: var(--accent-soft); color: var(--accent-dark); font-weight: 800; }
+    .nav-dot { width: 8px; height: 8px; border-radius: 50%; background: #c7d3cc; flex: 0 0 auto; }
+    .nav-item.is-active .nav-dot { background: var(--accent); }
+    .stage { display: grid; place-items: center; min-width: 0; }
+    .phone-frame {
+      width: 390px;
+      height: 780px;
+      border-radius: 36px;
+      padding: 12px;
+      background: #16241d;
+      box-shadow: var(--shadow);
+      position: relative;
+      animation: phoneIn .42s ease both;
+    }
+    .phone-frame::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 9px;
+      width: 86px;
+      height: 5px;
+      border-radius: 999px;
+      background: #2d3c34;
+      transform: translateX(-50%);
+    }
+    .phone-screen {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+      border-radius: 28px;
+      background: #f8faf8;
+    }
+    .status-bar {
+      height: 30px;
+      padding: 9px 20px 0;
+      display: flex;
+      justify-content: space-between;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .mini-header {
+      height: 54px;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(223,231,225,.78);
+      background: rgba(248,250,248,.96);
+    }
+    .mini-header-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 850; }
+    .mini-header-actions { display: flex; gap: 8px; align-items: center; }
+    .screen-body { overflow: auto; padding: 16px; animation: pageIn .22s ease both; }
+    .screen-body.no-tab { padding-bottom: 22px; }
+    .tab-bar {
+      height: 68px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-top: 1px solid var(--line);
+      background: rgba(255,255,255,.97);
+    }
+    .tab-button {
+      min-width: 0;
+      display: grid;
+      place-items: center;
+      gap: 3px;
+      padding: 7px 0 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .tab-button svg { width: 21px; height: 21px; }
+    .tab-button.is-active { color: var(--accent); font-weight: 850; }
+    .icon-button {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+    .icon-button svg { width: 18px; height: 18px; }
+    .page-title { margin: 0; font-size: 24px; line-height: 1.22; font-weight: 850; }
+    .page-subtitle { margin: 8px 0 0; color: var(--muted); line-height: 1.55; font-size: 14px; }
+    .section { margin-top: 18px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .section-title { margin: 0; font-size: 16px; font-weight: 850; }
+    .section-link { padding: 4px; background: transparent; color: var(--accent); font-size: 13px; }
+    .panel, .soft-panel, .hero-panel {
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      padding: 14px;
+    }
+    .panel { background: var(--surface); }
+    .soft-panel { background: var(--soft); }
+    .hero-panel { background: #ecf7f0; border-color: #cbe5d6; padding: 18px; }
+    .big { margin: 8px 0 2px; font-size: 34px; line-height: 1; font-weight: 900; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .action-button, .secondary-button, .danger-button {
+      width: 100%;
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border-radius: var(--radius);
+      padding: 0 14px;
+      font-weight: 850;
+    }
+    .action-button { background: var(--accent); color: #fff; transition: transform .16s ease, background .16s ease; }
+    .action-button:hover { background: var(--accent-dark); transform: translateY(-1px); }
+    .secondary-button { background: var(--surface); color: var(--text); border: 1px solid #c7d3cc; }
+    .danger-button { background: var(--danger-soft); color: var(--danger); }
+    .quick-tile {
+      min-height: 80px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 7px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--text);
+      transition: transform .16s ease, border-color .16s ease;
+    }
+    .quick-tile:hover { transform: translateY(-2px); border-color: var(--accent); }
+    .quick-tile svg { width: 24px; height: 24px; color: var(--accent); }
+    .metric-row, .list-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+    }
+    .metric-row:last-child, .list-row:last-child { border-bottom: 0; }
+    .metric-label { margin-bottom: 4px; color: var(--muted); font-size: 13px; }
+    .metric-value { font-size: 25px; font-weight: 900; line-height: 1.05; }
+    .metric-unit { margin-left: 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
+    .row-title { margin-bottom: 4px; font-weight: 850; }
+    .row-meta { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pill {
+      border-radius: 999px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 13px;
+      padding: 7px 10px;
+      line-height: 1;
+    }
+    .pill.active { background: var(--accent-soft); border-color: #b4dec7; color: var(--accent-dark); font-weight: 850; }
+    .pill.warn { background: var(--warn-soft); color: var(--warn); border-color: #f1d59c; }
+    .input-block { margin-bottom: 15px; }
+    .input-label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 850; }
+    .big-input {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      border: 1px solid #c7d3cc;
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 10px 12px;
+    }
+    .big-input input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 34px;
+      line-height: 1.1;
+      font-weight: 900;
+    }
+    .big-input span { color: var(--muted); font-weight: 750; white-space: nowrap; }
+    .text-input, .text-area {
+      width: 100%;
+      border: 1px solid #c7d3cc;
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 13px 12px;
+      color: var(--text);
+      outline: 0;
+    }
+    .text-area { min-height: 90px; resize: none; }
+    .check-line { display: flex; align-items: flex-start; gap: 10px; color: var(--text); font-size: 14px; line-height: 1.5; }
+    .fake-checkbox {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      margin-top: 1px;
+      border-radius: 5px;
+      border: 2px solid var(--accent);
+      color: var(--accent);
+      font-weight: 900;
+    }
+    .role-card {
+      width: 100%;
+      padding: 16px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      text-align: left;
+      transition: border-color .16s ease, transform .16s ease;
+    }
+    .role-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .role-card strong { display: block; margin-bottom: 7px; font-size: 18px; }
+    .role-card span { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .chart {
+      height: 178px;
+      overflow: hidden;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 10px;
+    }
+    .chart svg { width: 100%; height: 100%; display: block; }
+    .notice {
+      border-radius: var(--radius);
+      border: 1px solid #c7ddf0;
+      background: var(--info-soft);
+      color: #1c4f7d;
+      padding: 12px;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+    .notice.warn { background: var(--warn-soft); color: var(--warn); border-color: #efd18b; }
+    .fixed-bottom {
+      position: sticky;
+      bottom: 0;
+      margin: 16px -16px -16px;
+      padding: 12px 16px 14px;
+      background: rgba(248,250,248,.96);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }
+    .inspector-title { margin: 0 0 4px; font-size: 18px; font-weight: 850; }
+    .inspector-id { margin-bottom: 16px; color: var(--accent); font-size: 13px; font-weight: 850; }
+    .inspector-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .inspector-section h3 { margin: 0 0 8px; font-size: 14px; }
+    .inspector-section p, .inspector-section li { color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .inspector-section ul { margin: 0; padding-left: 18px; }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%) translateY(20px);
+      border-radius: var(--radius);
+      background: #16241d;
+      color: #fff;
+      padding: 12px 16px;
+      font-size: 14px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .16s ease, transform .16s ease;
+      z-index: 20;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(7,18,12,.42);
+      padding: 24px;
+      z-index: 30;
+    }
+    .modal-backdrop.show { display: flex; animation: fadeIn .16s ease both; }
+    .modal {
+      width: min(360px, 100%);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      animation: modalIn .18s ease both;
+    }
+    .modal h2 { margin: 0 0 8px; font-size: 20px; }
+    .modal p { margin: 0 0 18px; color: var(--muted); line-height: 1.6; }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @keyframes phoneIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @media (max-width: 1100px) {
+      .prototype-shell { grid-template-columns: 220px minmax(400px, 1fr); }
+      .right-panel { display: none; }
+    }
+    @media (max-width: 760px) {
+      .prototype-shell { display: block; padding: 12px; }
+      .left-panel { max-height: none; margin-bottom: 14px; }
+      .nav-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stage { display: block; }
+      .phone-frame { width: min(390px, calc(100vw - 24px)); height: min(780px, calc(100vh - 40px)); margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="prototype-shell">
+    <aside class="left-panel">
+      <div class="brand-block">
+        <h1 class="brand-title">健康记录助手 MVP</h1>
+        <p class="brand-subtitle">微信小程序可点击原型。聚焦记录、提醒、家属协同、趋势和周报。</p>
+      </div>
+      <div id="sideNav"></div>
+    </aside>
+
+    <section class="stage" aria-label="手机原型预览">
+      <div class="phone-frame">
+        <div class="phone-screen" id="phoneScreen"></div>
+      </div>
+    </section>
+
+    <aside class="right-panel" id="inspector"></aside>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true"></div>
+
+  <script>
+    const icons = {
+      home: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10.5V20h11v-9.5"/><path d="M10 20v-5h4v5"/></svg>',
+      chart: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 19h16"/><path d="M6 16l4-5 3 3 5-7"/><path d="M18 7h-4"/></svg>',
+      users: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0"/><path d="M17 11a2.5 2.5 0 0 0 0-5"/><path d="M18 15c1.9.6 3.2 2.3 3.2 5"/></svg>',
+      user: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+      bell: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M18 9a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/></svg>',
+      plus: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+      check: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m5 13 4 4L19 7"/></svg>',
+      edit: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 20h4l11-11-4-4L4 16v4Z"/><path d="m13 7 4 4"/></svg>',
+      trash: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/></svg>',
+      clock: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M12 7v5l3 2"/></svg>',
+      shield: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3 5 6v5c0 4.6 2.9 8.6 7 10 4.1-1.4 7-5.4 7-10V6l-7-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>',
+      drop: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11Z"/></svg>',
+      med: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M10 21 3 14a4.2 4.2 0 0 1 6-6l7 7a4.2 4.2 0 0 1-6 6Z"/><path d="m8 10 6 6"/></svg>',
+      arrow: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>'
+    };
+
+    const navGroups = [
+      { title: '引导流程', items: [['P-PRIVACY','隐私确认'], ['P-ROLE','角色选择'], ['P-PROFILE','基础资料'], ['P-FAMILY-JOIN-HINT','等待邀请']] },
+      { title: '核心页面', items: [['P-HOME','首页-本人'], ['P-HOME-FAMILY','首页-家属'], ['P-RECORD-BP','记血压'], ['P-RECORD-BG','记血糖'], ['P-MED-LIST','用药计划'], ['P-MED-CONFIRM','服药确认'], ['P-TREND','趋势'], ['P-FAMILY','家庭-本人'], ['P-REPORT','周报'], ['P-REMINDER','提醒中心']] },
+      { title: '设置与授权', items: [['P-FAMILY-INVITE','邀请家属'], ['P-FAMILY-JOIN','家属加入'], ['P-FAMILY-AUTH','授权管理'], ['P-ME','我的'], ['P-REMINDER-SETTINGS','提醒设置'], ['P-PRIVACY-SETTINGS','隐私与授权'], ['P-DATA','数据管理'], ['P-HELP','帮助中心'], ['P-FEEDBACK','意见反馈']] }
+    ];
+
+    const tabItems = [
+      ['P-HOME', '首页', 'home', 'home'],
+      ['P-TREND', '趋势', 'chart', 'trend'],
+      ['P-FAMILY', '家庭', 'users', 'family'],
+      ['P-ME', '我的', 'user', 'me']
+    ];
+
+    const pageMeta = {
+      'P-PRIVACY': ['隐私确认', '首次进入时确认隐私指引，未授权前不采集健康数据。', ['开始使用前必须勾选同意。', '明确说明产品只做记录和提醒。']],
+      'P-ROLE': ['角色选择', '区分本人使用和家属使用，决定后续首页视角。', ['本人使用进入基础资料。', '家属使用进入等待邀请说明。']],
+      'P-PRIVACY-DETAIL': ['隐私详情', '说明会处理的健康记录、用药提醒、家庭授权和订阅消息状态。', ['正式上线需接入完整隐私指引。']],
+      'P-FAMILY-JOIN-HINT': ['等待家属邀请', '提示家属必须收到被照护人邀请后才能查看数据。', ['避免家属绕过授权查看数据。']],
+      'P-PROFILE': ['基础资料', '只采集称呼、可选出生年份和关注项。', ['不采集身份证、医保、手机号等非必要信息。']],
+      'P-HOME': ['首页-本人', '首屏完成今日待办、快速记录和最新数据查看。', ['核心入口：记血压、记血糖、用药。', '保存记录后首页最新数据即时刷新。']],
+      'P-HOME-FAMILY': ['首页-家属', '让家属远程查看授权数据和未确认事项。', ['家属端只读。', '固定展示家庭管理参考提示。']],
+      'P-RECORD-BP': ['血压录入', '30 秒内完成收缩压、舒张压、可选心率录入。', ['保存前校验收缩压大于舒张压。', '异常数值只提示复测和咨询医生。']],
+      'P-RECORD-BG': ['血糖录入', '快速记录血糖值并选择测量场景。', ['支持空腹、餐前、餐后、睡前、其他。']],
+      'P-RECORD-DETAIL': ['记录详情', '展示单条记录、保守提示和近 7 天小趋势。', ['家属端隐藏编辑删除。', '不展示诊断结论。']],
+      'P-RECORD-LIST': ['历史记录', '按血压/血糖查看历史记录并进入详情。', ['支持下拉刷新和加载更多的原型状态。']],
+      'P-MED-LIST': ['用药计划', '管理用药计划并查看今日服药确认。', ['药名和剂量均为用户自填。']],
+      'P-MED-EDIT': ['添加用药', '创建用药计划和提醒时间。', ['不提供药量推荐。', '保存后可引导订阅消息。']],
+      'P-MED-CONFIRM': ['服药确认', '完成已服、稍后、跳过三种确认状态。', ['跳过时不显示补服建议。']],
+      'P-TREND': ['趋势', '展示 7/30/90 天趋势和记录列表。', ['趋势页不显示诊断结论。']],
+      'P-FAMILY': ['家庭-本人', '邀请、查看、管理和解绑家属。', ['授权可撤销，解绑要二次确认。']],
+      'P-FAMILY-INVITE': ['邀请家属', '选择授权范围并分享 24 小时有效邀请。', ['至少选择一个授权范围。']],
+      'P-FAMILY-JOIN': ['家属加入确认', '家属确认授权范围后加入家庭。', ['邀请过期时提示重新邀请。']],
+      'P-FAMILY-AUTH': ['授权管理', '调整家属授权范围或解除授权。', ['保存和解除均写入授权日志。']],
+      'P-REPORT': ['健康记录周报', '展示上周记录次数、用药确认和需要关注的记录。', ['标题不得使用诊断报告。']],
+      'P-REMINDER': ['提醒中心', '在订阅消息失败时兜底展示待办。', ['提醒按今天、近 7 天、已完成分组。']],
+      'P-ME': ['我的', '承载提醒设置、隐私授权、数据管理、帮助反馈。', ['设置入口不打断核心记录流程。']],
+      'P-REMINDER-SETTINGS': ['提醒设置', '管理提醒类型和微信订阅状态。', ['关闭某类提醒后不再生成该类新提醒。']],
+      'P-PRIVACY-SETTINGS': ['隐私与授权', '查看隐私指引、授权记录和订阅消息状态。', ['家属授权管理跳转家庭页。']],
+      'P-DATA': ['数据管理', '提供健康记录删除和账号注销入口。', ['注销必须二次确认。']],
+      'P-HELP': ['帮助中心', '解释使用方法和医疗边界。', ['明确不能替代医生诊断和治疗。']],
+      'P-FEEDBACK': ['意见反馈', '收集问题并提示不要填写过多敏感信息。', ['不要求上传病历、身份证等信息。']]
+    };
+
+    function screen({ title, body, tab, noTab = false, left = '', right = '' }) {
+      return `
+        <div>
+          <div class="status-bar"><span>09:41</span><span>5G  88%</span></div>
+          <div class="mini-header">
+            <div class="mini-header-title">${left || ''}<span>${title}</span></div>
+            <div class="mini-header-actions">${right || ''}</div>
+          </div>
+        </div>
+        <div class="screen-body ${noTab ? 'no-tab' : ''}">${body}</div>
+        ${noTab ? '' : bottomTabs(tab)}
+      `;
+    }
+
+    function bottomTabs(active) {
+      return `<nav class="tab-bar" aria-label="底部导航">${tabItems.map(([route, label, iconName, key]) => `
+        <button class="tab-button ${active === key ? 'is-active' : ''}" data-route="${route}">${icons[iconName]}<span>${label}</span></button>
+      `).join('')}</nav>`;
+    }
+
+    const headerIcon = (iconName, route) => `<button class="icon-button" data-route="${route}">${icons[iconName]}</button>`;
+    const backButton = route => `<button class="icon-button" data-route="${route}" aria-label="返回">${icons.arrow}</button>`;
+    const quickTile = (iconName, label, route) => `<button class="quick-tile" data-route="${route}">${icons[iconName]}<strong>${label}</strong></button>`;
+    const settingsRow = (label, route) => `<button class="list-row" data-route="${route}"><div class="row-title">${label}</div>${icons.arrow}</button>`;
+    const helpRow = (title, text) => `<div class="list-row"><div><div class="row-title">${title}</div><div class="row-meta">${text}</div></div></div>`;
+    const recordRow = (time, value, tag, route) => `<button class="list-row" data-route="${route}"><div><div class="row-title">${value}</div><div class="row-meta">${time} · ${tag}</div></div>${icons.arrow}</button>`;
+    function metricRow(label, value, unit, meta, route) {
+      return `<button class="metric-row" data-route="${route}"><div><div class="metric-label">${label}</div><div class="metric-value">${value}<span class="metric-unit">${unit}</span></div><div class="row-meta">${meta}</div></div>${icons.arrow}</button>`;
+    }
+    function chartSvg() {
+      return `<div class="chart"><svg viewBox="0 0 320 160" fill="none" aria-label="趋势图">
+        <path d="M20 25v110h280" stroke="#d8e3dc" stroke-width="2"/><path d="M20 105h280M20 75h280M20 45h280" stroke="#e8eee9" stroke-width="1"/>
+        <path d="M28 102 C58 88 75 92 100 80 S150 68 175 76 218 100 248 82 282 62 300 66" stroke="#168957" stroke-width="4" stroke-linecap="round"/>
+        <g fill="#168957" stroke="#fff" stroke-width="3"><circle cx="28" cy="102" r="6"/><circle cx="100" cy="80" r="6"/><circle cx="175" cy="76" r="6"/><circle cx="248" cy="82" r="6"/><circle cx="300" cy="66" r="6"/></g>
+        <text x="24" y="150" fill="#65756d" font-size="11">4/11</text><text x="140" y="150" fill="#65756d" font-size="11">4/14</text><text x="270" y="150" fill="#65756d" font-size="11">4/17</text>
+      </svg></div>`;
+    }
+
+    const pages = {
+      'P-PRIVACY': () => screen({ title: '健康记录助手', noTab: true, body: `
+        <div class="hero-panel"><h2 class="page-title">记录、提醒、和家人一起查看趋势</h2><p class="page-subtitle">本工具用于日常健康记录和提醒，不提供诊断或治疗建议。</p></div>
+        <div class="section panel"><label class="check-line"><span class="fake-checkbox">✓</span><span>我已阅读并同意 <button class="section-link" data-route="P-PRIVACY-DETAIL">《用户隐私保护指引》</button></span></label><div class="notice warn" style="margin-top:14px;">未确认前不会采集健康记录。</div></div>
+        <div class="fixed-bottom"><button class="action-button" data-route="P-ROLE">${icons.check}开始使用</button></div>` }),
+      'P-PRIVACY-DETAIL': () => screen({ title: '隐私详情', noTab: true, left: backButton('P-PRIVACY'), body: `
+        <h2 class="page-title">用户隐私保护指引</h2><p class="page-subtitle">以下是原型摘要，正式上线需接入完整隐私指引。</p>
+        <div class="section panel">
+          <div class="list-row"><div><div class="row-title">会处理的信息</div><div class="row-meta">健康记录、用药提醒、家庭授权关系、订阅消息状态。</div></div></div>
+          <div class="list-row"><div><div class="row-title">使用目的</div><div class="row-meta">用于记录、提醒、趋势展示、周报和家属共享。</div></div></div>
+          <div class="list-row"><div><div class="row-title">用户权利</div><div class="row-meta">可删除记录、撤销家属授权或注销账号。</div></div></div>
+        </div><div class="fixed-bottom"><button class="action-button" data-route="P-PRIVACY">返回确认</button></div>` }),
+      'P-ROLE': () => screen({ title: '角色选择', noTab: true, body: `
+        <h2 class="page-title">你想如何使用？</h2><p class="page-subtitle">选择后会进入不同的首页视角。</p>
+        <div class="section" style="display:grid;gap:12px;"><button class="role-card" data-route="P-PROFILE"><strong>本人使用</strong><span>记录自己的血压、血糖和用药提醒。</span></button><button class="role-card" data-route="P-FAMILY-JOIN-HINT"><strong>帮家人管理</strong><span>查看家人授权后的记录、提醒和周报。</span></button></div>` }),
+      'P-FAMILY-JOIN-HINT': () => screen({ title: '等待邀请', noTab: true, left: backButton('P-ROLE'), body: `
+        <div class="hero-panel"><h2 class="page-title">需要家人先邀请你</h2><p class="page-subtitle">请让家人在小程序“家庭”页面邀请你加入。加入后，你只能查看对方授权给你的内容。</p></div>
+        <div class="section grid-2"><button class="secondary-button" data-toast="请通过微信聊天中的邀请链接打开">我已收到邀请</button><button class="action-button" data-route="P-HOME-FAMILY">查看家属首页</button></div>` }),
+      'P-PROFILE': () => screen({ title: '基础资料', noTab: true, left: backButton('P-ROLE'), body: `
+        <h2 class="page-title">只填写必要信息</h2><p class="page-subtitle">不会要求身份证、医保或病历信息。</p>
+        <div class="section"><label class="input-block"><span class="input-label">称呼</span><input class="text-input" value="妈妈"></label><label class="input-block"><span class="input-label">出生年份，可选</span><input class="text-input" value="1965" inputmode="numeric"></label><div class="input-block"><div class="input-label">主要关注</div><div class="pill-row"><span class="pill active">血压</span><span class="pill active">血糖</span><span class="pill active">用药</span></div></div></div>
+        <div class="fixed-bottom"><button class="action-button" data-route="P-HOME">完成</button></div>` }),
+      'P-HOME': () => screen({ title: '今天', tab: 'home', right: headerIcon('bell', 'P-REMINDER'), body: `
+        <p class="page-subtitle">4月17日，妈妈</p>
+        <div class="section hero-panel"><div class="metric-label">今日待办</div><div class="list-row"><div><div class="row-title">08:00 服药待确认</div><div class="row-meta">二甲双胍 1片</div></div><button class="secondary-button" style="width:auto;min-height:38px;" data-route="P-MED-CONFIRM">去确认</button></div><div class="list-row"><div><div class="row-title">今晚建议记录血压</div><div class="row-meta">形成连续趋势后更好查看</div></div><button class="secondary-button" style="width:auto;min-height:38px;" data-route="P-RECORD-BP">去记录</button></div></div>
+        <div class="section"><div class="section-head"><h2 class="section-title">快速记录</h2></div><div class="grid-3">${quickTile('drop','记血压','P-RECORD-BP')}${quickTile('chart','记血糖','P-RECORD-BG')}${quickTile('med','用药','P-MED-LIST')}</div></div>
+        <div class="section panel"><div class="section-head"><h2 class="section-title">最新记录</h2><button class="section-link" data-route="P-RECORD-LIST">全部</button></div>${metricRow('血压','128/82','mmHg','今天 07:30 · 晨起','P-RECORD-DETAIL')}${metricRow('血糖','6.1','mmol/L','昨天 21:10 · 睡前','P-RECORD-DETAIL')}</div>
+        <div class="section soft-panel"><div class="row-title">本周概览</div><div class="pill-row" style="margin-top:10px;"><span class="pill active">已记录 4 天</span><span class="pill active">已服药 85%</span></div></div>` }),
+      'P-HOME-FAMILY': () => screen({ title: '家人健康', tab: 'home', right: headerIcon('bell','P-REMINDER'), body: `
+        <div class="section-head"><div><h2 class="page-title">当前查看：妈妈</h2><p class="page-subtitle">已授权：记录、用药、周报</p></div><button class="section-link" data-toast="原型中仅展示一个家人">切换</button></div>
+        <div class="section notice warn">有 1 项用药未确认，点击可查看详情。</div>
+        <div class="section panel"><div class="section-head"><h2 class="section-title">最新记录</h2></div>${metricRow('血压','128/82','mmHg','今天 07:30 · 晨起','P-RECORD-DETAIL')}${metricRow('血糖','6.1','mmol/L','昨天 21:10 · 睡前','P-RECORD-DETAIL')}</div>
+        <div class="section grid-3">${quickTile('chart','趋势','P-TREND')}${quickTile('med','用药','P-MED-LIST')}${quickTile('shield','周报','P-REPORT')}</div><div class="section notice">数据来自用户自行记录，仅供家庭管理参考。</div>` }),
+      'P-RECORD-BP': () => screen({ title: '记血压', noTab: true, left: backButton('P-HOME'), body: `
+        <label class="input-block"><span class="input-label">收缩压</span><div class="big-input"><input value="128" inputmode="numeric"><span>mmHg</span></div></label><label class="input-block"><span class="input-label">舒张压</span><div class="big-input"><input value="82" inputmode="numeric"><span>mmHg</span></div></label><label class="input-block"><span class="input-label">心率，可选</span><div class="big-input"><input value="72" inputmode="numeric"><span>次/分</span></div></label>
+        <div class="input-block"><div class="input-label">测量时间</div><button class="secondary-button" data-toast="原型中时间选择器以提示代替">今天 07:30</button></div><div class="input-block"><div class="input-label">场景标签</div><div class="pill-row"><span class="pill active">晨起</span><span class="pill">睡前</span><span class="pill">运动后</span></div></div><label class="input-block"><span class="input-label">备注，可不填</span><input class="text-input" placeholder="例如：饭后休息 10 分钟"></label>
+        <div class="fixed-bottom"><button class="action-button" data-route="P-RECORD-DETAIL">${icons.check}保存</button></div>` }),
+      'P-RECORD-BG': () => screen({ title: '记血糖', noTab: true, left: backButton('P-HOME'), body: `
+        <label class="input-block"><span class="input-label">血糖值</span><div class="big-input"><input value="6.1" inputmode="decimal"><span>mmol/L</span></div></label><div class="input-block"><div class="input-label">测量场景</div><div class="pill-row"><span class="pill">空腹</span><span class="pill">餐前</span><span class="pill active">餐后</span><span class="pill">睡前</span><span class="pill">其他</span></div></div><div class="input-block"><div class="input-label">测量时间</div><button class="secondary-button" data-toast="原型中时间选择器以提示代替">今天 19:30</button></div><label class="input-block"><span class="input-label">备注，可不填</span><input class="text-input" placeholder="例如：晚餐后两小时"></label>
+        <div class="fixed-bottom"><button class="action-button" data-route="P-RECORD-DETAIL">${icons.check}保存</button></div>` }),
+      'P-RECORD-DETAIL': () => screen({ title: '记录详情', noTab: true, left: backButton('P-HOME'), right: `<button class="icon-button" data-toast="家属端隐藏编辑入口，本人端可编辑">${icons.edit}</button>`, body: `
+        <div class="hero-panel"><div class="metric-label">血压</div><div class="big">128 / 82</div><div class="row-meta">mmHg · 心率 72 次/分 · 今天 07:30 · 晨起</div></div><div class="section notice">本次记录在常见范围内，建议继续保持记录。</div>
+        <div class="section"><div class="section-head"><h2 class="section-title">近 7 天</h2><button class="section-link" data-route="P-TREND">看趋势</button></div>${chartSvg()}</div><div class="section notice">本内容仅基于你记录的数据做提醒，不构成诊断或治疗建议；如持续异常或身体不适，请咨询医生或及时就医。</div>
+        <div class="section grid-2"><button class="secondary-button" data-route="P-RECORD-BP">再记一次</button><button class="danger-button" data-modal="delete">删除</button></div>` }),
+      'P-RECORD-LIST': () => screen({ title: '历史记录', noTab: true, left: backButton('P-TREND'), body: `
+        <div class="pill-row"><span class="pill active">血压</span><span class="pill">血糖</span></div><div class="section panel">${recordRow('今天 07:30','血压 128/82','晨起','P-RECORD-DETAIL')}${recordRow('4月16日 21:10','血压 135/86','睡前','P-RECORD-DETAIL')}${recordRow('4月15日 07:20','血压 132/84','晨起','P-RECORD-DETAIL')}</div><button class="secondary-button" data-toast="已加载全部演示数据">加载更多</button>` }),
+      'P-MED-LIST': () => screen({ title: '用药提醒', noTab: true, left: backButton('P-HOME'), right: headerIcon('plus','P-MED-EDIT'), body: `
+        <div class="section panel"><div class="section-head"><h2 class="section-title">今日待确认</h2></div><div class="list-row"><div><div class="row-title">08:00 二甲双胍</div><div class="row-meta">1片 · 待确认</div></div><button class="secondary-button" style="width:auto;min-height:38px;" data-route="P-MED-CONFIRM">确认</button></div><div class="list-row"><div><div class="row-title">20:00 降压药</div><div class="row-meta">1片 · 待到点</div></div><span class="pill">待到点</span></div></div>
+        <div class="section panel"><div class="section-head"><h2 class="section-title">用药计划</h2></div><div class="list-row"><div><div class="row-title">二甲双胍</div><div class="row-meta">每天 08:00, 20:00</div></div><button class="section-link" data-route="P-MED-EDIT">编辑</button></div><div class="list-row"><div><div class="row-title">降压药</div><div class="row-meta">每天 20:00</div></div><button class="section-link" data-route="P-MED-EDIT">编辑</button></div></div>
+        <div class="section notice">用药信息由用户自行记录，请按医生或药师指导用药。</div>` }),
+      'P-MED-EDIT': () => screen({ title: '添加用药', noTab: true, left: backButton('P-MED-LIST'), body: `
+        <label class="input-block"><span class="input-label">药品名称</span><input class="text-input" value="二甲双胍"></label><label class="input-block"><span class="input-label">剂量说明，可选</span><input class="text-input" value="1片"></label>
+        <div class="input-block"><div class="input-label">服药时间</div><div class="pill-row"><span class="pill active">08:00</span><span class="pill active">20:00</span><button class="pill" data-toast="原型中时间选择器以提示代替">+ 添加</button></div></div>
+        <div class="grid-2"><button class="secondary-button" data-toast="开始日期：今天">开始日期：今天</button><button class="secondary-button" data-toast="结束日期：长期">结束日期：长期</button></div>
+        <div class="fixed-bottom"><button class="action-button" data-modal="subscribe">保存</button></div>` }),
+      'P-MED-CONFIRM': () => screen({ title: '服药确认', noTab: true, left: backButton('P-HOME'), body: `
+        <div class="hero-panel"><div class="metric-label">08:00</div><div class="big" style="font-size:30px;">二甲双胍</div><div class="row-meta">1片</div></div>
+        <div class="section" style="display:grid;gap:10px;"><button class="action-button" data-toast="已记录为已服">${icons.check}已服</button><button class="secondary-button" data-toast="已设置 15 分钟后稍后提醒">${icons.clock}稍后提醒</button><button class="danger-button" data-modal="skip">跳过</button></div>
+        <div class="section notice">用药信息由用户自行记录，请按医生或药师指导用药。</div>` }),
+      'P-TREND': () => screen({ title: '趋势', tab: 'trend', body: `
+        <div class="pill-row"><span class="pill active">血压</span><span class="pill">血糖</span><span class="pill">服药</span></div><div class="pill-row" style="margin-top:10px;"><span class="pill active">7天</span><span class="pill">30天</span><span class="pill">90天</span></div>
+        <div class="section">${chartSvg()}</div><div class="section panel"><div class="section-head"><h2 class="section-title">记录列表</h2><button class="section-link" data-route="P-RECORD-LIST">全部</button></div>${recordRow('今天 07:30','128/82 mmHg','晨起','P-RECORD-DETAIL')}${recordRow('4月16日 21:10','135/86 mmHg','睡前','P-RECORD-DETAIL')}</div>
+        <div class="section notice">本内容仅基于你记录的数据做提醒，不构成诊断或治疗建议。</div>` }),
+      'P-FAMILY': () => screen({ title: '家庭', tab: 'family', body: `
+        <div class="panel"><div class="section-head"><h2 class="section-title">家属成员</h2><button class="section-link" data-route="P-FAMILY-INVITE">邀请</button></div><div class="list-row"><div><div class="row-title">女儿</div><div class="row-meta">可看：记录、用药、周报</div></div><button class="section-link" data-route="P-FAMILY-AUTH">管理</button></div><div class="list-row"><div><div class="row-title">儿子</div><div class="row-meta">可看：记录、周报</div></div><button class="section-link" data-route="P-FAMILY-AUTH">管理</button></div></div>
+        <div class="section notice">你可以随时取消家属授权。</div><div class="section"><button class="action-button" data-route="P-FAMILY-INVITE">${icons.plus}邀请家属</button></div>` }),
+      'P-FAMILY-INVITE': () => screen({ title: '邀请家属', noTab: true, left: backButton('P-FAMILY'), body: `
+        <h2 class="page-title">家属可以查看</h2><div class="section panel"><label class="check-line"><span class="fake-checkbox">✓</span><span>血压血糖记录</span></label><label class="check-line" style="margin-top:12px;"><span class="fake-checkbox">✓</span><span>用药确认</span></label><label class="check-line" style="margin-top:12px;"><span class="fake-checkbox">✓</span><span>健康记录周报</span></label><label class="check-line" style="margin-top:12px;"><span class="fake-checkbox">✓</span><span>未确认提醒</span></label></div>
+        <div class="section notice">邀请链接 24 小时内有效。</div><div class="fixed-bottom"><button class="action-button" data-toast="已模拟调用微信分享">${icons.users}分享给家属</button></div>` }),
+      'P-FAMILY-JOIN': () => screen({ title: '加入家庭', noTab: true, body: `
+        <div class="hero-panel"><h2 class="page-title">妈妈邀请你查看健康记录</h2><p class="page-subtitle">加入后，你将看到对方授权给你的内容。</p></div>
+        <div class="section panel"><div class="list-row"><div class="row-title">血压血糖记录</div><span class="pill active">可看</span></div><div class="list-row"><div class="row-title">用药确认</div><span class="pill active">可看</span></div><div class="list-row"><div class="row-title">健康记录周报</div><span class="pill active">可看</span></div></div>
+        <div class="section notice">数据来自用户自行记录，仅供家庭管理参考。</div><div class="fixed-bottom"><button class="action-button" data-route="P-HOME-FAMILY">加入</button></div>` }),
+      'P-FAMILY-AUTH': () => screen({ title: '授权管理', noTab: true, left: backButton('P-FAMILY'), body: `
+        <h2 class="page-title">家属：女儿</h2><div class="section panel"><label class="check-line"><span class="fake-checkbox">✓</span><span>血压血糖记录</span></label><label class="check-line" style="margin-top:12px;"><span class="fake-checkbox">✓</span><span>用药确认</span></label><label class="check-line" style="margin-top:12px;"><span class="fake-checkbox">✓</span><span>健康记录周报</span></label><label class="check-line" style="margin-top:12px;"><span class="fake-checkbox"></span><span>未确认提醒</span></label></div>
+        <div class="section grid-2"><button class="action-button" data-toast="授权范围已保存">保存修改</button><button class="danger-button" data-modal="revoke">解除授权</button></div>` }),
+      'P-REPORT': () => screen({ title: '健康记录周报', noTab: true, left: backButton('P-TREND'), body: `
+        <p class="page-subtitle">4月6日 - 4月12日</p><div class="section hero-panel"><div class="metric-label">用药确认</div><div class="big">18 / 21</div><div class="row-meta">本周已确认 18 次</div></div>
+        <div class="section panel"><div class="list-row"><div><div class="row-title">血压记录</div><div class="row-meta">5 次</div></div><span class="pill active">持续记录</span></div><div class="list-row"><div><div class="row-title">血糖记录</div><div class="row-meta">3 次</div></div><span class="pill">记录较少</span></div><div class="list-row"><div><div class="row-title">需要关注</div><div class="row-meta">有 2 次记录偏高，建议复测并在就医时给医生查看。</div></div></div></div>
+        <div class="section notice">本内容仅基于你记录的数据做提醒，不构成诊断或治疗建议。</div><div class="section"><button class="secondary-button" data-route="P-RECORD-LIST">查看详细记录</button></div>` }),
+      'P-REMINDER': () => screen({ title: '提醒中心', noTab: true, left: backButton('P-HOME'), body: `
+        <div class="pill-row"><span class="pill active">今天</span><span class="pill">近7天</span><span class="pill">已完成</span></div><div class="section panel"><div class="list-row"><div><div class="row-title">08:00 用药待确认</div><div class="row-meta">二甲双胍 1片</div></div><button class="section-link" data-route="P-MED-CONFIRM">去确认</button></div><div class="list-row"><div><div class="row-title">21:00 建议记录血压</div><div class="row-meta">今晚还没有记录</div></div><button class="section-link" data-route="P-RECORD-BP">去记录</button></div><div class="list-row"><div><div class="row-title">周报已生成</div><div class="row-meta">4月6日 - 4月12日</div></div><button class="section-link" data-route="P-REPORT">查看</button></div></div><div class="section notice">未开启微信提醒时，你仍可在这里查看待办。</div>` }),
+      'P-ME': () => screen({ title: '我的', tab: 'me', body: `
+        <div class="hero-panel"><div class="metric-label">昵称/称呼</div><div class="big" style="font-size:30px;">妈妈</div><div class="row-meta">角色：本人使用</div></div><div class="section panel">${settingsRow('提醒设置','P-REMINDER-SETTINGS')}${settingsRow('隐私与授权','P-PRIVACY-SETTINGS')}${settingsRow('数据管理','P-DATA')}${settingsRow('帮助中心','P-HELP')}${settingsRow('意见反馈','P-FEEDBACK')}</div><div class="section notice">本工具用于记录和提醒，不能替代医生诊断和治疗。</div>` }),
+      'P-REMINDER-SETTINGS': () => screen({ title: '提醒设置', noTab: true, left: backButton('P-ME'), body: `
+        <div class="section panel"><div class="list-row"><div class="row-title">用药提醒</div><span class="pill active">开</span></div><div class="list-row"><div class="row-title">测量提醒</div><span class="pill active">开</span></div><div class="list-row"><div class="row-title">周报提醒</div><span class="pill active">开</span></div></div><div class="section soft-panel"><div class="row-title">微信提醒</div><div class="row-meta">当前状态：未全部开启</div><button class="action-button" style="margin-top:12px;" data-modal="subscribe">去开启</button></div>` }),
+      'P-PRIVACY-SETTINGS': () => screen({ title: '隐私与授权', noTab: true, left: backButton('P-ME'), body: `
+        <div class="section panel">${settingsRow('用户隐私保护指引','P-PRIVACY-DETAIL')}${settingsRow('家属授权管理','P-FAMILY')}${settingsRow('订阅消息授权状态','P-REMINDER-SETTINGS')}</div><div class="section panel"><div class="section-head"><h2 class="section-title">最近授权记录</h2></div><div class="list-row"><div><div class="row-title">4月17日</div><div class="row-meta">女儿加入家庭</div></div></div><div class="list-row"><div><div class="row-title">4月16日</div><div class="row-meta">同意隐私指引</div></div></div></div>` }),
+      'P-DATA': () => screen({ title: '数据管理', noTab: true, left: backButton('P-ME'), body: `
+        <div class="section panel">${settingsRow('删除健康记录','P-RECORD-LIST')}<div class="list-row"><div><div class="row-title">导出记录</div><div class="row-meta">MVP 暂不开放</div></div><span class="pill">后续</span></div></div><button class="section danger-button" data-modal="logout">注销账号</button><div class="section notice warn">注销后将清理个人资料、健康记录、用药计划、家庭关系和授权日志，或按法律要求做不可恢复匿名化。</div>` }),
+      'P-HELP': () => screen({ title: '帮助中心', noTab: true, left: backButton('P-ME'), body: `
+        <div class="section panel">${helpRow('如何记录血压？','在首页点击“记血压”，输入收缩压、舒张压后保存。')}${helpRow('为什么微信提醒没有出现？','订阅消息需要用户授权，未开启时仍可在提醒中心查看待办。')}${helpRow('本工具能不能替代医生？','不能。本工具只用于记录和提醒，不提供诊断或治疗建议。')}</div>` }),
+      'P-FEEDBACK': () => screen({ title: '意见反馈', noTab: true, left: backButton('P-ME'), body: `
+        <div class="input-block"><div class="input-label">问题类型</div><div class="pill-row"><span class="pill active">使用问题</span><span class="pill">提醒问题</span><span class="pill">其他</span></div></div><label class="input-block"><span class="input-label">问题描述</span><textarea class="text-area" placeholder="请输入，不要填写病历或身份证"></textarea></label><label class="input-block"><span class="input-label">联系方式，可选</span><input class="text-input" placeholder="手机号或微信号"></label><div class="fixed-bottom"><button class="action-button" data-toast="反馈已提交">提交</button></div>` })
+    };
+
+    const modals = {
+      subscribe: ['开启微信提醒？', '开启后，微信会在用药或周报时间提醒你。未开启时，你仍可在提醒中心查看待办。', '暂不开启', '去开启'],
+      skip: ['确认跳过本次记录？', '本工具不会判断是否需要补服，请按医生或药师指导用药。', '取消', '确认跳过'],
+      delete: ['删除这条记录？', '删除后，这条记录将不再出现在趋势和周报中。', '取消', '删除'],
+      revoke: ['确认解除授权？', '解除后，该家属将不能继续查看你的新记录。', '取消', '解除'],
+      logout: ['确认注销账号？', '注销后，你的个人资料、健康记录、用药计划和家庭关系将被清理或匿名化。', '取消', '确认注销']
+    };
+
+    let currentPage = 'P-HOME';
+    const phoneScreen = document.getElementById('phoneScreen');
+    const sideNav = document.getElementById('sideNav');
+    const inspector = document.getElementById('inspector');
+    const toast = document.getElementById('toast');
+    const modalBackdrop = document.getElementById('modalBackdrop');
+
+    function renderNav() {
+      sideNav.innerHTML = navGroups.map(group => `<div class="nav-group"><h2 class="nav-group-title">${group.title}</h2><div class="nav-list">${group.items.map(([id,label]) => `<button class="nav-item ${id === currentPage ? 'is-active' : ''}" data-route="${id}"><span class="nav-dot"></span><span>${label}</span></button>`).join('')}</div></div>`).join('');
+    }
+
+    function renderInspector() {
+      const meta = pageMeta[currentPage] || [currentPage, '', []];
+      inspector.innerHTML = `<h2 class="inspector-title">${meta[0]}</h2><div class="inspector-id">${currentPage}</div><div class="inspector-section"><h3>页面目标</h3><p>${meta[1]}</p></div><div class="inspector-section"><h3>交互要点</h3><ul>${meta[2].map(note => `<li>${note}</li>`).join('')}</ul></div><div class="inspector-section"><h3>预览说明</h3><p>点击手机内按钮、底部 Tab 或左侧页面列表即可切换页面。弹窗和 Toast 均为本地模拟。</p></div>`;
+    }
+
+    function render(pageId) {
+      currentPage = pages[pageId] ? pageId : 'P-HOME';
+      phoneScreen.innerHTML = pages[currentPage]();
+      renderNav();
+      renderInspector();
+    }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    function showModal(type) {
+      const data = modals[type];
+      if (!data) return;
+      const danger = ['delete', 'revoke', 'logout'].includes(type);
+      modalBackdrop.innerHTML = `<div class="modal"><h2>${data[0]}</h2><p>${data[1]}</p><div class="modal-actions"><button class="secondary-button" data-close-modal>${data[2]}</button><button class="${danger ? 'danger-button' : 'action-button'}" data-close-modal data-toast="${data[3] === '去开启' ? '已模拟打开订阅授权' : '操作已记录'}">${data[3]}</button></div></div>`;
+      modalBackdrop.classList.add('show');
+    }
+
+    document.body.addEventListener('click', event => {
+      const routeEl = event.target.closest('[data-route]');
+      const modalEl = event.target.closest('[data-modal]');
+      const closeEl = event.target.closest('[data-close-modal]');
+      const toastEl = event.target.closest('[data-toast]');
+      if (routeEl) { render(routeEl.dataset.route); return; }
+      if (modalEl) { showModal(modalEl.dataset.modal); return; }
+      if (closeEl) {
+        const message = closeEl.dataset.toast;
+        modalBackdrop.classList.remove('show');
+        if (message) showToast(message);
+        return;
+      }
+      if (toastEl) showToast(toastEl.dataset.toast);
+    });
+
+    modalBackdrop.addEventListener('click', event => {
+      if (event.target === modalBackdrop) modalBackdrop.classList.remove('show');
+    });
+
+    render(currentPage);
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载待确认用药</view>
+    <view class="state-meta">请稍候，当前药品和剂量信息会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">待确认用药加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:elif="{{!medication}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">暂无待确认用药</view>
+    <view class="state-meta">当前没有需要确认的服药提醒，请先添加用药计划。</view>
+    <button class="state-button" bindtap="navigateBack">返回</button>
+  </view>
+</view>
+<view wx:else class="confirm-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="title">服药确认</view>
+  <view class="subtitle">请根据实际情况记录本次服药状态。</view>
+
+  <view class="med-panel">
+    <view wx:if="{{medication.planName}}" class="plan-label">{{medication.planName}}</view>
+    <view class="time">{{medication.time}}</view>
+    <view class="drug-name">{{medication.name}}</view>
+    <view class="dosage">{{medication.dosage}}</view>
+  </view>
+
+  <view class="action-stack">
+    <button class="primary-button {{pendingAction ? 'is-disabled' : ''}} {{pendingAction === 'taken' ? 'is-loading' : ''}}" disabled="{{!!pendingAction}}" loading="{{pendingAction === 'taken'}}" bindtap="markTaken">已服</button>
+    <button class="secondary-button {{pendingAction ? 'is-disabled' : ''}} {{pendingAction === 'snooze' ? 'is-loading' : ''}}" disabled="{{!!pendingAction}}" loading="{{pendingAction === 'snooze'}}" bindtap="snooze">稍后提醒</button>
+    <button class="danger-button {{pendingAction ? 'is-disabled' : ''}} {{pendingAction === 'skip' ? 'is-loading' : ''}}" disabled="{{!!pendingAction}}" loading="{{pendingAction === 'skip'}}" bindtap="skip">跳过</button>
+  </view>
+
+  <view class="section">
+    <notice-bar text="用药信息由用户自行记录，请按医生或药师指导用药。" />
+  </view>
+
+  <view wx:if="{{lastAction}}" class="section">
+    <notice-bar level="{{lastActionLevel}}" text="{{lastAction}}" />
+  </view>
+</view>

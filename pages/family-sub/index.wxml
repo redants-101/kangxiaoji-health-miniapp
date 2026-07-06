@@ -1,0 +1,41 @@
+<view class="entry-page">
+  <view class="entry-header">
+    <view class="entry-title">家庭管理</view>
+    <view class="entry-subtitle">管理家庭成员和健康共享</view>
+  </view>
+
+  <view class="entry-cards">
+    <view class="entry-card" bindtap="goToFamilyInvite">
+      <view class="card-icon invite-icon">
+        <view class="icon-text">IN</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">邀请成员</view>
+        <view class="card-desc">邀请家人加入家庭健康共享</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToFamilyJoin">
+      <view class="card-icon join-icon">
+        <view class="icon-text">JN</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">加入家庭</view>
+        <view class="card-desc">通过邀请码加入已有家庭</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+
+    <view class="entry-card" bindtap="goToFamilyAuth">
+      <view class="card-icon auth-icon">
+        <view class="icon-text">AU</view>
+      </view>
+      <view class="card-content">
+        <view class="card-title">授权管理</view>
+        <view class="card-desc">设置家庭成员查看权限</view>
+      </view>
+      <view class="card-arrow">›</view>
+    </view>
+  </view>
+</view>

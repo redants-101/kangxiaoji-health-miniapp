@@ -1,0 +1,86 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载个人中心</view>
+    <view class="state-meta">个人资料、统计数据和常用设置会在加载后展示。</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">个人中心加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="reloadPage">重新加载</button>
+  </view>
+</view>
+<view wx:else class="me-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="profile-panel">
+    <view class="profile-row">
+      <view class="avatar">妈</view>
+      <view class="profile-main">
+        <view class="profile-name">{{profile.name}}</view>
+        <view class="profile-role">{{profile.role}}</view>
+      </view>
+      <button class="edit-button" bindtap="goProfile" aria-label="编辑个人资料">编辑</button>
+    </view>
+    <view class="profile-desc">{{profile.desc}}</view>
+    <view class="tag-row">
+      <view wx:for="{{profile.tags}}" wx:key="*this" class="tag">{{item}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="stats-grid">
+      <view wx:for="{{stats}}" wx:key="label" class="stat-card">
+        <view class="stat-value">{{item.value}}</view>
+        <view class="stat-label">{{item.label}}</view>
+      </view>
+    </view>
+  </view>
+
+  <block wx:for="{{settingGroups}}" wx:for-item="group" wx:key="title">
+    <view class="section">
+      <view class="section-title">{{group.title}}</view>
+      <view class="setting-panel">
+        <button
+          wx:for="{{group.items}}"
+          wx:for-item="setting"
+          wx:key="label"
+          class="setting-row {{setting.danger ? 'danger' : ''}}"
+          data-route="{{setting.route}}"
+          data-modal="{{setting.modal}}"
+          data-toast="{{setting.toast}}"
+          bindtap="handleSettingTap"
+          aria-label="{{setting.label}}，{{setting.meta}}"
+        >
+          <view class="setting-leading">
+            <image wx:if="{{setting.iconSrc}}" class="setting-icon" src="{{setting.iconSrc}}" mode="aspectFit" />
+            <view class="setting-main">
+              <view class="setting-title">{{setting.label}}</view>
+              <view class="setting-meta">{{setting.meta}}</view>
+            </view>
+          </view>
+          <view class="chevron">{{setting.danger ? '' : '›'}}</view>
+        </button>
+      </view>
+    </view>
+  </block>
+
+  <view class="section">
+    <view class="section-title">数据维护</view>
+    <view class="setting-panel">
+      <button class="setting-row" data-action="rebuildStats" bindtap="handleSettingTap" aria-label="重建统计数据">
+        <view class="setting-leading">
+          <image class="setting-icon" src="/assets/icons/icon-data.png" mode="aspectFit" />
+          <view class="setting-main">
+            <view class="setting-title">重建统计数据</view>
+            <view class="setting-meta">重新从原始记录计算汇总统计</view>
+          </view>
+        </view>
+        <view class="chevron">›</view>
+      </button>
+    </view>
+  </view>
+
+  <view class="section">
+    <notice-bar text="康小记用于家庭健康记录、提醒和趋势回顾，不提供诊断、治疗、处方或急救判断。" level="warn" />
+  </view>
+</view>

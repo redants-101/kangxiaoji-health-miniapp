@@ -1,0 +1,139 @@
+<view wx:if="{{isLoading}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">正在加载</view>
+    <view class="state-meta">页面加载中...</view>
+  </view>
+</view>
+<view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">加载失败</view>
+    <view class="state-meta">{{loadError}}</view>
+    <button class="state-button" bindtap="handleReload">重新加载</button>
+  </view>
+</view>
+<view wx:else class="record-bp-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view class="form-section">
+    <view class="form-title">血压记录</view>
+    
+    <!-- 血压输入 -->
+    <view class="form-group">
+      <view class="form-label">收缩压（高压）/ 舒张压（低压）</view>
+      <view class="bp-input-row">
+        <input
+          class="bp-input {{errors.systolic ? 'input-error' : ''}}"
+          type="number"
+          placeholder="高压"
+          value="{{form.systolic}}"
+          data-field="systolic"
+          bindinput="handleFormChange"
+          aria-label="收缩压（高压）输入框"
+        />
+        <view class="bp-separator">/</view>
+        <input
+          class="bp-input {{errors.diastolic ? 'input-error' : ''}}"
+          type="number"
+          placeholder="低压"
+          value="{{form.diastolic}}"
+          data-field="diastolic"
+          bindinput="handleFormChange"
+          aria-label="舒张压（低压）输入框"
+        />
+        <view class="bp-unit">mmHg</view>
+      </view>
+      <view wx:if="{{errors.systolic || errors.diastolic}}" class="error-text">
+        {{errors.systolic || errors.diastolic}}
+      </view>
+      <view wx:if="{{errors.systolic || errors.diastolic}}" class="field-error-notice notice danger">
+        {{errors.systolic || errors.diastolic}}
+      </view>
+    </view>
+
+    <!-- 心率输入 -->
+    <view class="form-group">
+      <view class="form-label">心率（可选）</view>
+      <view class="pulse-input-row">
+        <input
+          class="pulse-input"
+          type="number"
+          placeholder="心率"
+          value="{{form.pulse}}"
+          data-field="pulse"
+          bindinput="handleFormChange"
+          aria-label="心率输入框"
+        />
+        <view class="pulse-unit">次/分</view>
+      </view>
+    </view>
+
+    <!-- 测量场景 -->
+    <view class="form-group">
+      <view class="form-label">测量场景</view>
+      <view class="tag-row">
+        <view
+          wx:for="{{tags}}"
+          wx:key="*this"
+          class="tag-button {{selectedTag === item ? 'tag-active' : ''}}"
+          data-tag="{{item}}"
+          bindtap="handleTagSelect"
+          role="button"
+        >
+          {{item}}
+        </view>
+      </view>
+    </view>
+
+    <!-- 测量时间 -->
+    <view class="form-group">
+      <view class="form-label">测量时间</view>
+      <picker
+        mode="time"
+        value="{{measuredAt}}"
+        bindchange="handleTimeChange"
+        bindcancel="handlePickerCancel"
+      >
+        <view class="time-picker">
+          {{measuredAt || '选择时间'}}
+        </view>
+      </picker>
+      <view class="quick-time-row">
+        <view
+          wx:for="{{quickTimes}}"
+          wx:key="value"
+          class="quick-time-btn {{measuredAt === (item.value === 'now' ? currentTime : item.value) ? 'active' : ''}}"
+          data-value="{{item.value}}"
+          bindtap="handleQuickTime"
+          role="button"
+        >
+          {{item.label}}
+        </view>
+      </view>
+    </view>
+
+    <!-- 备注 -->
+    <view class="form-group">
+      <view class="form-label">备注（可选）</view>
+      <textarea
+        class="form-textarea"
+        placeholder="添加备注信息"
+        value="{{form.note}}"
+        data-field="note"
+        bindinput="handleFormChange"
+        aria-label="备注输入框"
+      />
+    </view>
+
+    <!-- 健康提示 -->
+    <view wx:if="{{summaryTip}}" class="summary-tip {{summaryLevel}}">
+      <view class="tip-icon">{{summaryLevel === 'warn' ? '⚠️' : 'ℹ️'}}</view>
+      <view class="tip-text">{{summaryTip}}</view>
+    </view>
+  </view>
+
+  <!-- 操作按钮 -->
+  <view class="action-bar">
+    <button class="secondary-button" bindtap="handleCancel">取消</button>
+    <button class="primary-button" bindtap="handleSave" disabled="{{!form.systolic || !form.diastolic}}">
+      保存记录
+    </button>
+  </view>
+</view>
