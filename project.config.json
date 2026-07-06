@@ -3,7 +3,7 @@
   "compileType": "miniprogram",
   "miniprogramRoot": "./",
   "cloudfunctionRoot": "./cloudfunctions/",
-  "projectname": "health-record-miniapp-mvp",
+  "projectname": "kangxiaoji-health-miniapp",
   "setting": {
     "urlCheck": false,
     "es6": true,

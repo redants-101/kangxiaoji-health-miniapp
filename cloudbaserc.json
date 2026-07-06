@@ -6,6 +6,11 @@
       "name": "healthApi",
       "runtime": "Nodejs16.13",
       "timeout": 60
+    },
+    {
+      "name": "sendDueReminders",
+      "runtime": "Nodejs16.13",
+      "timeout": 60
     }
   ],
   "ai": {
