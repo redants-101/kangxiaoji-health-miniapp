@@ -2,7 +2,7 @@
   "appid": "wxcb641f745311f6fb",
   "compileType": "miniprogram",
   "miniprogramRoot": "./",
-  "cloudfunctionRoot": "./cloudfunctions/",
+  "cloudfunctionRoot": "cloudfunctions/",
   "projectname": "kangxiaoji-health-miniapp",
   "setting": {
     "urlCheck": false,
@@ -27,100 +27,101 @@
       "ignore": [],
       "disablePlugins": [],
       "outputPath": ""
-    }
+    },
+    "disableSWC": true
   },
-  "libVersion": "3.14.3",
+  "libVersion": "3.15.2",
   "condition": {},
   "simulatorPluginLibVersion": {},
   "packOptions": {
     "ignore": [
       {
-        "type": "folder",
-        "value": ".agents"
+        "value": ".agents",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": ".codebuddy"
+        "value": ".codebuddy",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": ".rules"
+        "value": ".rules",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": ".tmp-automator"
+        "value": ".tmp-automator",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": ".tmp-runner"
+        "value": ".tmp-runner",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": ".trae"
+        "value": ".trae",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": ".windsurf"
+        "value": ".windsurf",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "codebuddy-plugin"
+        "value": "codebuddy-plugin",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "cloudfunctions"
+        "value": "cloudfunctions",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "docs"
+        "value": "docs",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "rules"
+        "value": "rules",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "scripts"
+        "value": "scripts",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "templates"
+        "value": "templates",
+        "type": "folder"
       },
       {
-        "type": "file",
-        "value": ".env.local"
+        "value": ".env.local",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": ".mcp.json"
+        "value": ".mcp.json",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "CODEBUDDY.md"
+        "value": "CODEBUDDY.md",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "README.md"
+        "value": "README.md",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "cloudbaserc.json"
+        "value": "cloudbaserc.json",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "package.json"
+        "value": "package.json",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "service-regression-test.txt"
+        "value": "service-regression-test.txt",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "skills-lock.json"
+        "value": "skills-lock.json",
+        "type": "file"
       },
       {
-        "type": "folder",
-        "value": "pages/reminder/reminder"
+        "value": "pages/reminder/reminder",
+        "type": "folder"
       }
     ],
     "include": []
