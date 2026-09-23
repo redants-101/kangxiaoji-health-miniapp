@@ -1,0 +1,1121 @@
+diff --git a/cloudfunctions/healthApi/family-policy.js b/cloudfunctions/healthApi/family-policy.js
+index ba19a80..207923c 100644
+--- a/cloudfunctions/healthApi/family-policy.js
++++ b/cloudfunctions/healthApi/family-policy.js
+@@ -394,6 +394,26 @@ function getMemberAnchorId(memberOpenId) {
+   return `active-${memberOpenId}`
+ }
+ 
++// ============================================================================
++// A2：邀请错误码契约（单点定义；页面以字面量码消费，不跨包引用本文件）
++// 依据 decisions #9（显式错误码与文案）、#10（频控）、#15（expiresAt 必填）。
++// 频控码与邀请码错误严格分离，不混用。
++// ============================================================================
++
++const INVITE_CODE_PATTERN = /^KXJ[0-9A-Z]{9}$/
++const INVITE_FAILURE_LIMIT_PER_DAY = 20
++
++const FAMILY_INVITE_ERRORS = {
++  notFound: { code: 'FAMILY_INVITE_NOT_FOUND', message: '邀请不存在或已失效' },
++  invalid: { code: 'FAMILY_INVITE_INVALID', message: '邀请码无效，请核对后重试' },
++  expired: { code: 'FAMILY_INVITE_EXPIRED', message: '邀请已过期，请让家人重新发起' },
++  revoked: { code: 'FAMILY_INVITE_REVOKED', message: '邀请已撤销，请让家人重新发起' },
++  used: { code: 'FAMILY_INVITE_USED', message: '邀请已被其他家属使用' },
++  self: { code: 'FAMILY_INVITE_SELF', message: '不能加入自己创建的家庭邀请' },
++  bound: { code: 'FAMILY_MEMBER_BOUND', message: '你已绑定一位家人，请先解除原绑定' },
++  rateLimited: { code: 'FAMILY_INVITE_RATE_LIMITED', message: '今日尝试次数过多，请明天再试' }
++}
++
+ module.exports = {
+   getDefaultFamilyMember,
+   SCOPE_KEYS_V2,
+@@ -413,5 +433,8 @@ module.exports = {
+   validateInviteCodePayload,
+   createProfileDisplayName,
+   createFamilyAccessContext,
+-  getMemberAnchorId
++  getMemberAnchorId,
++  INVITE_CODE_PATTERN,
++  INVITE_FAILURE_LIMIT_PER_DAY,
++  FAMILY_INVITE_ERRORS
+ }
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index 54d2754..71a6d5d 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -1,5 +1,12 @@
+-// 关系目录、成员锚点与北京日期口径直接引用共享模块（同部署目录、无循环依赖）
+-const { FAMILY_RELATIONS_V2, SCOPE_KEYS_V2, getMemberAnchorId } = require('./family-policy')
++// 关系目录、成员锚点、邀请错误码契约与北京日期口径直接引用共享模块（同部署目录、无循环依赖）
++const {
++  FAMILY_RELATIONS_V2,
++  SCOPE_KEYS_V2,
++  getMemberAnchorId,
++  FAMILY_INVITE_ERRORS,
++  INVITE_CODE_PATTERN,
++  INVITE_FAILURE_LIMIT_PER_DAY
++} = require('./family-policy')
+ const { getTodayDateValue } = require('./payload-helpers')
+ 
+ function minimalScopes() {
+@@ -28,6 +35,72 @@ function createFamilyService({
+   getLimitedString,
+   createInviteCode
+ }) {
++  // ============ A2：邀请错误码、频控与失效分类 ============
++
++  // 构造带稳定错误码的异常（errMsg 供 toast，code 供页面状态分支）
++  function inviteError(key) {
++    const spec = FAMILY_INVITE_ERRORS[key]
++    const error = new Error(spec.message)
++    error.code = spec.code
++    return error
++  }
++
++  // 当日失败计数：openId + 北京自然日（云函数运行在 UTC，必须用北京日界，否则 0-8 点串日）
++  async function countTodayInviteFailures(openId) {
++    const { total } = await db.collection(collections.inviteAttempts)
++      .where({ openId, day: getTodayDateValue() })
++      .count()
++    return total
++  }
++
++  // 失败记录：只存 openId/日期/错误码，不存邀请码明文（decisions #10）
++  async function recordInviteFailure(openId, reasonCode) {
++    await db.collection(collections.inviteAttempts).add({
++      data: {
++        openId,
++        day: getTodayDateValue(),
++        reason: reasonCode,
++        createdAt: db.serverDate()
++      }
++    })
++  }
++
++  async function assertInviteRateLimit(openId) {
++    const failures = await countTodayInviteFailures(openId)
++    if (failures >= INVITE_FAILURE_LIMIT_PER_DAY) {
++      throw inviteError('rateLimited')
++    }
++  }
++
++  // 邀请文档失效分类（decisions #9/#15）：
++  // 不存在 → notFound；expiresAt 缺失一律 invalid（不做兼容）；revoked/used/expired 依序判定。
++  // self/bound 不在本分类内（需结合调用者身份，由 join 流程单独判定）。
++  function classifyInviteAuth(auth, openId) {
++    if (!auth) return 'notFound'
++    if (!auth.expiresAt) return 'invalid'
++    if (auth.status === 'revoked') return 'revoked'
++    if (auth.status === 'active' && auth.memberOpenId && auth.memberOpenId !== openId) return 'used'
++    if (new Date(auth.expiresAt).getTime() < Date.now()) return 'expired'
++    return null
++  }
++
++  // 邀请码唯一性前置检查（decisions #11 的代码侧部分）：
++  // 生成后按码查重，他人持有则重生成（最多 3 次）；owner 单文档重邀命中自己旧码不算冲突。
++  // 注意：这只是前置检查，并发唯一性的最终保障是云端 family_auth.inviteCode sparse 唯一索引（控制台部署条件）。
++  async function generateUniqueInviteCode(openId) {
++    for (let attempt = 0; attempt < 3; attempt += 1) {
++      const candidate = createInviteCode()
++      const { data: dup = [] } = await db.collection(collections.familyAuth)
++        .where({ inviteCode: candidate })
++        .limit(1)
++        .get()
++      if (!dup.length || dup[0]._openid === openId) {
++        return candidate
++      }
++    }
++    throw new Error('邀请码生成冲突，请稍后重试')
++  }
++
+   async function getHomeFamilyData(openId) {
+     const accessContext = await withPerfLog({
+       routeType: 'key',
+@@ -279,57 +352,11 @@ function createFamilyService({
+     }
+   }
+ 
+-  async function getFamilyJoinData(payload = {}) {
+-    const inviteCode = payload.inviteCode || payload.inviteId
+-    if (inviteCode) {
+-      const { data: authList = [] } = await withPerfLog({
+-        routeType: 'key',
+-        route: 'familyJoin',
+-        step: 'db.familyAuth.byInvite'
+-      }, () => db.collection(collections.familyAuth)
+-        .where({ inviteCode })
+-        .field({
+-          _id: true,
+-          _openid: true,
+-          ownerOpenId: true,
+-          ownerName: true,
+-          status: true,
+-          member: true,
+-          scopes: true,
+-          expiresAt: true
+-        })
+-        .limit(1)
+-        .get())
+-
+-      const auth = authList[0]
+-      if (auth) {
+-        const ownerOpenId = auth.ownerOpenId || auth._openid
+-        const ownerName = auth.ownerName || await withPerfLog({
+-          routeType: 'key',
+-          route: 'familyJoin',
+-          step: 'db.profiles.ownerName'
+-        }, () => getProfileDisplayName(ownerOpenId))
+-        const expiresAt = auth.expiresAt ? new Date(auth.expiresAt).getTime() : Date.now() + 24 * 60 * 60 * 1000
+-        const remainHours = Math.max(0, Math.ceil((expiresAt - Date.now()) / (60 * 60 * 1000)))
+-        const relation = auth.member || getDefaultFamilyMember()
+-        return {
+-          inviteCode,
+-          inviteTitle: `${ownerName}邀请你查看健康记录`,
+-          inviteSubtitle: '加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。',
+-          remainHours,
+-          agreed: false,
+-          identity: {
+-            initial: relation.relation ? relation.relation.slice(0, 1) : '家',
+-            title: relation.relation || relation.name || '家属',
+-            meta: `${relation.role || '家属'} · 可在家庭页查看授权记录`
+-          },
+-          scopes: (Array.isArray(auth.scopes) ? auth.scopes : [])
+-            .filter(scope => scope.read === true)
+-        }
+-      }
+-    }
+-    return {
+-      inviteCode: inviteCode || '',
++  async function getFamilyJoinData(openId, payload = {}) {
++    const rawCode = (payload && (payload.inviteCode || payload.inviteId)) || ''
++    const inviteCode = typeof rawCode === 'string' ? rawCode.trim() : ''
++    const basePage = {
++      inviteCode,
+       inviteTitle: '家庭健康记录邀请',
+       inviteSubtitle: '加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。',
+       remainHours: 24,
+@@ -341,6 +368,76 @@ function createFamilyService({
+       },
+       scopes: getDefaultInviteScopesV2().filter(scope => scope.read === true)
+     }
++
++    // 未携带邀请码：默认说明页，不算失败、不计数
++    if (!inviteCode) return basePage
++
++    const failPage = (key) => ({
++      ...basePage,
++      scopes: [],
++      remainHours: 0,
++      inviteError: { ...FAMILY_INVITE_ERRORS[key] }
++    })
++
++    // 频控门限（decisions #10）：当日失败 ≥20 次拒绝继续查询；拒绝本身不计数
++    const failures = await countTodayInviteFailures(openId)
++    if (failures >= INVITE_FAILURE_LIMIT_PER_DAY) return failPage('rateLimited')
++
++    // 格式错误：不查库，记失败
++    if (!INVITE_CODE_PATTERN.test(inviteCode)) {
++      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS.invalid.code)
++      return failPage('invalid')
++    }
++
++    const { data: authList = [] } = await withPerfLog({
++      routeType: 'key',
++      route: 'familyJoin',
++      step: 'db.familyAuth.byInvite'
++    }, () => db.collection(collections.familyAuth)
++      .where({ inviteCode })
++      .field({
++        _id: true,
++        _openid: true,
++        ownerOpenId: true,
++        ownerName: true,
++        status: true,
++        member: true,
++        scopes: true,
++        expiresAt: true
++      })
++      .limit(1)
++      .get())
++
++    const auth = authList[0]
++    const failureKey = classifyInviteAuth(auth, openId)
++    if (failureKey) {
++      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS[failureKey].code)
++      return failPage(failureKey)
++    }
++
++    const ownerOpenId = auth.ownerOpenId || auth._openid
++    const ownerName = auth.ownerName || await withPerfLog({
++      routeType: 'key',
++      route: 'familyJoin',
++      step: 'db.profiles.ownerName'
++    }, () => getProfileDisplayName(ownerOpenId))
++    // classify 已保证 expiresAt 存在（decisions #15），此处无需兼容分支
++    const remainHours = Math.max(0, Math.ceil((new Date(auth.expiresAt).getTime() - Date.now()) / (60 * 60 * 1000)))
++    const relation = auth.member || getDefaultFamilyMember()
++    return {
++      inviteCode,
++      inviteTitle: `${ownerName}邀请你查看健康记录`,
++      inviteSubtitle: '加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。',
++      remainHours,
++      agreed: false,
++      identity: {
++        initial: relation.relation ? relation.relation.slice(0, 1) : '家',
++        title: relation.relation || relation.name || '家属',
++        meta: `${relation.role || '家属'} · 可在家庭页查看授权记录`
++      },
++      scopes: (Array.isArray(auth.scopes) ? auth.scopes : [])
++        .filter(scope => scope.read === true)
++    }
+   }
+ 
+   async function getFamilyAuthData(openId, payload = {}) {
+@@ -509,7 +606,7 @@ function createFamilyService({
+         .get())
+     ])
+ 
+-    const inviteCode = createInviteCode()
++    const inviteCode = await generateUniqueInviteCode(openId)
+     const inviteData = {
+       ownerOpenId: openId,
+       ownerName,
+@@ -588,27 +685,28 @@ function createFamilyService({
+   }
+ 
+   function assertJoinableAuth(auth, openId) {
+-    if (!auth) {
+-      throw new Error('邀请不存在或已失效')
+-    }
+-    if (auth.status === 'revoked') {
+-      throw new Error('邀请已撤销')
+-    }
+-    if (auth.status === 'active' && auth.memberOpenId && auth.memberOpenId !== openId) {
+-      throw new Error('邀请已被其他家属使用')
+-    }
+-    if (auth.expiresAt && new Date(auth.expiresAt).getTime() < Date.now()) {
+-      throw new Error('邀请已过期')
++    const failureKey = classifyInviteAuth(auth, openId)
++    if (failureKey) {
++      throw inviteError(failureKey)
+     }
+     const ownerOpenId = auth.ownerOpenId || auth._openid
+     if (ownerOpenId === openId) {
+-      throw new Error('不能加入自己创建的家庭邀请')
++      throw inviteError('self')
+     }
+     return ownerOpenId
+   }
+ 
+   async function joinFamilyByInvite(openId, payload) {
+     const inviteCode = validateInviteCodePayload(payload)
++
++    // A2 频控门限：join 与查询共用同一计数，防止绕过查询接口直接刷 join 枚举
++    await assertInviteRateLimit(openId)
++
++    if (!INVITE_CODE_PATTERN.test(inviteCode)) {
++      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS.invalid.code)
++      throw inviteError('invalid')
++    }
++
+     const { data: authList = [] } = await withPerfLog({
+       routeType: 'action',
+       route: 'joinFamilyByInvite',
+@@ -619,6 +717,11 @@ function createFamilyService({
+       .get())
+ 
+     const auth = authList[0]
++    const failureKey = classifyInviteAuth(auth, openId)
++    if (failureKey) {
++      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS[failureKey].code)
++      throw inviteError(failureKey)
++    }
+     const ownerOpenId = assertJoinableAuth(auth, openId)
+ 
+     // 1:1 预检（decisions 第 2 项）：本人已有 active 关系时，
+@@ -637,7 +740,7 @@ function createFamilyService({
+     if (boundActive.length) {
+       const bound = boundActive[0]
+       if (bound.ownerOpenId !== ownerOpenId) {
+-        throw new Error('你已绑定一位家人，请先解除原绑定')
++        throw inviteError('bound')
+       }
+       return { _id: bound._id, ownerOpenId, memberOpenId: openId, status: 'active', idempotent: true }
+     }
+@@ -665,7 +768,7 @@ function createFamilyService({
+         }
+         if (anchor && anchor.status === 'active') {
+           if (anchor.ownerOpenId !== ownerOpenId) {
+-            throw new Error('你已绑定一位家人，请先解除原绑定')
++            throw inviteError('bound')
+           }
+           return { _id: anchor._id || anchorId, ownerOpenId, memberOpenId: openId, status: 'active', idempotent: true }
+         }
+diff --git a/cloudfunctions/healthApi/index.js b/cloudfunctions/healthApi/index.js
+index 915ff57..801cd6b 100644
+--- a/cloudfunctions/healthApi/index.js
++++ b/cloudfunctions/healthApi/index.js
+@@ -57,6 +57,7 @@ const COLLECTIONS = {
+   medicationConfirmations: 'medication_confirmations', // 用药确认记录
+   familyAuth: 'family_auth',          // 家庭授权
+   familyMembers: 'family_members',    // 家庭成员关系
++  inviteAttempts: 'family_invite_attempts', // 邀请查询失败计数（频控，TTL 24h 控制台建）
+   reminderSettings: 'reminder_settings', // 提醒设置
+   privacySettings: 'privacy_settings', // 隐私设置
+   feedbacks: 'feedbacks',              // 反馈建议
+@@ -883,7 +884,7 @@ const finishRoute = (result, ok = true) => {
+         'trend': () => getRecordService().getTrendData(openId, payload),
+         'family': () => getFamilyService().getFamilyData(openId),
+         'familyInvite': () => getFamilyService().getFamilyInviteData(),
+-        'familyJoin': () => getFamilyService().getFamilyJoinData(payload),
++        'familyJoin': () => getFamilyService().getFamilyJoinData(openId, payload),
+         'familyAuth': () => getFamilyService().getFamilyAuthData(openId, payload),
+         'report': () => getReportService().getReportData(openId),
+         'reminder': () => getSettingsDataService().getReminderData(openId),
+@@ -944,6 +945,8 @@ const finishRoute = (result, ok = true) => {
+     console.error('云函数错误:', err)
+     return { 
+       errMsg: err.message || '服务器错误',
++      // A2：附带稳定错误码供客户端状态分支（无码时为空串）
++      errCode: err.code || '',
+       stack: err.stack
+     }
+   }
+diff --git a/pages/family-sub/family-join/index.js b/pages/family-sub/family-join/index.js
+index 1f6ac7c..da8af82 100644
+--- a/pages/family-sub/family-join/index.js
++++ b/pages/family-sub/family-join/index.js
+@@ -8,6 +8,18 @@ const {
+ const { runButtonAction } = require('../../../utils/button-state')
+ const { getFamilyJoinData, joinFamilyByInvite } = require('../../../utils/api')
+ 
++// A2：邀请错误码 → 页面状态标题（码表契约定义于云端 family-policy.js，此处仅复制稳定字符串）
++const INVITE_ERROR_TITLES = {
++  FAMILY_INVITE_NOT_FOUND: '邀请不存在',
++  FAMILY_INVITE_INVALID: '邀请码无效',
++  FAMILY_INVITE_EXPIRED: '邀请已过期',
++  FAMILY_INVITE_REVOKED: '邀请已撤销',
++  FAMILY_INVITE_USED: '邀请已被使用',
++  FAMILY_INVITE_RATE_LIMITED: '尝试过于频繁',
++  FAMILY_INVITE_SELF: '不能加入自己的邀请',
++  FAMILY_MEMBER_BOUND: '已绑定其他家人'
++}
++
+ /**
+  * 加入家庭页。
+  * 职责：家属通过邀请链接进入后确认边界，并加入授权家庭。
+@@ -17,15 +29,22 @@ Page({
+     isLoading: true,
+     loadError: '',
+     inviteCodeFromRoute: '',
+-    pendingAction: ''
++    pendingAction: '',
++    inviteErrorTitle: ''
+   },
+ 
+   /**
+-   * 加载邀请加入页数据。
++   * 加载邀请加入页数据。云端返回 inviteError 时渲染对应错误态。
+    * @returns {Promise<void>} 数据写入 this.data。
+    */
+   async loadData(inviteCode = '') {
+-    return loadPageData(this, () => getFamilyJoinData({ inviteCode }))
++    const data = await loadPageData(this, () => getFamilyJoinData({ inviteCode }))
++    if (data && data.inviteError) {
++      this.setData({
++        inviteErrorTitle: INVITE_ERROR_TITLES[data.inviteError.code] || '邀请不可用'
++      })
++    }
++    return data
+   },
+ 
+   /**
+@@ -70,6 +89,14 @@ Page({
+    * @returns {void} 未勾选边界说明时阻止加入；通过后进入家属首页。
+    */
+   async joinFamily() {
++    // A2：邀请处于错误态（无效/过期/撤销/已用/频控）时禁止提交
++    if (this.data.inviteError) {
++      wx.showToast({
++        title: this.data.inviteError.message || '当前邀请不可用',
++        icon: 'none'
++      })
++      return
++    }
+     if (!this.data.agreed) {
+       wx.showToast({
+         title: '请先确认使用边界',
+@@ -93,6 +120,8 @@ Page({
+         title: err.message || '加入失败',
+         icon: 'none'
+       })
++      // 加入失败可能因邀请状态刚变化（被使用/过期/撤销），刷新页面呈现最新错误态
++      await this.loadData(this.data.inviteCodeFromRoute)
+     }
+   }
+ })
+diff --git a/pages/family-sub/family-join/index.wxml b/pages/family-sub/family-join/index.wxml
+index 1564766..ab1b322 100644
+--- a/pages/family-sub/family-join/index.wxml
++++ b/pages/family-sub/family-join/index.wxml
+@@ -15,6 +15,15 @@
+     </view>
+   </view>
+ </block>
++<block wx:elif="{{inviteError}}">
++  <view class="page-state {{adaptive.scaleClass}}">
++    <view class="state-panel">
++      <view class="state-title">{{inviteErrorTitle}}</view>
++      <view class="state-meta">{{inviteError.message}}</view>
++      <button class="state-button" bindtap="reloadPage">重新加载</button>
++    </view>
++  </view>
++</block>
+ <block wx:else>
+   <view class="join-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+   <view class="invite-panel">
+diff --git a/scripts/health-api-regression.js b/scripts/health-api-regression.js
+index 032ae15..2251a8a 100644
+--- a/scripts/health-api-regression.js
++++ b/scripts/health-api-regression.js
+@@ -35,6 +35,7 @@ const COLLECTIONS = {
+   medicationConfirmations: 'medication_confirmations',
+   familyAuth: 'family_auth',
+   familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
+   reminderSettings: 'reminder_settings',
+   privacySettings: 'privacy_settings',
+   feedbacks: 'feedbacks',
+@@ -338,7 +339,7 @@ async function testFamilyService() {
+     validateInviteCodePayload,
+     getLimitedString,
+     // 确定性测试替身：固定邀请码以便断言；不是业务逻辑的复制。
+-    createInviteCode: () => 'INVITE001'
++    createInviteCode: () => 'KXJREGRESS01'
+   })
+ 
+   // 显式提交授权：血压/血糖/用药/周报 read 全开（与后续 homeFamily 断言对应）
+@@ -350,12 +351,12 @@ async function testFamilyService() {
+       { key: 'report', read: true, remind: true }
+     ]
+   })
+-  assert.strictEqual(invite.inviteCode, 'INVITE001')
++  assert.strictEqual(invite.inviteCode, 'KXJREGRESS01')
+   assert.strictEqual(db.data[COLLECTIONS.familyAuth][0].ownerName, '王阿姨')
+ 
+   db.currentOpenId = 'member-1'
+   profileLookupCount = 0
+-  const joinResult = await service.joinFamilyByInvite('member-1', { inviteCode: 'INVITE001' })
++  const joinResult = await service.joinFamilyByInvite('member-1', { inviteCode: 'KXJREGRESS01' })
+   assert.strictEqual(joinResult.status, 'active')
+   assert.strictEqual(profileLookupCount, 0, 'joinFamilyByInvite 应复用 family_auth.ownerName，避免再次查询 profiles')
+ 
+diff --git a/services/core.js b/services/core.js
+index d107278..b8c1d89 100644
+--- a/services/core.js
++++ b/services/core.js
+@@ -62,6 +62,16 @@ function clone(v) { return v === undefined || v === null ? v : JSON.parse(JSON.s
+  */
+ function hasWxStorage() { return typeof wx !== 'undefined' && wx && wx.getStorageSync && wx.setStorageSync }
+ function isFailureErrMsg(errMsg) { return errMsg && !String(errMsg).toLowerCase().includes(':ok') }
++/**
++ * 由云函数错误响应构造 Error，附带稳定错误码（A2：页面按 code 分支渲染错误态）。
++ * @param {Object} result 云函数返回对象（含 errMsg，可含 errCode）。
++ * @returns {Error} 带 code 属性的错误对象。
++ */
++function buildCloudError(result) {
++  const error = new Error(result.errMsg)
++  if (result.errCode) error.code = result.errCode
++  return error
++}
+ 
+ /**
+  * 从存储中读取指定键的值，优先使用微信存储，回退到内存存储
+@@ -190,7 +200,7 @@ function callCloudWithRetry(callData, retries = 2) {
+ function requestCloud(action, payload) {
+   return callCloudWithRetry({ name: apiConfig.cloudFunctionName, data: { action, payload } })
+     .then(result => {
+-      if (result && isFailureErrMsg(result.errMsg)) throw new Error(result.errMsg)
++      if (result && isFailureErrMsg(result.errMsg)) throw buildCloudError(result)
+       clearCloudReadCache()
+       return result
+     })
+@@ -230,7 +240,7 @@ function requestCloudByKey(key, payload = {}) {
+ 
+   const request = callCloudWithRetry({ name: apiConfig.cloudFunctionName, data: { key, payload } })
+     .then(result => {
+-      if (result && isFailureErrMsg(result.errMsg)) throw new Error(result.errMsg)
++      if (result && isFailureErrMsg(result.errMsg)) throw buildCloudError(result)
+       cloudReadCache[cacheKey] = { data: clone(result), expireAt: Date.now() + CLOUD_READ_CACHE_TTL_MS }
+       return result
+     })
+diff --git a/services/family.js b/services/family.js
+index 6d71163..4fdd252 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -194,6 +194,8 @@ function createFamilyInviteLocal(payload, remoteResult) {
+     scopes,
+     noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: true },
+     status: 'pending',
++    // A2（decisions #15）：本地镜像同样携带 24h 有效期，供本地模式过期校验
++    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+     sharePath: (remoteResult && remoteResult.sharePath) || `/pages/family-sub/family-join/index?inviteCode=${inviteCode}`,
+     updatedAt: new Date().toISOString()
+   }
+@@ -209,9 +211,30 @@ function createFamilyInviteLocal(payload, remoteResult) {
+ 
+ function joinFamilyByInviteLocal(payload, remoteResult) {
+   const storedAuth = getStoredFamilyAuth() || {}
++  const inviteCode = (payload && payload.inviteCode) || storedAuth.inviteCode || ''
++
++  // A2（decisions #15）：本地模式镜像校验——码必须匹配且未过期，失败不假成功。
++  // 错误码与云端契约一致，页面可统一消费。
++  const localInviteError = (code, message) => {
++    const error = new Error(message)
++    error.code = code
++    throw error
++  }
++  if (storedAuth.inviteCode && inviteCode !== storedAuth.inviteCode) {
++    localInviteError('FAMILY_INVITE_NOT_FOUND', '邀请不存在或已失效')
++  }
++  if (storedAuth.inviteCode) {
++    if (!storedAuth.expiresAt) {
++      localInviteError('FAMILY_INVITE_INVALID', '邀请码无效，请核对后重试')
++    }
++    if (new Date(storedAuth.expiresAt).getTime() < Date.now()) {
++      localInviteError('FAMILY_INVITE_EXPIRED', '邀请已过期，请让家人重新发起')
++    }
++  }
++
+   const nextState = {
+     ...storedAuth,
+-    inviteCode: (payload && payload.inviteCode) || storedAuth.inviteCode || '',
++    inviteCode,
+     status: 'active',
+     joinedAt: new Date().toISOString(),
+     updatedAt: new Date().toISOString()
+@@ -410,6 +433,7 @@ module.exports = {
+   FAMILY_RELATIONS,
+   SCOPE_KEYS,
+   createFamilyInvite,
++  createFamilyInviteLocal,
+   enforceHomeFamilyAccess,
+   getDefaultInviteScopes,
+   getFamilyAuthData,
+@@ -423,7 +447,9 @@ module.exports = {
+   getScopeText,
+   getStoredFamilyAuth,
+   joinFamilyByInvite,
++  joinFamilyByInviteLocal,
+   mapFamilyMember,
++  normalizeFamilyJoinData,
+   normalizeMemberStatus,
+   noticeRulesToList,
+   revokeFamilyMember,
+diff --git a/tests/unit/a0-contract-integration.test.js b/tests/unit/a0-contract-integration.test.js
+index e730a53..5c0bade 100644
+--- a/tests/unit/a0-contract-integration.test.js
++++ b/tests/unit/a0-contract-integration.test.js
+@@ -13,6 +13,7 @@ const COLLECTIONS = {
+   medicationConfirmations: 'medication_confirmations',
+   familyAuth: 'family_auth',
+   familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
+   profiles: 'profiles'
+ }
+ 
+@@ -119,7 +120,7 @@ function createService(db) {
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+     validateInviteCodePayload: policy.validateInviteCodePayload,
+     getLimitedString: helpers.getLimitedString,
+-    createInviteCode: () => 'KXJTEST01'
++    createInviteCode: () => 'KXJTEST00001'
+   })
+ }
+ 
+diff --git a/tests/unit/a1-member-isolation.test.js b/tests/unit/a1-member-isolation.test.js
+index 7ac7b1e..1baafbb 100644
+--- a/tests/unit/a1-member-isolation.test.js
++++ b/tests/unit/a1-member-isolation.test.js
+@@ -17,6 +17,7 @@ const COLLECTIONS = {
+   medicationConfirmations: 'medication_confirmations',
+   familyAuth: 'family_auth',
+   familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
+   reminderSettings: 'reminder_settings',
+   privacySettings: 'privacy_settings',
+   feedbacks: 'feedbacks',
+@@ -121,7 +122,7 @@ function createService(db, inviteSeq = { n: 0 }) {
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+     validateInviteCodePayload: policy.validateInviteCodePayload,
+     getLimitedString: helpers.getLimitedString,
+-    createInviteCode: () => `KXJINV${String(++inviteSeq.n).padStart(3, '0')}`
++    createInviteCode: () => `KXJINV${String(++inviteSeq.n).padStart(6, '0')}`
+   })
+ }
+ 
+diff --git a/tests/unit/a2-invite-security.test.js b/tests/unit/a2-invite-security.test.js
+new file mode 100644
+index 0000000..8677349
+--- /dev/null
++++ b/tests/unit/a2-invite-security.test.js
+@@ -0,0 +1,459 @@
++/**
++ * A2 邀请安全、错误态与频控测试。
++ * 存储替身只模拟存取（含 count），不复制业务判断；
++ * 错误码/文案/门限按 decisions #9/#10/#15 与本批契约字面填写。
++ * 并发唯一性与频控原子性无法由本地 Mock 证明，列为云端待验证（见 summary）。
++ */
++
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
++  profiles: 'profiles'
++}
++
++function clone(value) {
++  return JSON.parse(JSON.stringify(value))
++}
++
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store
++    this.query = query
++    this.orderField = ''
++    this.orderDir = 'asc'
++    this.max = Infinity
++    this.docId = ''
++    this.hasDocId = false
++  }
++  where(cond) { return new StoreQuery(this.store, cond) }
++  orderBy(field, dir) { const q = new StoreQuery(this.store, this.query); q.orderField = field; q.orderDir = dir; return q }
++  limit(size) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = size; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  skip() { return this }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.hasDocId = true; q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; return q }
++  field() { return this }
++  _targets() {
++    if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
++    return this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
++      if (v && v.__op === 'in') return v.values.includes(d[k])
++      return d[k] === v
++    }))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    return { data: this.max === Infinity ? rows : rows.slice(0, this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    const _id = `doc-${this.store.seq++}`
++    this.store.rows.push({ _id, ...clone(data) })
++    return { _id }
++  }
++  async update({ data }) {
++    const targets = this._targets()
++    targets.forEach(d => Object.assign(d, clone(data)))
++    return { stats: { updated: targets.length } }
++  }
++  async remove() {
++    const ids = new Set(this._targets().map(d => d._id))
++    const before = this.store.rows.length
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((alias) => {
++    const name = COLLECTIONS[alias]
++    stores[name] = { rows: Array.isArray(initial[alias]) ? clone(initial[alias]) : [], seq: 1 }
++  })
++  return {
++    collection(name) {
++      if (!stores[name]) stores[name] = { rows: [], seq: 1 }
++      return new StoreQuery(stores[name])
++    },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++}
++
++function createService(db, codes) {
++  const queue = Array.isArray(codes) ? [...codes] : null
++  let n = 0
++  return createFamilyService({
++    db,
++    _: { in: values => ({ __op: 'in', values }) },
++    collections: COLLECTIONS,
++    withPerfLog: (meta, fn) => fn(),
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: helpers.getLimitedString,
++    createInviteCode: queue ? () => queue.shift() : () => `KXJGEN${String(++n).padStart(6, '0')}`
++  })
++}
++
++const VALID_CODE = 'KXJABCDEFGHI' // KXJ + 9 位
++
++function pendingAuth(overrides = {}) {
++  return {
++    _id: 'auth-1',
++    _openid: 'owner-1',
++    ownerOpenId: 'owner-1',
++    ownerName: '王阿姨',
++    inviteCode: VALID_CODE,
++    status: 'pending',
++    member: { name: '女儿', relation: '女儿', role: '主要照护人', status: '待加入' },
++    memberName: '女儿',
++    scopes: [
++      { key: 'bloodPressure', title: '血压记录', meta: 'm', read: true, write: false, remind: true },
++      { key: 'bloodGlucose', title: '血糖记录', meta: 'm', read: false, write: false, remind: false },
++      { key: 'medicine', title: '用药确认', meta: 'm', read: true, write: false, remind: false },
++      { key: 'report', title: '健康记录周报', meta: 'm', read: true, write: false, remind: true }
++    ],
++    noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: true },
++    expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
++    ...overrides
++  }
++}
++
++function attemptRows(db) { return db._stores[COLLECTIONS.inviteAttempts].rows }
++function memberRows(db) { return db._stores[COLLECTIONS.familyMembers].rows }
++function authRows(db) { return db._stores[COLLECTIONS.familyAuth].rows }
++function today() { return helpers.getTodayDateValue() }
++
++function seedAttempts(db, count, day) {
++  const rows = db._stores[COLLECTIONS.inviteAttempts].rows
++  for (let i = 0; i < count; i += 1) {
++    rows.push({ _id: `att-${i}`, openId: 'caller-1', day: day || today(), reason: 'FAMILY_INVITE_NOT_FOUND', createdAt: 'SERVER_DATE' })
++  }
++}
++
++describe('A2 · getFamilyJoinData 错误态与错误码', () => {
++  it('缺失 inviteCode：返回默认说明页，无 inviteError、不计数', async () => {
++    const db = createStoreDb()
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', {})
++    expect(data.inviteError).toBeUndefined()
++    expect(data.inviteTitle).toBeTruthy()
++    expect(attemptRows(db)).toHaveLength(0)
++  })
++
++  it('格式错误：FAMILY_INVITE_INVALID，记录 1 次失败，零成员写入', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: 'abc' })
++    expect(data.inviteError).toEqual({ code: 'FAMILY_INVITE_INVALID', message: '邀请码无效，请核对后重试' })
++    expect(attemptRows(db)).toHaveLength(1)
++    expect(memberRows(db)).toHaveLength(0)
++  })
++
++  it('不存在：FAMILY_INVITE_NOT_FOUND，计数 1', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
++    expect(attemptRows(db)).toHaveLength(1)
++  })
++
++  it('expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容', async () => {
++    const auth = pendingAuth()
++    delete auth.expiresAt
++    const db = createStoreDb({ familyAuth: [auth] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_INVALID')
++    expect(attemptRows(db)).toHaveLength(1)
++  })
++
++  it('已过期：FAMILY_INVITE_EXPIRED', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ expiresAt: new Date(Date.now() - 1000).toISOString() })] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_EXPIRED')
++  })
++
++  it('已撤销：FAMILY_INVITE_REVOKED', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ status: 'revoked' })] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_REVOKED')
++  })
++
++  it('已被其他成员使用：FAMILY_INVITE_USED', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ status: 'active', memberOpenId: 'other-member' })] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_USED')
++  })
++
++  it('正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，不计数', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError).toBeUndefined()
++    expect(data.remainHours).toBeGreaterThan(0)
++    expect(data.scopes.map(s => s.key)).toEqual(['bloodPressure', 'medicine', 'report'])
++    expect(attemptRows(db)).toHaveLength(0)
++  })
++
++  it('任何失败路径：family_members 零写入、family_auth 不被改为 active', async () => {
++    const auth = pendingAuth({ status: 'revoked' })
++    const db = createStoreDb({ familyAuth: [auth] })
++    const service = createService(db)
++    const before = clone(authRows(db))
++    await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(memberRows(db)).toHaveLength(0)
++    expect(authRows(db)).toEqual(before)
++  })
++})
++
++describe('A2 · 频控（openId + 北京自然日，门限 20）', () => {
++  it('第 1 次与第 20 次失败允许并记录；第 21 次查询被拒且不新增记录', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    const service = createService(db)
++    const first = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(first.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
++    expect(attemptRows(db)).toHaveLength(1)
++
++    seedAttempts(db, 18) // 合计 19 条今日失败
++    const twentieth = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(twentieth.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
++    expect(attemptRows(db)).toHaveLength(20)
++
++    const twentyFirst = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(twentyFirst.inviteError).toEqual({ code: 'FAMILY_INVITE_RATE_LIMITED', message: '今日尝试次数过多，请明天再试' })
++    expect(attemptRows(db)).toHaveLength(20) // 拒绝本身不计数
++    await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(attemptRows(db)).toHaveLength(20)
++  })
++
++  it('自然日切换：昨日 20 条不影响今日查询（北京日界）', () => {
++    jest.useFakeTimers()
++    jest.setSystemTime(new Date('2026-09-22T04:00:00.000Z')) // 北京 12:00
++    const yesterday = '2026-09-21'
++    return (async () => {
++      const db = createStoreDb({ familyAuth: [pendingAuth()] })
++      seedAttempts(db, 20, yesterday)
++      const service = createService(db)
++      const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++      expect(data.inviteError).toBeUndefined()
++      expect(attemptRows(db)).toHaveLength(20) // 成功不新增
++      jest.useRealTimers()
++    })()
++  })
++
++  it('频控记录不含邀请码明文', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    const service = createService(db)
++    await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    const rows = attemptRows(db)
++    expect(rows).toHaveLength(1)
++    expect(JSON.stringify(rows)).not.toContain(VALID_CODE)
++    expect(rows[0]).toEqual({
++      _id: rows[0]._id,
++      openId: 'caller-1',
++      day: today(),
++      reason: 'FAMILY_INVITE_NOT_FOUND',
++      createdAt: 'SERVER_DATE'
++    })
++  })
++
++  it('频控按调用者隔离：caller-2 不受 caller-1 的失败影响', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    seedAttempts(db, 20)
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-2', { inviteCode: VALID_CODE })
++    expect(data.inviteError).toBeUndefined()
++  })
++})
++
++describe('A2 · joinFamilyByInvite 错误码与频控防绕过', () => {
++  async function expectJoinCode(db, code, expectedCode) {
++    const service = createService(db)
++    let caught = null
++    try {
++      await service.joinFamilyByInvite('caller-1', { inviteCode: code })
++    } catch (e) { caught = e }
++    expect(caught).toBeTruthy()
++    expect(caught.code).toBe(expectedCode)
++    expect(memberRows(db)).toHaveLength(0)
++  }
++
++  it('不存在 → FAMILY_INVITE_NOT_FOUND 且计数', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    await expectJoinCode(db, VALID_CODE, 'FAMILY_INVITE_NOT_FOUND')
++    expect(attemptRows(db)).toHaveLength(1)
++  })
++
++  it('已过期 → FAMILY_INVITE_EXPIRED', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ expiresAt: new Date(Date.now() - 1000).toISOString() })] })
++    await expectJoinCode(db, VALID_CODE, 'FAMILY_INVITE_EXPIRED')
++  })
++
++  it('已撤销 → FAMILY_INVITE_REVOKED', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ status: 'revoked' })] })
++    await expectJoinCode(db, VALID_CODE, 'FAMILY_INVITE_REVOKED')
++  })
++
++  it('已被他人使用 → FAMILY_INVITE_USED', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ status: 'active', memberOpenId: 'other' })] })
++    await expectJoinCode(db, VALID_CODE, 'FAMILY_INVITE_USED')
++  })
++
++  it('expiresAt 缺失 → FAMILY_INVITE_INVALID（不做兼容）', async () => {
++    const auth = pendingAuth()
++    delete auth.expiresAt
++    const db = createStoreDb({ familyAuth: [auth] })
++    await expectJoinCode(db, VALID_CODE, 'FAMILY_INVITE_INVALID')
++  })
++
++  it('自绑 → FAMILY_INVITE_SELF（既有语义补码，不计数）', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    const service = createService(db)
++    await expect(service.joinFamilyByInvite('owner-1', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_INVITE_SELF' })
++    expect(attemptRows(db)).toHaveLength(0)
++  })
++
++  it('已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码）', async () => {
++    const db = createStoreDb({
++      familyAuth: [pendingAuth({ _openid: 'owner-2', ownerOpenId: 'owner-2' })],
++      familyMembers: [{ _id: 'rel-x', ownerOpenId: 'owner-9', memberOpenId: 'caller-1', status: 'active' }]
++    })
++    const service = createService(db)
++    await expect(service.joinFamilyByInvite('caller-1', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_MEMBER_BOUND' })
++  })
++
++  it('频控拒绝直接刷 join 接口：RATE_LIMITED，零写入', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    seedAttempts(db, 20)
++    const service = createService(db)
++    await expect(service.joinFamilyByInvite('caller-1', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_INVITE_RATE_LIMITED' })
++    expect(memberRows(db)).toHaveLength(0)
++    expect(authRows(db)[0].status).toBe('pending')
++  })
++})
++
++describe('A2 · createFamilyInvite 唯一性前置检查', () => {
++  it('候选码与他人文档冲突时重新生成，落库用新码', async () => {
++    const db = createStoreDb({
++      profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }],
++      familyAuth: [{ _id: 'auth-other', _openid: 'owner-2', inviteCode: 'KXJDUP000001', status: 'pending' }]
++    })
++    const service = createService(db, ['KXJDUP000001', 'KXJNEW000002'])
++    const invite = await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
++    expect(invite.inviteCode).toBe('KXJNEW000002')
++  })
++
++  it('连续冲突 3 次：抛错且不写入新邀请', async () => {
++    const db = createStoreDb({
++      profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }],
++      familyAuth: [{ _id: 'auth-other', _openid: 'owner-2', inviteCode: 'KXJDUP000001', status: 'pending' }]
++    })
++    const service = createService(db, ['KXJDUP000001', 'KXJDUP000001', 'KXJDUP000001'])
++    await expect(service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] }))
++      .rejects.toThrow('冲突')
++    expect(authRows(db)).toHaveLength(1) // 只有 owner-2 的文档
++  })
++
++  it('重邀命中自己旧文档的同码不算冲突（owner 单文档更新）', async () => {
++    const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db, ['KXJSAME00001', 'KXJSAME00001'])
++    const first = await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
++    const second = await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
++    expect(first.inviteCode).toBe('KXJSAME00001')
++    expect(second.inviteCode).toBe('KXJSAME00001')
++    expect(authRows(db)).toHaveLength(1)
++  })
++})
++
++describe('A2 · 本地镜像过期校验（decisions #15）', () => {
++  const { joinFamilyByInviteLocal, createFamilyInviteLocal } = require('../../services/family')
++  const { STORAGE_KEYS, writeStorage } = require('../../services/core')
++
++  function storeInvite(overrides = {}) {
++    writeStorage(STORAGE_KEYS.familyAuth, {
++      inviteCode: VALID_CODE,
++      status: 'pending',
++      expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
++      members: [],
++      ...overrides
++    })
++  }
++
++  beforeEach(() => {
++    writeStorage(STORAGE_KEYS.familyAuth, null)
++  })
++
++  it('本地邀请已过期：拒绝且不假成功', () => {
++    storeInvite({ expiresAt: new Date(Date.now() - 1000).toISOString() })
++    expect(() => joinFamilyByInviteLocal({ inviteCode: VALID_CODE }, null))
++      .toThrow(expect.objectContaining({ code: 'FAMILY_INVITE_EXPIRED' }))
++  })
++
++  it('本地邀请缺失 expiresAt：一律无效', () => {
++    storeInvite({ expiresAt: undefined })
++    expect(() => joinFamilyByInviteLocal({ inviteCode: VALID_CODE }, null))
++      .toThrow(expect.objectContaining({ code: 'FAMILY_INVITE_INVALID' }))
++  })
++
++  it('邀请码与本地记录不一致：按不存在处理', () => {
++    storeInvite()
++    expect(() => joinFamilyByInviteLocal({ inviteCode: 'KXJOTHER0001' }, null))
++      .toThrow(expect.objectContaining({ code: 'FAMILY_INVITE_NOT_FOUND' }))
++  })
++
++  it('有效本地邀请：正常镜像 joined 状态', () => {
++    storeInvite()
++    const result = joinFamilyByInviteLocal({ inviteCode: VALID_CODE }, null)
++    expect(result.status).toBe('active')
++  })
++
++  it('createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验）', () => {
++    createFamilyInviteLocal({ selectedRelation: 'daughter', scopes: [] }, { inviteCode: VALID_CODE })
++    const stored = require('../../services/family').getStoredFamilyAuth()
++    expect(stored.expiresAt).toBeTruthy()
++    expect(new Date(stored.expiresAt).getTime()).toBeGreaterThan(Date.now())
++  })
++})
++
++describe('A2 · 页面消费契约', () => {
++  it('normalizeFamilyJoinData 透传 inviteError（页面据 code 渲染状态）', async () => {
++    const { normalizeFamilyJoinData } = require('../../services/family')
++    const remote = {
++      inviteCode: VALID_CODE,
++      inviteError: { code: 'FAMILY_INVITE_EXPIRED', message: '邀请已过期，请让家人重新发起' }
++    }
++    const data = await normalizeFamilyJoinData(remote)
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_EXPIRED')
++  })
++})

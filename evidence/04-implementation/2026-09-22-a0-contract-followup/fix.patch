@@ -1,0 +1,148 @@
+diff --git a/cloudfunctions/healthApi/family-policy.js b/cloudfunctions/healthApi/family-policy.js
+index 3a171bb..bbf3b52 100644
+--- a/cloudfunctions/healthApi/family-policy.js
++++ b/cloudfunctions/healthApi/family-policy.js
+@@ -208,9 +208,13 @@ function normalizeFamilyInvitePayloadV2(payload = {}) {
+   if (!relation) {
+     throw new Error(`家属关系不合法：${payload.selectedRelation}`)
+   }
+-  const scopes = Array.isArray(payload.scopes) && payload.scopes.length
+-    ? normalizeFamilyScopesV2(payload.scopes)
+-    : getDefaultInviteScopesV2()
++  // 服务端提交校验：scopes 必须为数组。缺失/null/字符串/对象明确拒绝；
++  // 空数组合法，经 normalizeFamilyScopesV2 后四块全部 false。
++  // 页面预选值只存在于 familyInvite 展示接口，不作为此处缺失输入的授权兜底。
++  if (!Array.isArray(payload.scopes)) {
++    throw new Error('授权范围格式不正确')
++  }
++  const scopes = normalizeFamilyScopesV2(payload.scopes)
+   return {
+     relation,
+     scopes,
+diff --git a/scripts/health-api-regression.js b/scripts/health-api-regression.js
+index e3d3218..032ae15 100644
+--- a/scripts/health-api-regression.js
++++ b/scripts/health-api-regression.js
+@@ -341,7 +341,15 @@ async function testFamilyService() {
+     createInviteCode: () => 'INVITE001'
+   })
+ 
+-  const invite = await service.createFamilyInvite('owner-1', {})
++  // 显式提交授权：血压/血糖/用药/周报 read 全开（与后续 homeFamily 断言对应）
++  const invite = await service.createFamilyInvite('owner-1', {
++    scopes: [
++      { key: 'bloodPressure', read: true, remind: true },
++      { key: 'bloodGlucose', read: true, remind: true },
++      { key: 'medicine', read: true, remind: true },
++      { key: 'report', read: true, remind: true }
++    ]
++  })
+   assert.strictEqual(invite.inviteCode, 'INVITE001')
+   assert.strictEqual(db.data[COLLECTIONS.familyAuth][0].ownerName, '王阿姨')
+ 
+diff --git a/services/family.js b/services/family.js
+index 0dd816b..7b1d1ac 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -160,7 +160,8 @@ function createFamilyInviteLocal(payload, remoteResult) {
+   const relationMeta = getRelationMeta(payload.selectedRelation)
+   const inviteCode = (remoteResult && (remoteResult.inviteCode || remoteResult.inviteId)) || createRecordId('invite').replace(/-/g, '').slice(-12)
+   const memberId = storedAuth.currentMemberId || createRecordId('member')
+-  const scopes = Array.isArray(payload.scopes) ? payload.scopes : getDefaultInviteScopes()
++  // 本地镜像不做授权兜底：非数组输入按最小授权镜像（正常情况下云端会先拒绝，镜像根本不执行）
++  const scopes = Array.isArray(payload.scopes) ? payload.scopes : SCOPE_KEYS.map(key => ({ key }))
+   const previewMember = mapFamilyMember({
+     id: memberId,
+     name: storedAuth.memberName || relationMeta.relation,
+diff --git a/tests/unit/a0-contract-integration.test.js b/tests/unit/a0-contract-integration.test.js
+index 6091c46..4199221 100644
+--- a/tests/unit/a0-contract-integration.test.js
++++ b/tests/unit/a0-contract-integration.test.js
+@@ -132,26 +132,56 @@ function fullAccessScopes() {
+   ]
+ }
+ 
+-describe('A0-2 集成 · 创建邀请（默认契约）', () => {
+-  it('空入参生成 pending 邀请：8 关系默认女儿、scopes 读取/提醒默认开、write 默认关', async () => {
++describe('A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权）', () => {
++  it.each([
++    ['缺失', undefined], ['null', null], ['字符串', 'abc'], ['对象', { key: 'bloodPressure' }]
++  ])('scopes %s：服务入口拒绝，不写数据库', async (_label, scopes) => {
+     const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
+     const service = createService(db)
+-    const invite = await service.createFamilyInvite('owner-1', {})
++    await expect(service.createFamilyInvite('owner-1', { scopes })).rejects.toThrow('授权范围')
++    expect(db._stores[COLLECTIONS.familyAuth].rows).toHaveLength(0)
++  })
++
++  it('scopes=[]：邀请可生成但落库四块 read/write/remind 全部 false，不恢复授权', async () => {
++    const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const invite = await service.createFamilyInvite('owner-1', { scopes: [] })
+ 
+     expect(invite.inviteCode).toMatch(/^KXJ/)
+     const auth = db._stores[COLLECTIONS.familyAuth].rows[0]
+-    expect(auth).toMatchObject({
+-      ownerOpenId: 'owner-1',
+-      ownerName: '王阿姨',
+-      status: 'pending'
++    expect(auth).toMatchObject({ ownerOpenId: 'owner-1', ownerName: '王阿姨', status: 'pending' })
++    expect(auth.scopes.every(s => s.read === false && s.write === false && s.remind === false)).toBe(true)
++    expect(invite.invitePreview.meta).toBe('暂未选择可查看内容')
++  })
++
++  it('部分 scopes：仅提交的块按值归一化，未提交块全部 false（不补开）', async () => {
++    const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    await service.createFamilyInvite('owner-1', {
++      scopes: [{ key: 'bloodPressure', read: true, write: true, remind: false }]
+     })
++    const auth = db._stores[COLLECTIONS.familyAuth].rows[0]
+     expect(auth.scopes.map(s => [s.key, s.read, s.write, s.remind])).toEqual([
+-      ['bloodPressure', true, false, true],
+-      ['bloodGlucose', true, false, true],
+-      ['medicine', true, false, true],
+-      ['report', true, false, true]
++      ['bloodPressure', true, true, false],
++      ['bloodGlucose', false, false, false],
++      ['medicine', false, false, false],
++      ['report', false, false, false]
++    ])
++  })
++
++  it('显式合法的完整授权：按提交值正确保存（write 仅 BP/BG/medicine）', async () => {
++    const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const invite = await service.createFamilyInvite('owner-1', { scopes: fullAccessScopes() })
++
++    const auth = db._stores[COLLECTIONS.familyAuth].rows[0]
++    expect(auth.scopes.map(s => [s.key, s.read, s.remind])).toEqual([
++      ['bloodPressure', true, true],
++      ['bloodGlucose', true, true],
++      ['medicine', true, true],
++      ['report', true, true]
+     ])
+-    expect(auth.noticeRules).toEqual({ missedMedicine: true, missingRecord: false, weeklyReport: true })
++    expect(auth.scopes.every(s => s.write === false)).toBe(true)
+     expect(invite.invitePreview.meta).toContain('血压记录')
+   })
+ 
+diff --git a/tests/unit/shared-policy.test.js b/tests/unit/shared-policy.test.js
+index 6c7cda4..d38cfde 100644
+--- a/tests/unit/shared-policy.test.js
++++ b/tests/unit/shared-policy.test.js
+@@ -315,10 +315,12 @@ describe('family-policy · 三级权限归一化与动作判断（新契约）',
+     expect(getScopeTextV2(normalizeFamilyScopesV2([{ key: 'report' }]))).toBe('暂未授权')
+   })
+ 
+-  it('normalizeFamilyInvitePayloadV2：缺省女儿+默认 scopes；未知关系拒绝', () => {
+-    const invite = normalizeFamilyInvitePayloadV2()
++  it('normalizeFamilyInvitePayloadV2：缺失 scopes 拒绝；空数组四块全关；未知关系拒绝', () => {
++    expect(() => normalizeFamilyInvitePayloadV2()).toThrow('授权范围')
++    const invite = normalizeFamilyInvitePayloadV2({ scopes: [] })
+     expect(invite.relation.key).toBe('daughter')
+     expect(invite.member.status).toBe('待加入')
++    expect(invite.scopes.every(s => s.read === false)).toBe(true)
+     expect(() => normalizeFamilyInvitePayloadV2({ selectedRelation: 'nope' })).toThrow('关系')
+   })
+ 

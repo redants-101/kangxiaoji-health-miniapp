@@ -1,0 +1,24 @@
+== S7a familyRecordBloodPressure (noBinding 拒绝) ==
+✔ [healthApi] call succeeded
+Return result：{"familyWrite":{"allowed":false,"reason":"noBinding"}}
+== S7b health_records 零写入核查 (createdByMemberOpenId=smoke-nb-0923a) ==
+- Loading data...
+- Executing command...
+[
+  {
+    "n": {
+      "$numberInt": "0"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    },
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1790133683,
+          "i": 1
+        }
+      },
+      "signature": {
+        "hash": {
+          "$binary": {

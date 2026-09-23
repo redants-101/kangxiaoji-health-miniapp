@@ -1,0 +1,6 @@
+== S9 appConfig (app_configs 未建 → 保守回退 null) ==
+✔ [healthApi] call succeeded
+Return result：{"familyTabEnabled":null}
+== S10 family key (无绑定/无邀请 → 空态，无数据泄露) ==
+✔ [healthApi] call succeeded
+Return result：{"eyebrow":"家庭管理","familyCount":0,"members":[],"inviteCode":"","authStatus":"pending"}

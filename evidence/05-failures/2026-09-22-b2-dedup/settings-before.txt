@@ -1,0 +1,42 @@
+
+> test
+> jest --verbose --runInBand tests/unit/settings.test.js
+
+PASS tests/unit/settings.test.js (5.705 s)
+  services/settings
+    getStoredReminderSettings
+      √ 无设置时返回 null (3 ms)
+      √ 有设置时返回存储数据 (1 ms)
+    saveReminderSettingsLocal
+      √ 保存提醒设置并添加 updatedAt (3 ms)
+      √ 保存后可通过 getStoredReminderSettings 读取
+    applyReminderSettings
+      √ 无设置时不过滤任务
+      √ 关闭用药提醒后过滤用药任务 (1 ms)
+      √ 关闭测量提醒后过滤测量任务 (1 ms)
+      √ 关闭周报提醒后过滤周报任务
+    mergeReminderSettings
+      √ 无本地设置时返回原始数据 (1 ms)
+      √ 有本地设置时合并
+    ensureWeeklyReportTask
+      √ 已有周报任务时不重复添加 (1 ms)
+      √ 无周报任务时自动添加
+      √ 空任务列表时添加周报任务
+    applyReminderSettings - 已完成分组
+      √ 已完成分组任务不受开关影响
+    ensureUpcomingTasks
+      √ 无今日用药任务时不生成即将到来任务
+      √ 有今日用药任务时生成未来 3 天的即将到来任务 (1 ms)
+      √ 已有即将到来任务时不重复生成
+    mergeLocalCompletedTasks
+      √ 无本地确认记录时不添加任务 (1 ms)
+      √ 有今日已确认记录时添加到已完成分组
+      √ 跳过状态的确认记录也加入已完成分组 (1 ms)
+      √ 不重复添加已存在的已完成任务
+      √ snoozed 状态不加入已完成分组
+
+Test Suites: 1 passed, 1 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        6.888 s
+Ran all test suites matching /tests\\unit\\settings.test.js/i.

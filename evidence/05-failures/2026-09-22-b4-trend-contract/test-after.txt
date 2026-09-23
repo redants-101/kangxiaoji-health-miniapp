@@ -1,0 +1,626 @@
+
+> test
+> jest --verbose --runInBand
+
+PASS tests/unit/report.test.js
+  services/report
+    parseBpValues
+      √ 解析标准血压值 "128/78" (4 ms)
+      √ 解析三位数/两位数 "180/110"
+      √ value 为空字符串时返回 0/0 (1 ms)
+      √ value 为 undefined 时返回 0/0
+      √ 非数字部分被过滤，返回 0 (1 ms)
+    parseBgValue
+      √ 解析标准血糖值 "6.1"
+      √ 解析整数血糖 "7"
+      √ value 为空时返回 0
+      √ value 为非数字时返回 0
+    filterWeekRecords
+      √ 筛选本周内的记录 (4 ms)
+      √ 空数组返回空
+    filterRecordsByDays
+      √ 7天时调用 filterWeekRecords
+      √ 30天时筛选近30天记录
+      √ 90天时筛选近90天记录
+    buildReportSummary
+      √ 血压记录生成血压摘要 (1 ms)
+      √ 血糖记录生成血糖摘要
+      √ 血压+血糖都存在时生成两组摘要 (1 ms)
+      √ 都为空时返回空数组 (1 ms)
+    isAbnormalRecord
+      √ statusType=warn 时为异常
+      √ status=建议复测 时为异常
+      √ 收缩压 >= 140 为异常（高血压） (1 ms)
+      √ 舒张压 >= 90 为异常（高血压）
+      √ 收缩压 < 90 为异常（低血压）
+      √ 舒张压 < 60 为异常（低血压）
+      √ 正常血压不为异常
+      √ 收缩压=0 时不判低血压（避免误判空值） (1 ms)
+      √ 血糖 >= 7.0 为异常（高血糖）
+      √ 血糖 <= 3.9 为异常（低血糖）
+      √ 血糖=0 时不判低血糖
+      √ 正常血糖不为异常
+    buildAbnormalReason
+      √ 有 tip 时优先返回 tip (1 ms)
+      √ 收缩压 >= 180 返回高危提示
+      √ 收缩压 >= 140 返回偏高提示
+      √ 收缩压 < 90 返回偏低提示
+      √ 血糖 >= 11.1 返回显著偏高提示 (1 ms)
+      √ 血糖 >= 7.0 返回偏高提示
+      √ 血糖 <= 3.9 返回偏低提示
+      √ 无法判断时返回通用异常提示
+    buildReportFocusItems
+      √ 只保留异常记录
+      √ 异常记录的 type 显示中文 (1 ms)
+      √ 血糖异常记录 type 显示"血糖"
+      √ 全部正常时返回空数组
+    buildReportChartFromRecords
+      √ 血压+血糖记录生成混合图表 (1 ms)
+      √ 无记录时返回空图表
+      √ 无记录时自定义 periodLabel
+      √ 有记录时自定义 periodLabel (1 ms)
+      √ 同日同类型取最新记录
+    getTrendData
+      √ 7天档位返回 summary/focusItems/summaryMetrics (2 ms)
+      √ 30天档位返回 summary/focusItems/summaryMetrics (1 ms)
+      √ 90天档位返回 summary/focusItems/summaryMetrics
+      √ 返回 metricOptions 包含 bpBg 和 medication (1 ms)
+      √ 返回 rangeOptions 包含三档时间
+      √ 默认参数为 bpBg + 7d (1 ms)
+      √ chartBars 始终为数组
+      √ records 最多 20 条 (1 ms)
+      √ 指标切换到 bloodGlucose 时正常返回 (1 ms)
+      √ 指标切换到 bloodPressure 时正常返回 (1 ms)
+      √ 指标切换到 medication 时正常返回 (11 ms)
+      √ bpBg 复合指标返回双图表数据 (1 ms)
+    getReportData (deprecated)
+      √ 返回与 getTrendData 一致的核心字段 (1 ms)
+      √ 默认为本周数据 (1 ms)
+      √ 支持传入 metric 和 range 参数 (1 ms)
+
+PASS tests/unit/page-data-consistency.test.js
+  DEFAULT_PAGE_DATA 一致性验证（合并后）
+    √ 不包含 report 键
+    √ trend 键包含合并后的完整字段 (1 ms)
+    √ trend.metricOptions 包含血压血糖复合指标和用药指标 (1 ms)
+    √ trend.rangeOptions 包含三档时间
+    √ trend 默认值为 7天+血压血糖
+    √ reminder 任务使用 trend 路由 (1 ms)
+    √ reminder 任务标题已更新
+
+PASS tests/unit/subscribe.test.js
+  utils/subscribe
+    SUBSCRIBE_TEMPLATES
+      √ 包含三类提醒模板
+    isPlaceholderTemplateId
+      √ 占位符返回 true
+      √ 真实 ID 返回 false
+      √ 空值或非字符串返回 true
+    isTemplateConfigured
+      √ 已配置的模板返回 true
+    isAllTemplatesConfigured
+      √ 所有模板都已配置时返回 true
+    getStoredSubscriptionStatus
+      √ 无记录时返回空对象
+      √ 有记录时返回存储数据 (1 ms)
+    saveSubscriptionStatusLocal
+      √ 保存授权状态并添加 updatedAt
+    updateSubscriptionRecord
+      √ 更新指定模板的授权状态
+      √ 无效模板 key 不更新
+      √ 多次更新保留所有模板状态
+    isSubscribed
+      √ 未授权时返回 false
+      √ 已授权时返回 true (1 ms)
+      √ 被拒绝时返回 false
+    isAllSubscribed
+      √ 全部未授权时返回 false
+      √ 部分授权时返回 false (1 ms)
+      √ 全部授权时返回 true
+    buildSubscriptionDisplay
+      √ 无授权时返回未开启状态 (1 ms)
+      √ 全部授权时返回已全部开启
+      √ 部分授权时返回部分开启
+      √ 有拒绝记录时返回未全部开启
+    requestSubscription
+      √ 无效模板 key 时返回 no-valid-template
+      √ 空模板数组时返回 no-valid-template
+      √ 所有模板都已配置时不再返回 template-not-configured
+      √ DEV_MODE 为布尔值
+    订阅次数管理
+      √ getSubscriptionQuota 无记录时返回空对象
+      √ addSubscriptionQuota 增加指定模板次数 (1 ms)
+      √ addSubscriptionQuota 无效模板不增加
+      √ addSubscriptionQuotaBatch 批量增加 accept 的模板次数
+      √ consumeSubscriptionQuota 消耗次数成功 (1 ms)
+      √ consumeSubscriptionQuota 次数不足时返回 false
+      √ consumeSubscriptionQuota 无效模板返回 false
+      √ getRemainingQuota 返回剩余次数 (2 ms)
+      √ getRemainingQuota 无记录时返回 0
+
+FAIL tests/unit/settings.test.js
+  services/settings
+    getStoredReminderSettings
+      √ 无设置时返回 null
+      √ 有设置时返回存储数据
+    saveReminderSettingsLocal
+      √ 保存提醒设置并添加 updatedAt
+      √ 保存后可通过 getStoredReminderSettings 读取 (1 ms)
+    applyReminderSettings
+      √ 无设置时不过滤任务
+      √ 关闭用药提醒后过滤用药任务
+      √ 关闭测量提醒后过滤测量任务
+      √ 关闭周报提醒后过滤周报任务
+    mergeReminderSettings
+      √ 无本地设置时返回原始数据
+      √ 有本地设置时合并 (1 ms)
+    ensureWeeklyReportTask
+      √ 已有周报任务时不重复添加
+      √ 无周报任务时自动添加 (1 ms)
+      √ 空任务列表时添加周报任务
+    applyReminderSettings - 已完成分组
+      √ 已完成分组任务不受开关影响 (1 ms)
+    ensureUpcomingTasks
+      √ 无今日用药任务时不生成即将到来任务
+      √ 有今日用药任务时生成未来 3 天的即将到来任务 (1 ms)
+      √ 已有即将到来任务时不重复生成
+    mergeLocalCompletedTasks
+      √ 无本地确认记录时不添加任务 (1 ms)
+      × 有今日已确认记录时添加到已完成分组 (1 ms)
+      × 跳过状态的确认记录也加入已完成分组
+      √ 不重复添加已存在的已完成任务
+      √ snoozed 状态不加入已完成分组
+
+  ● services/settings › mergeLocalCompletedTasks › 有今日已确认记录时添加到已完成分组
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 298 |[39m       [36mconst[39m baseData [33m=[39m { tasks[33m:[39m [] }
+     [90m 299 |[39m       [36mconst[39m result [33m=[39m mergeLocalCompletedTasks(baseData)
+    [31m[1m>[22m[39m[90m 300 |[39m       expect(result[33m.[39mtasks)[33m.[39mtoHaveLength([35m1[39m)
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 301 |[39m       expect(result[33m.[39mtasks[[35m0[39m][33m.[39mtab)[33m.[39mtoBe([32m'completed'[39m)
+     [90m 302 |[39m       expect(result[33m.[39mtasks[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'taken'[39m)
+     [90m 303 |[39m       expect(result[33m.[39mtasks[[35m0[39m][33m.[39mstatusText)[33m.[39mtoBe([32m'已服'[39m)[0m
+
+      at Object.toHaveLength (tests/unit/settings.test.js:300:28)
+
+  ● services/settings › mergeLocalCompletedTasks › 跳过状态的确认记录也加入已完成分组
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 317 |[39m       [36mconst[39m baseData [33m=[39m { tasks[33m:[39m [] }
+     [90m 318 |[39m       [36mconst[39m result [33m=[39m mergeLocalCompletedTasks(baseData)
+    [31m[1m>[22m[39m[90m 319 |[39m       expect(result[33m.[39mtasks)[33m.[39mtoHaveLength([35m1[39m)
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 320 |[39m       expect(result[33m.[39mtasks[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'skipped'[39m)
+     [90m 321 |[39m     })
+     [90m 322 |[39m[0m
+
+      at Object.toHaveLength (tests/unit/settings.test.js:319:28)
+
+PASS tests/unit/medication.test.js
+  services/medication
+    getStoredMedicationPlans
+      √ 无计划时返回空数组
+      √ 有计划时返回数组
+    getStoredMedicationConfirmations
+      √ 无确认记录时返回空数组
+    upsertMedicationPlan
+      √ 新增计划
+      √ 更新已有计划
+    appendMedicationConfirmation
+      √ 新增确认记录
+      √ 同 logId 同日期更新而非新增 (1 ms)
+      √ 不同日期新增记录
+    saveMedicationPlanLocal
+      √ 创建新计划 (1 ms)
+      √ 更新已有计划保持状态
+    deleteMedicationPlanLocal
+      √ 删除指定计划
+      √ 删除不存在的计划返回 deleted=true (1 ms)
+    toggleMedicationPlanStatusLocal
+      √ 启用→已停用
+      √ 已停用→启用
+      √ 不存在的计划返回 null (1 ms)
+    confirmMedicationLocal
+      √ 创建确认记录
+    revokeMedicationConfirmationLocal
+      √ 撤销今日确认记录
+      √ 撤销不存在的记录返回 null (1 ms)
+    mapMedicationPlanToListItem
+      √ 映射计划到列表项
+    mergeListByTimestamp
+      √ 合并本地和远程记录，取较新者 (1 ms)
+      √ 空数组合并
+    mergeConfirmationsByLogId
+      √ 按 logId 合并，取较新者
+    parseMedTaskId
+      √ 解析标准格式 task-med-{planId}-{index} (1 ms)
+      √ 解析含多段横线的 planId
+      √ 非 task-med 前缀返回 null
+    findNextPendingTime
+      √ 找到下一个待确认时间点 (1 ms)
+      √ 已停用计划返回 null
+      √ 全部已确认返回 null
+
+  console.warn
+    [PreCheck] 隐私设置数据为空
+
+    [0m [90m 52 |[39m   [90m// 防御性检查：支持多种可能的存储结构[39m
+     [90m 53 |[39m   [36mif[39m ([33m![39mprivacy) {
+    [31m[1m>[22m[39m[90m 54 |[39m     console[33m.[39mwarn([32m'[PreCheck] 隐私设置数据为空'[39m)
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 55 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 56 |[39m   }
+     [90m 57 |[39m   [0m
+
+      at warn (utils/pre-check.js:54:13)
+      at Object.checkPrivacyAgreed (tests/unit/pre-check.test.js:28:14)
+
+  console.warn
+    [PreCheck] 隐私协议未确认或数据格式异常 { privacyKeys: [ 'agreed' ] }
+
+    [0m [90m 66 |[39m   }
+     [90m 67 |[39m   
+    [31m[1m>[22m[39m[90m 68 |[39m   console[33m.[39mwarn([32m'[PreCheck] 隐私协议未确认或数据格式异常'[39m[33m,[39m { privacyKeys[33m:[39m [33mObject[39m[33m.[39mkeys(privacy) })
+     [90m    |[39m           [31m[1m^[22m[39m
+     [90m 69 |[39m   [36mreturn[39m [36mfalse[39m
+     [90m 70 |[39m }
+     [90m 71 |[39m[0m
+
+      at warn (utils/pre-check.js:68:11)
+      at Object.checkPrivacyAgreed (tests/unit/pre-check.test.js:49:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '', profileKeys: [] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:55:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '', profileKeys: [ 'profile' ] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:69:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '   ', profileKeys: [ 'profile' ] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:76:14)
+
+PASS tests/unit/pre-check.test.js
+  utils/pre-check
+    checkPrivacyAgreed
+      √ 无隐私设置时返回 false (33 ms)
+      √ agreed=true 时返回 true
+      √ agreedAt 有值时返回 true
+      √ agreed=false 且无 agreedAt 时返回 false (3 ms)
+    checkProfileSetup
+      √ 无资料时返回 false (2 ms)
+      √ 有姓名时返回 true
+      √ 姓名为空字符串时返回 false (3 ms)
+      √ 姓名为纯空格时返回 false (4 ms)
+      √ 兼容扁平结构 profile.name (1 ms)
+    isProtectedPage
+      √ 首页是受保护页面
+      √ 趋势页是受保护页面
+      √ 隐私页不是受保护页面
+      √ 启动页不是受保护页面 (1 ms)
+    isPrivacyFreePage
+      √ 隐私页是免隐私检查页面
+      √ 隐私政策页是免隐私检查页面
+      √ 用户协议页是免隐私检查页面 (1 ms)
+      √ 首页不是免隐私检查页面
+    isProfileFreePage
+      √ 隐私页是免资料检查页面
+      √ 角色选择页是免资料检查页面 (1 ms)
+      √ 资料编辑页是免资料检查页面
+      √ 首页不是免资料检查页面
+
+PASS tests/unit/chart-adapter.test.js
+  utils/chart-adapter
+    toChartBars
+      √ 将数值数组转为柱状图数据 (3 ms)
+      √ 处理小数值 (1 ms)
+      √ 所有值相同时高度一致
+      √ 处理空值和 NaN (1 ms)
+      √ 单值数据
+      √ 血压收缩压偏高标记 status=high
+      √ 血压收缩压偏低标记 status=low
+      √ 血糖偏高标记 status=high
+      √ 血糖偏低标记 status=low
+      √ 返回 yAxis 信息供参考线计算 (1 ms)
+      √ 无 minFloor 时 yAxis.minFloor 为 null
+    buildBpBgCharts
+      √ 7天模式：按日聚合，返回血压+血糖双图表 (1 ms)
+      √ 30天模式：按4天聚合
+      √ 90天模式：按周聚合
+      √ 空记录返回 hasData=false (1 ms)
+      √ 异常血压值标记 high status
+      √ 异常血糖值标记 high status (1 ms)
+      √ 柱状条数不超过 MAX_BARS=14 (1 ms)
+      √ 返回动态参考线位置
+      √ 支持云端 chartSeriesMap 直接消费
+      √ 云端数据优先于本地记录 (1 ms)
+      √ 支持云端 bloodPressureDiastolic 序列
+      √ 云端无舒张压时从本地记录补充
+    calcRefLineTop
+      √ 计算正常范围内的参考线位置（含底部标签区偏移）
+      √ 参考线位置低于 80%（柱状区域上界）
+      √ 参考值超出上限返回空字符串
+      √ 参考值低于下限返回空字符串 (1 ms)
+      √ Y 轴范围为0返回空字符串
+      √ 参数缺失返回空字符串
+    buildTrendChart
+      √ 使用默认数据构建趋势图 (1 ms)
+      √ 使用自定义 chartSeriesMap
+      √ 未知指标使用血压默认值
+      √ 未知时间范围使用 7d 默认值
+      √ 血糖指标使用 bg type 和 minFloor
+    buildReportChart
+      √ 使用默认数据构建周报图表
+      √ 使用自定义数据 (1 ms)
+    buildRecordDetailChart
+      √ 血压记录生成3日趋势
+      √ 血糖记录生成3日趋势
+      √ 空记录使用默认值
+
+PASS tests/unit/snooze.test.js
+  services/snooze
+    DEFAULT_SNOOZE_MINUTES
+      √ 默认延时为 15 分钟 (1 ms)
+    getStoredSnoozeReminders
+      √ 无记录时返回空数组
+    createSnoozeReminder
+      √ 创建 snooze 任务并写入存储 (1 ms)
+      √ 使用自定义延时分钟数
+      √ 同 logId 只保留最新一条
+      √ 不同 logId 保留多条 (1 ms)
+      √ dueAt 为未来时间 (1 ms)
+    getPendingSnoozeReminders
+      √ 未到期任务返回
+      √ 已到期任务不返回
+    getDueSnoozeReminders
+      √ 未到期任务不返回
+      √ 已到期任务返回
+      √ 按到期时间升序排列 (1 ms)
+    removeSnoozeReminder
+      √ 按 ID 移除任务
+      √ 不存在的 ID 返回 null
+    removeSnoozeReminderByLogId
+      √ 按 logId 移除任务 (1 ms)
+      √ 空 logId 返回 null
+      √ 不存在的 logId 返回 null
+    rescheduleSnoozeReminder
+      √ 重新调度任务并更新 dueAt (1 ms)
+      √ 使用默认延时 15 分钟
+      √ 不存在的 ID 返回 null
+    cleanupExpiredSnoozeReminders
+      √ 清理超过 24 小时的过期任务 (1 ms)
+      √ 无过期任务时返回 0
+      √ 空列表时返回 0
+
+PASS tests/unit/family.test.js
+  services/family
+    normalizeMemberStatus
+      √ active/已授权 映射为 已授权 (1 ms)
+      √ pending/待加入 映射为 待加入
+      √ revoked/已解除 映射为 已解除
+      √ 未知状态原样返回
+    getRelationInitial
+      √ 返回关系首字
+      √ 空关系返回 家
+    getRelationMeta
+      √ 女儿 → 主要照护人
+      √ 儿子 → 紧急联系人
+      √ 配偶 → 共同管理 (1 ms)
+      √ 未知关系 → 家属/共同管理
+    getScopeText
+      √ 返回已启用权限的标题
+      √ 无启用权限返回 fallback
+      √ 非数组返回 fallback (1 ms)
+      √ 空数组返回 fallback
+    mapFamilyMember
+      √ 映射完整成员数据
+      √ 使用 fallback 填充缺失字段
+      √ 无 id 时使用索引生成
+    enforceHomeFamilyAccess
+      √ 无授权数据时返回原始数据
+      √ 已解除授权时返回无权限数据 (1 ms)
+    getNoFamilyAccessData
+      √ 返回无权限的标准结构
+
+PASS tests/unit/records.test.js
+  services/records
+    getRecordStatus
+      √ warn 类型返回建议复测 (1 ms)
+      √ 其他类型返回正常 (1 ms)
+    buildBloodPressureRecord
+      √ 构建完整的血压记录 (1 ms)
+      √ 无心率时显示横杠
+      √ 高血压记录标记为建议复测 (1 ms)
+      √ 使用自定义 recordId
+      √ 云来源记录标记为 cloud
+    buildBloodGlucoseRecord
+      √ 构建完整的血糖记录 (1 ms)
+      √ 高血糖标记为建议复测
+    extractCreatedAtDate
+      √ 从 ISO 字符串提取日期 (1 ms)
+      √ 从 created_at 字段提取日期
+      √ 从 _id 提取日期（MongoDB ObjectId 格式）
+      √ 从 time 字段提取日期 (1 ms)
+      √ 空对象返回空字符串
+      √ 中文日期格式提取日期
+    dedupeRecords
+      √ 按 id 去重
+      √ 保留首次出现的记录
+      √ 过滤 null 和无 id 的记录
+      √ 空数组返回空数组 (1 ms)
+    buildRecordSummary
+      √ 统计本周记录
+      √ 空记录返回零值
+    mapStoredRecordToListItem
+      √ 映射记录到列表项
+    mapStoredRecordToDetail
+      √ 映射记录到详情
+      √ 详情包含创建时间
+
+PASS tests/unit/privacy.test.js
+  services/privacy
+    getStoredPrivacySettings
+      √ 无设置时返回 null (1 ms)
+      √ 有设置时返回存储数据 (1 ms)
+    updatePrivacySettingsLocal
+      √ 首次创建隐私设置
+      √ 部分更新不覆盖已有字段
+      √ undefined 字段不覆盖已有值
+    mergePrivacySettings
+      √ 无本地设置时返回原始数据
+      √ 有本地设置时合并
+
+PASS tests/unit/data-rights.test.js
+  services/data-rights
+    getLocalDataSnapshot
+      √ 返回所有本地存储数据的快照 (1 ms)
+      √ 无数据时返回空默认值
+    toExportText
+      √ 生成包含标题和 JSON 的导出文本
+    exportUserDataLocal
+      √ 生成完整的导出数据 (1 ms)
+      √ 无数据时导出空快照
+    deleteUserDataLocal
+      √ scope=health 删除健康记录和确认记录 (1 ms)
+      √ scope=medication 删除用药计划和确认记录 (1 ms)
+      √ 默认 scope 为 health
+    clearUserAccountLocal
+      √ 清除所有本地存储数据 (1 ms)
+
+PASS tests/unit/core.test.js
+  services/core
+    createRecordId
+      √ 生成带前缀的唯一 ID (1 ms)
+      √ 不同前缀生成不同格式的 ID
+    readStorage / writeStorage
+      √ 写入后可读取相同数据
+      √ 读取不存在的键返回 fallback
+      √ 写入后读取的是深拷贝，修改不影响原存储
+      √ 写入数组后可正确读取
+    writeStorageAndInvalidate
+      √ 写入数据并清除相关缓存
+    getRelatedCacheKeys
+      √ records 变更影响 home/recordList/trend
+      √ profile 变更影响 home/me
+      √ 未知键返回空数组 (1 ms)
+    isTransientError
+      √ 识别超时错误
+      √ 识别网络错误
+      √ 识别连接重置错误
+      √ 非瞬态错误返回 false
+      √ 空错误返回 false
+    getRetryDelay
+      √ 首次重试延迟在合理范围内
+      √ 延迟随重试次数指数增长
+      √ 延迟不超过最大值
+    resolveMockData
+      √ local 模式返回默认 mock 数据
+      √ 未知 key 返回空对象
+
+PASS tests/unit/page-data.test.js
+  services/page-data
+    clone
+      √ 深拷贝对象 (1 ms)
+      √ 深拷贝数组
+      √ undefined 返回 undefined
+      √ null 返回 null
+    deepMerge
+      √ 基础对象合并
+      √ 嵌套对象递归合并
+      √ override 为数组时直接替换
+      √ override 为 undefined 时返回 base 的克隆
+      √ 不修改原始对象
+      √ override 为原始值时直接替换
+    withMockPageData
+      √ 无 transform 函数时执行 deepMerge
+      √ 有 transform 函数时执行自定义合并 (1 ms)
+      √ 未知 key 返回空对象或默认数据
+    mergeArrayItemDefaults
+      √ 按 identityKey 合并默认值
+      √ override 为非数组时返回 base 克隆 (1 ms)
+      √ base 为空数组时返回 override 克隆
+
+PASS tests/unit/date-helper.test.js
+  utils/date-helper
+    getTodayDateValue
+      √ 返回 YYYY-MM-DD 格式
+      √ 月份和日期补零
+    getCurrentTimeValue
+      √ 返回 HH:MM 格式
+    normalizeDateValue
+      √ 合法日期原样返回
+      √ 非法日期返回 fallback
+      √ 空值返回 fallback
+    formatDisplayDate
+      √ 今天显示"今天" (1 ms)
+      √ 非今天显示"月日"格式
+      √ 空值返回空字符串
+    formatDisplayDateWithYear
+      √ 今天显示"今天" (1 ms)
+      √ 非今天显示"年月日"格式
+    parseDisplayDateTime
+      √ 解析 YYYY-MM-DD HH:MM 格式
+      √ 解析"今天 HH:MM"格式 (1 ms)
+      √ 解析"M月D日 HH:MM"格式
+      √ 空值返回当前日期时间
+      √ null/undefined 返回当前日期时间
+    getWeekStartDate
+      √ 周一返回本周一
+      √ 周日返回上周一
+      √ 周三返回本周一 (1 ms)
+
+PASS tests/unit/routes-consistency.test.js
+  路由一致性验证（合并后）
+    √ routes 中不包含 report 键
+    √ routes 中包含 trend 键
+    √ trend 路由指向正确的页面路径
+    √ 所有 TabBar 路由都存在
+    √ 核心子页面路由完整
+
+Test Suites: 1 failed, 15 passed, 16 total
+Tests:       2 failed, 355 passed, 357 total
+Snapshots:   0 total
+Time:        2.325 s, estimated 10 s
+Ran all test suites.

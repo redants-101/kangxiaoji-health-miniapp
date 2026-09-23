@@ -1,0 +1,47 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a2-invite-security.test.js
+
+PASS tests/unit/a2-invite-security.test.js
+  A2 · getFamilyJoinData 错误态与错误码
+    √ 缺失 inviteCode：返回默认说明页，无 inviteError、不计数 (2 ms)
+    √ 格式错误：FAMILY_INVITE_INVALID，记录 1 次失败，零成员写入 (2 ms)
+    √ 不存在：FAMILY_INVITE_NOT_FOUND，计数 1 (1 ms)
+    √ expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容
+    √ 已过期：FAMILY_INVITE_EXPIRED
+    √ 已撤销：FAMILY_INVITE_REVOKED (1 ms)
+    √ 已被其他成员使用：FAMILY_INVITE_USED
+    √ 正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，不计数 (1 ms)
+    √ 任何失败路径：family_members 零写入、family_auth 不被改为 active (1 ms)
+  A2 · 频控（openId + 北京自然日，门限 20）
+    √ 第 1 次与第 20 次失败允许并记录；第 21 次查询被拒且不新增记录 (1 ms)
+    √ 自然日切换：昨日 20 条不影响今日查询（北京日界） (2 ms)
+    √ 频控记录不含邀请码明文 (1 ms)
+    √ 频控按调用者隔离：caller-2 不受 caller-1 的失败影响
+  A2 · joinFamilyByInvite 错误码与频控防绕过
+    √ 不存在 → FAMILY_INVITE_NOT_FOUND 且计数 (1 ms)
+    √ 已过期 → FAMILY_INVITE_EXPIRED
+    √ 已撤销 → FAMILY_INVITE_REVOKED
+    √ 已被他人使用 → FAMILY_INVITE_USED
+    √ expiresAt 缺失 → FAMILY_INVITE_INVALID（不做兼容）
+    √ 自绑 → FAMILY_INVITE_SELF（既有语义补码，不计数）
+    √ 已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码） (1 ms)
+    √ 频控拒绝直接刷 join 接口：RATE_LIMITED，零写入
+  A2 · createFamilyInvite 唯一性前置检查
+    √ 候选码与他人文档冲突时重新生成，落库用新码 (1 ms)
+    √ 连续冲突 3 次：抛错且不写入新邀请 (19 ms)
+    √ 重邀命中自己旧文档的同码不算冲突（owner 单文档更新） (1 ms)
+  A2 · 本地镜像过期校验（decisions #15）
+    √ 本地邀请已过期：拒绝且不假成功 (6 ms)
+    √ 本地邀请缺失 expiresAt：一律无效 (3 ms)
+    √ 邀请码与本地记录不一致：按不存在处理
+    √ 有效本地邀请：正常镜像 joined 状态
+    √ createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验） (1 ms)
+  A2 · 页面消费契约
+    √ normalizeFamilyJoinData 透传 inviteError（页面据 code 渲染状态）
+
+Test Suites: 1 passed, 1 total
+Tests:       30 passed, 30 total
+Snapshots:   0 total
+Time:        0.407 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a2-invite-security.test.js/i.

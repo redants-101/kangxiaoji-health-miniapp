@@ -1,0 +1,54 @@
+
+> test
+> jest --verbose --runInBand tests/unit/page-data-consistency.test.js
+
+FAIL tests/unit/page-data-consistency.test.js
+  DEFAULT_PAGE_DATA 一致性验证（合并后）
+    √ 不包含 report 键 (2 ms)
+    √ trend 键包含合并后的完整字段 (1 ms)
+    × trend.metricOptions 包含三个指标 (2 ms)
+    √ trend.rangeOptions 包含三档时间 (1 ms)
+    × trend 默认值为 7天+血压 (2 ms)
+    √ reminder 任务使用 trend 路由 (1 ms)
+    √ reminder 任务标题已更新
+
+  ● DEFAULT_PAGE_DATA 一致性验证（合并后） › trend.metricOptions 包含三个指标
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 3
+    Received length: 2
+    Received array:  [{"key": "bpBg", "label": "血压血糖"}, {"key": "medication", "label": "用药"}]
+
+    [0m [90m 34 |[39m   it([32m'trend.metricOptions 包含三个指标'[39m[33m,[39m () [33m=>[39m {
+     [90m 35 |[39m     [36mconst[39m trend [33m=[39m [33mDEFAULT_PAGE_DATA[39m[33m.[39mtrend
+    [31m[1m>[22m[39m[90m 36 |[39m     expect(trend[33m.[39mmetricOptions)[33m.[39mtoHaveLength([35m3[39m)
+     [90m    |[39m                                 [31m[1m^[22m[39m
+     [90m 37 |[39m     [36mconst[39m keys [33m=[39m trend[33m.[39mmetricOptions[33m.[39mmap(o [33m=>[39m o[33m.[39mkey)
+     [90m 38 |[39m     expect(keys)[33m.[39mtoEqual([[32m'bloodPressure'[39m[33m,[39m [32m'bloodGlucose'[39m[33m,[39m [32m'medication'[39m])
+     [90m 39 |[39m   })[0m
+
+      at Object.toHaveLength (tests/unit/page-data-consistency.test.js:36:33)
+
+  ● DEFAULT_PAGE_DATA 一致性验证（合并后） › trend 默认值为 7天+血压
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "bloodPressure"
+    Received: "bpBg"
+
+    [0m [90m 48 |[39m   it([32m'trend 默认值为 7天+血压'[39m[33m,[39m () [33m=>[39m {
+     [90m 49 |[39m     [36mconst[39m trend [33m=[39m [33mDEFAULT_PAGE_DATA[39m[33m.[39mtrend
+    [31m[1m>[22m[39m[90m 50 |[39m     expect(trend[33m.[39mactiveMetric)[33m.[39mtoBe([32m'bloodPressure'[39m)
+     [90m    |[39m                                [31m[1m^[22m[39m
+     [90m 51 |[39m     expect(trend[33m.[39mactiveRange)[33m.[39mtoBe([32m'7d'[39m)
+     [90m 52 |[39m   })
+     [90m 53 |[39m[0m
+
+      at Object.toBe (tests/unit/page-data-consistency.test.js:50:32)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 5 passed, 7 total
+Snapshots:   0 total
+Time:        3.491 s
+Ran all test suites matching /tests\\unit\\page-data-consistency.test.js/i.

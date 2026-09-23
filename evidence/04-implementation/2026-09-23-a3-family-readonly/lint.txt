@@ -1,0 +1,105 @@
+
+> lint
+> eslint services/ utils/ pages/ components/ --ext .js
+
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\data\data\index.js
+   36:3  warning  Async method 'loadData' has no 'await' expression          require-await
+   60:3  warning  Async method 'handleExport' has no 'await' expression      require-await
+  131:3  warning  Async method 'handleDeleteData' has no 'await' expression  require-await
+  159:7  warning  Async method 'success' has no 'await' expression           require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family-sub\family-invite\index.js
+  28:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family-sub\family-join-hint\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family-sub\home-family\index.js
+  26:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family\index.js
+  29:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\home\index.js
+  36:3  warning  Async method 'loadData' has no 'await' expression  require-await
+  66:7  warning  Unexpected console statement                       no-console
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\me\index.js
+  23:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\medication\med-confirm\index.js
+  23:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\medication\med-history\index.js
+  47:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\medication\med-list\index.js
+   21:3  warning  Async method 'loadData' has no 'await' expression            require-await
+  149:3  warning  Async method 'handleBatchConfirm' has no 'await' expression  require-await
+  260:3  warning  Async method 'handleDeletePlan' has no 'await' expression    require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\reminder\reminder-settings\index.js
+  39:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\feedback\index.js
+  28:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\help\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\privacy-detail\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\privacy-policy\index.js
+  25:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\privacy\index.js
+  26:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\role\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\user-agreement\index.js
+  25:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\data-rights.js
+  9:3  error  'writeStorage' is assigned a value but never used  no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\medication-confirm.js
+   12:9   error  'getStoredMedicationPlans' is assigned a value but never used  no-unused-vars
+  117:10  error  'normalizeMedConfirmData' is defined but never used            no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\medication-merge.js
+  1:9   error  'STORAGE_KEYS' is assigned a value but never used  no-unused-vars
+  1:23  error  'readStorage' is assigned a value but never used   no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\records.js
+  8:3  error  'writeStorage' is assigned a value but never used  no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\report.js
+    2:9   error  'deepMerge' is assigned a value but never used                                no-unused-vars
+    2:20  error  'withMockPageData' is assigned a value but never used                         no-unused-vars
+    3:49  error  'dedupeRecords' is assigned a value but never used                            no-unused-vars
+  356:9   error  'isWeekly' is assigned a value but never used                                 no-unused-vars
+  422:60  error  'familyView' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\api.js
+  189:5  warning  Unexpected console statement  no-console
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\chart-adapter.js
+  131:26  error  Expected '===' and instead saw '=='  eqeqeq
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\onboarding-state.js
+  46:5  warning  Unexpected console statement  no-console
+  64:5  warning  Unexpected console statement  no-console
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\pre-check.js
+  162:5  warning  Unexpected console statement  no-console
+  169:7  warning  Unexpected console statement  no-console
+  173:9  warning  Unexpected console statement  no-console
+  185:7  warning  Unexpected console statement  no-console
+  191:7  warning  Unexpected console statement  no-console
+
+✖ 44 problems (12 errors, 32 warnings)
+

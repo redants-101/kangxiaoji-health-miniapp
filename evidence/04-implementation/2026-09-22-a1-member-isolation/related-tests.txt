@@ -1,0 +1,160 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a0-contract-integration.test.js tests/unit/shared-policy.test.js tests/unit/family.test.js tests/unit/a0-permission-policy.test.js
+
+PASS tests/unit/a0-contract-integration.test.js
+  A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权）
+    √ scopes 缺失：服务入口拒绝，不写数据库 (34 ms)
+    √ scopes null：服务入口拒绝，不写数据库 (1 ms)
+    √ scopes 字符串：服务入口拒绝，不写数据库 (1 ms)
+    √ scopes 对象：服务入口拒绝，不写数据库
+    √ scopes=[]：邀请可生成但落库四块 read/write/remind 全部 false，不恢复授权 (3 ms)
+    √ 部分 scopes：仅提交的块按值归一化，未提交块全部 false（不补开） (2 ms)
+    √ 显式合法的完整授权：按提交值正确保存（write 仅 BP/BG/medicine） (1 ms)
+    √ 未知关系在入口被拒绝，不写入
+    √ report write=true、非布尔、未知/重复 scope 在创建入口被拒绝 (1 ms)
+    √ 8 种关系可往返，提交的关系名称写入邀请成员 (2 ms)
+  A0-2 集成 · 加入家庭
+    √ 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active (1 ms)
+  A0-2 集成 · 家属首页按 read 输出受控明细
+    √ 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏） (1 ms)
+    √ 全块 read：血压血糖均输出，用药与周报可见
+    √ 血糖块开、血压块关：只输出血糖 (1 ms)
+  A0-2 集成 · 授权保存/回显
+    √ updateFamilyAuth：新 scopes 同步到 family_members，绑定的 family_auth 同步
+    √ updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key（A1 后须带有效 memberId）
+    √ getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules (1 ms)
+  A0-2 集成 · owner 本人功能不被误伤
+    √ getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成
+
+PASS tests/unit/shared-policy.test.js
+  payload-helpers · 北京时间日期函数（跨日边界，固定系统时间）
+    √ UTC 16:30（北京次日 00:30）取北京日期，发生跨日 (2 ms)
+    √ UTC 15:59:59（北京当天 23:59:59）仍为北京当天
+    √ UTC 16:00:00 整（北京次日 00:00）取次日 (1 ms)
+    √ 年初边界：UTC 上一年 12-31T16:00 取北京 1-1，月份补零
+    √ 偏移常量为 8 小时毫秒数 (1 ms)
+  payload-helpers · 纯断言与格式化
+    √ buildLogId 去掉时间中的冒号
+    √ getRecordStatus：warn 返回建议复测，其余返回正常
+    √ assertPayloadObject：接受普通对象，拒绝空值/数组/原始值 (16 ms)
+    √ getLimitedString：trim 空白；超长抛错；必填为空抛错；非字符串返回空串
+    √ getRequiredNumber：数值转换与范围边界；非法/越界抛错 (2 ms)
+    √ getOptionalNumber：空值返回 null，有值走范围校验
+    √ isValidTime：HH:mm 合法边界；24:00/格式错非法 (1 ms)
+    √ getEnumValue：白名单内通过，之外抛错
+  payload-validation · 用药计划与确认校验（B3 既有，行为未变）
+    √ 用药计划：合法入参归一化（times 去重、subscribe 布尔、startDate 默认今天） (1 ms)
+    √ 用药计划：名称必填；times 至少一个且不超过 8 个；时间格式校验 (2 ms)
+    √ 用药计划：endDate 格式校验，合法 endDate 保留
+    √ 用药确认：合法 taken，缺省状态文案为已服
+    √ 用药确认：skipped/snoozed 默认文案；自定义文案保留 (1 ms)
+    √ 用药确认：非法 status 抛错；logId/time/name 必填 (1 ms)
+  family-policy · 关系目录与默认成员（新契约）
+    √ 默认成员五字段
+    √ 关系目录恰好 8 项，键序固定
+    √ getFamilyRelationV2 命中返回；未知返回 null
+    √ 邀请默认 scopes：四块 read/remind 开、write 关
+    √ 邀请默认 noticeRules：漏服开、连续未记录关、周报开
+  family-policy · 三级权限归一化与动作判断（新契约）
+    √ normalizeFamilyScopesV2：缺字段默认 false；旧 enabled 忽略
+    √ 非布尔、未知/重复 key、report.write 被拒绝 (6 ms)
+    √ normalizeNoticeRulesV2：缺失 false；数组（旧页面形态）拒绝
+    √ canViewScope / canShowPhoneReminder：read 看数据、remind 出按钮 (1 ms)
+    √ getScopeTextV2：按 read 标题连接
+    √ normalizeFamilyInvitePayloadV2：缺失 scopes 拒绝；空数组四块全关；未知关系拒绝 (1 ms)
+    √ normalizeFamilyAuthPayloadV2：缺省全最小授权；noticeRules 对象
+    √ validateInviteCodePayload：对象+必填 (1 ms)
+  db 工厂 · 归属校验（本人/非本人/不存在/空ID）
+    √ 文档属于本人：返回文档
+    √ 文档属于他人：查不到，抛无权操作
+    √ 文档不存在：抛同样错误；空 ID 先拦截
+  db 工厂 · 名称查询与访问上下文（新契约）
+    √ createProfileDisplayName：命中返回 name；无档案回落家人
+    √ 有效成员关系：member 模式
+    √ ownerPreview：无关系但有本人有效 family_auth，scopes 与 noticeRules 归一化 (1 ms)
+    √ 无关系无授权、或授权已撤销：null
+
+PASS tests/unit/a0-permission-policy.test.js
+  A0 · 八种家属关系
+    √ 恰好 8 项，键名与顺序固定
+    √ 名称与用途按确认文案字面匹配
+    √ getFamilyRelationV2：命中返回；未知 key 返回 null（不静默回退）
+  A0 · normalizeFamilyScopesV2 · 合法输入
+    √ 完整授权归一化为规范四 scope（固定顺序、固定标题与用途） (1 ms)
+    √ 每项只给 key：read/write/remind 全部缺失默认 false
+    √ 显式 false 被保留为 false
+  A0 · normalizeFamilyScopesV2 · 拒绝非法输入
+    √ 非数组（undefined/null/对象）抛错 (16 ms)
+    √ 未知 scope key 抛错，不落库 (1 ms)
+    √ 非对象元素、缺 key 元素抛错
+    √ 重复 scope key 抛错 (1 ms)
+    √ read 为非布尔值 "false" 抛错，不做强制转换
+    √ write 为非布尔值 "true" 抛错，不做强制转换 (1 ms)
+    √ remind 为非布尔值 1 抛错，不做强制转换
+    √ read 为非布尔值 0 抛错，不做强制转换
+    √ write 为非布尔值 "yes" 抛错，不做强制转换 (1 ms)
+    √ remind 为非布尔值 "TRUE" 抛错，不做强制转换
+    √ 旧字段 enabled=true 不映射任何新权限
+    √ report 不接受 write=true（周报无代录能力）
+  A0 · 纯函数性质
+    √ 不修改输入对象（输入保持原样） (1 ms)
+    √ 重复调用结果不串扰
+  A0 · canPerformScopeAction · 允许与禁止
+    √ 血压代录：read+write 同时具备才允许；只 read 或只 write 拒绝 (1 ms)
+    √ 血糖代录：read+write 同时具备才允许 (1 ms)
+    √ 用药代确认与撤销本次代确认：medicine read+write
+    √ 用药计划管理：即使所有 write=true 也拒绝
+    √ 健康记录删除：write=true 也不放行
+    √ 未知动作一律拒绝（不因任何授权放行）
+    √ 未归一化/缺项输入：拒绝而非抛错
+  A0 · canViewScope / 电话提醒按钮
+    √ canViewScope：仅 read=true 可见
+    √ read=false、remind=true：电话按钮可显示，但 scope 数据不可见
+  A0 · noticeRules 归一化
+    √ 无入参：三项均默认 false
+    √ 逐项布尔归一化；非布尔抛错；多余键不进入结果
+  A0 · canViewReminderInfo · 合取双开关 + read
+    √ 漏服提醒：medicine read+remind 且 missedMedicine，三者齐备可见 (1 ms)
+    √ 连续未记录：血压或血糖块 read+remind，且 missingRecord
+    √ 周报提醒：report read+remind 且 weeklyReport
+    √ read=false、remind=true：只能出电话按钮，提醒明细不可见
+
+PASS tests/unit/family.test.js
+  services/family
+    normalizeMemberStatus
+      √ active/已授权 映射为 已授权
+      √ pending/待加入 映射为 待加入
+      √ revoked/已解除 映射为 已解除
+      √ 未知状态原样返回
+    getRelationInitial
+      √ 返回关系首字 (1 ms)
+      √ 空关系返回 家
+    getRelationMeta
+      √ 女儿 → 主要照护人
+      √ 儿子 → 紧急联系人
+      √ 配偶 → 共同管理 (1 ms)
+      √ 第 8 项 other → 家属/共同管理
+      √ 孙女/孙子 → 主要照护人 (1 ms)
+      √ 兄弟姐妹 → 共同管理；护工 → 协助管理
+      √ 未知关系回退首项（女儿/主要照护人） (1 ms)
+    getScopeText
+      √ 返回 read=true 权限的标题
+      √ 无 read 权限返回 fallback；旧 enabled 不产生文案
+      √ 非数组返回 fallback
+      √ 空数组返回 fallback (1 ms)
+    mapFamilyMember
+      √ 映射完整成员数据
+      √ 使用 fallback 填充缺失字段
+      √ 无 id 时使用索引生成 (1 ms)
+    enforceHomeFamilyAccess
+      √ 无授权数据时返回原始数据
+      √ 已解除授权时返回无权限数据
+    getNoFamilyAccessData
+      √ 返回无权限的标准结构 (1 ms)
+
+Test Suites: 4 passed, 4 total
+Tests:       115 passed, 115 total
+Snapshots:   0 total
+Time:        0.839 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a0-contract-integration.test.js|tests\\unit\\shared-policy.test.js|tests\\unit\\family.test.js|tests\\unit\\a0-permission-policy.test.js/i.

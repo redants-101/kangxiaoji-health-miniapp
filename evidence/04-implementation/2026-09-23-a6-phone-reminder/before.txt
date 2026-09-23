@@ -1,0 +1,338 @@
+FAIL tests/unit/a6-phone-reminder.test.js
+  A6 · family-policy 电话规则
+    × normalizeContactPhone：合法通过、空串清空、非法拒绝且错误信息不回显号码 (1 ms)
+    × maskContactPhone：138****1234；非法输入返回空串 (1 ms)
+    × canCallReminderPhone：任一 scope.remind=true 即可；全 false 不可
+  A6 · 服务端电话提醒
+    × owner 设置电话：落 family_auth；owner 授权页回读完整号+脱敏号；家庭页不因纯电话文档造预览卡
+    × 非法号码：拒绝且零写入；错误信息不含完整输入
+    × 清空电话后：家属端为未配置状态，取号接口 notConfigured
+    × remind=true 家属：homeFamily 只回脱敏号；完整号不出现在任何响应字段 (3 ms)
+    × remind=false 家属：无电话入口，接口不回传号码（脱敏也不给）
+    × read=false、remind=true：只允许电话提醒——无健康数据、无提醒明细、二级页拒绝 (1 ms)
+    × 拨号按需取号：active+remind 返回完整号；撤销后立即不再返回
+    × 无绑定成员取号：noBinding 拒绝 (1 ms)
+    × member 设置电话只写自己的配置，不能污染所拨号码（owner 文档权威）
+    × createFamilyInvite 可携带 contactPhone：合法落库；非法拒绝且零写入 (3 ms)
+    √ 不修改 sendDueReminders：云函数目录不存在家属推送分支（契约固定）
+  A6 · 客户端服务层
+    × setFamilyContactPhone 走 action（不入读缓存），成功后家族页失效置脏 (4 ms)
+    × familyGetReminderPhone 走 action 按需取号；完整号码不写入任何本地存储 (3 ms)
+  A6 · 页面电话提醒
+    × home-family 点击电话提醒：按需取号→makePhoneCall；完整号不进 data/存储 (1 ms)
+    × home-family 取号被拒（revoked）：不拨号、显式提示、记录 phoneError
+    × makePhoneCall 失败：明确提示未拨出，不假设成功 (1 ms)
+    √ read=false+remind=true：home-family 数据无健康明细、无写入口、有电话入口
+    × family-auth：加载回显电话；保存合法号走接口；非法号客户端拦截不出网 (1 ms)
+    × family-invite：未勾选电话授权时携带号码生成被拦截；勾选后号码随邀请提交 (1 ms)
+
+  ● A6 · family-policy 电话规则 › normalizeContactPhone：合法通过、空串清空、非法拒绝且错误信息不回显号码
+
+    TypeError: policy.normalizeContactPhone is not a function
+
+    [0m [90m 208 |[39m describe([32m'A6 · family-policy 电话规则'[39m[33m,[39m () [33m=>[39m {
+     [90m 209 |[39m   it([32m'normalizeContactPhone：合法通过、空串清空、非法拒绝且错误信息不回显号码'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 210 |[39m     expect(policy[33m.[39mnormalizeContactPhone([33mPHONE[39m))[33m.[39mtoBe([33mPHONE[39m)
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 211 |[39m     expect(policy[33m.[39mnormalizeContactPhone([32m''[39m))[33m.[39mtoBe([32m''[39m)
+     [90m 212 |[39m     expect(policy[33m.[39mnormalizeContactPhone(undefined))[33m.[39mtoBeNull()
+     [90m 213 |[39m     [36mconst[39m badInputs [33m=[39m [[32m'123'[39m[33m,[39m [32m'138000012345'[39m[33m,[39m [32m'23800001234'[39m[33m,[39m [32m'abcdefghijk'[39m[33m,[39m [32m'1380000123a'[39m[33m,[39m [35m13800001234[39m[33m,[39m {}[33m,[39m [36mnull[39m][0m
+
+      at Object.normalizeContactPhone (tests/unit/a6-phone-reminder.test.js:210:19)
+
+  ● A6 · family-policy 电话规则 › maskContactPhone：138****1234；非法输入返回空串
+
+    TypeError: policy.maskContactPhone is not a function
+
+    [0m [90m 224 |[39m
+     [90m 225 |[39m   it([32m'maskContactPhone：138****1234；非法输入返回空串'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 226 |[39m     expect(policy[33m.[39mmaskContactPhone([33mPHONE[39m))[33m.[39mtoBe([33mMASKED[39m)
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 227 |[39m     expect(policy[33m.[39mmaskContactPhone([32m''[39m))[33m.[39mtoBe([32m''[39m)
+     [90m 228 |[39m     expect(policy[33m.[39mmaskContactPhone([32m'123'[39m))[33m.[39mtoBe([32m''[39m)
+     [90m 229 |[39m     expect(policy[33m.[39mmaskContactPhone(undefined))[33m.[39mtoBe([32m''[39m)[0m
+
+      at Object.maskContactPhone (tests/unit/a6-phone-reminder.test.js:226:19)
+
+  ● A6 · family-policy 电话规则 › canCallReminderPhone：任一 scope.remind=true 即可；全 false 不可
+
+    TypeError: policy.canCallReminderPhone is not a function
+
+    [0m [90m 231 |[39m
+     [90m 232 |[39m   it([32m'canCallReminderPhone：任一 scope.remind=true 即可；全 false 不可'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 233 |[39m     expect(policy[33m.[39mcanCallReminderPhone(scopesWithRemind([33mNONE[39m[33m,[39m [33mNONE[39m[33m,[39m [33mNONE[39m[33m,[39m [36mtrue[39m)))[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 234 |[39m     expect(policy[33m.[39mcanCallReminderPhone(scopesWithRemind([33mRO[39m[33m,[39m [33mRO[39m[33m,[39m [33mRO[39m[33m,[39m [36mfalse[39m)))[33m.[39mtoBe([36mfalse[39m)
+     [90m 235 |[39m     expect(policy[33m.[39mcanCallReminderPhone([]))[33m.[39mtoBe([36mfalse[39m)
+     [90m 236 |[39m     expect(policy[33m.[39mcanCallReminderPhone(undefined))[33m.[39mtoBe([36mfalse[39m)[0m
+
+      at Object.canCallReminderPhone (tests/unit/a6-phone-reminder.test.js:233:19)
+
+  ● A6 · 服务端电话提醒 › owner 设置电话：落 family_auth；owner 授权页回读完整号+脱敏号；家庭页不因纯电话文档造预览卡
+
+    TypeError: familyService.setFamilyContactPhone is not a function
+
+    [0m [90m 243 |[39m   it([32m'owner 设置电话：落 family_auth；owner 授权页回读完整号+脱敏号；家庭页不因纯电话文档造预览卡'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 244 |[39m     [36mconst[39m { familyService[33m,[39m db } [33m=[39m build({ familyAuth[33m:[39m [][33m,[39m familyMembers[33m:[39m [][33m,[39m profiles[33m:[39m [{ _id[33m:[39m [32m'p'[39m[33m,[39m _openid[33m:[39m [32m'A'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }] })
+    [31m[1m>[22m[39m[90m 245 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39msetFamilyContactPhone([32m'A'[39m[33m,[39m { contactPhone[33m:[39m [33mPHONE[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 246 |[39m     expect(res[33m.[39mupdated)[33m.[39mtoBe([36mtrue[39m)
+     [90m 247 |[39m     expect(res[33m.[39mcontactPhoneMasked)[33m.[39mtoBe([33mMASKED[39m)
+     [90m 248 |[39m     expect(res[33m.[39mcontactPhone)[33m.[39mtoBeUndefined() [90m// 动作响应不回显完整号码[39m[0m
+
+      at Object.setFamilyContactPhone (tests/unit/a6-phone-reminder.test.js:245:37)
+
+  ● A6 · 服务端电话提醒 › 非法号码：拒绝且零写入；错误信息不含完整输入
+
+    TypeError: familyService.setFamilyContactPhone is not a function
+
+    [0m [90m 262 |[39m   it([32m'非法号码：拒绝且零写入；错误信息不含完整输入'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 263 |[39m     [36mconst[39m { familyService[33m,[39m db } [33m=[39m build({ familyAuth[33m:[39m [][33m,[39m familyMembers[33m:[39m [] })
+    [31m[1m>[22m[39m[90m 264 |[39m     [36mawait[39m expect(familyService[33m.[39msetFamilyContactPhone([32m'A'[39m[33m,[39m { contactPhone[33m:[39m [32m'138000012345'[39m }))
+     [90m     |[39m                                [31m[1m^[22m[39m
+     [90m 265 |[39m       [33m.[39mrejects[33m.[39mtoThrow([35m/电话|格式/[39m)
+     [90m 266 |[39m     [36mtry[39m {
+     [90m 267 |[39m       [36mawait[39m familyService[33m.[39msetFamilyContactPhone([32m'A'[39m[33m,[39m { contactPhone[33m:[39m [32m'138000012345'[39m })[0m
+
+      at Object.setFamilyContactPhone (tests/unit/a6-phone-reminder.test.js:264:32)
+
+  ● A6 · 服务端电话提醒 › 清空电话后：家属端为未配置状态，取号接口 notConfigured
+
+    TypeError: familyService.setFamilyContactPhone is not a function
+
+    [0m [90m 278 |[39m       records[33m:[39m [][33m,[39m profiles[33m:[39m [{ _id[33m:[39m [32m'p'[39m[33m,[39m _openid[33m:[39m [32m'A'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }]
+     [90m 279 |[39m     })
+    [31m[1m>[22m[39m[90m 280 |[39m     [36mawait[39m familyService[33m.[39msetFamilyContactPhone([32m'A'[39m[33m,[39m { contactPhone[33m:[39m [32m''[39m })
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 281 |[39m     [36mconst[39m home [33m=[39m [36mawait[39m familyService[33m.[39mgetHomeFamilyData([32m'B'[39m)
+     [90m 282 |[39m     expect(home[33m.[39mphoneReminder[33m.[39mconfigured)[33m.[39mtoBe([36mfalse[39m)
+     [90m 283 |[39m     expect(home[33m.[39mphoneReminder[33m.[39mcanCall)[33m.[39mtoBe([36mfalse[39m)[0m
+
+      at Object.setFamilyContactPhone (tests/unit/a6-phone-reminder.test.js:280:25)
+
+  ● A6 · 服务端电话提醒 › remind=true 家属：homeFamily 只回脱敏号；完整号不出现在任何响应字段
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: undefined
+
+    [0m [90m 296 |[39m     })
+     [90m 297 |[39m     [36mconst[39m home [33m=[39m [36mawait[39m familyService[33m.[39mgetHomeFamilyData([32m'B'[39m)
+    [31m[1m>[22m[39m[90m 298 |[39m     expect(home[33m.[39mphoneReminder)[33m.[39mtoMatchObject({ remindAllowed[33m:[39m [36mtrue[39m[33m,[39m canCall[33m:[39m [36mtrue[39m[33m,[39m configured[33m:[39m [36mtrue[39m[33m,[39m masked[33m:[39m [33mMASKED[39m })
+     [90m     |[39m                                [31m[1m^[22m[39m
+     [90m 299 |[39m     expect([33mJSON[39m[33m.[39mstringify(home))[33m.[39mnot[33m.[39mtoContain([33mPHONE[39m)
+     [90m 300 |[39m   })
+     [90m 301 |[39m[0m
+
+      at Object.toMatchObject (tests/unit/a6-phone-reminder.test.js:298:32)
+
+  ● A6 · 服务端电话提醒 › remind=false 家属：无电话入口，接口不回传号码（脱敏也不给）
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: undefined
+
+    [0m [90m 307 |[39m     })
+     [90m 308 |[39m     [36mconst[39m home [33m=[39m [36mawait[39m familyService[33m.[39mgetHomeFamilyData([32m'B'[39m)
+    [31m[1m>[22m[39m[90m 309 |[39m     expect(home[33m.[39mphoneReminder)[33m.[39mtoMatchObject({ remindAllowed[33m:[39m [36mfalse[39m[33m,[39m canCall[33m:[39m [36mfalse[39m[33m,[39m masked[33m:[39m [32m''[39m[33m,[39m configured[33m:[39m [36mfalse[39m })
+     [90m     |[39m                                [31m[1m^[22m[39m
+     [90m 310 |[39m     expect([33mJSON[39m[33m.[39mstringify(home))[33m.[39mnot[33m.[39mtoContain([33mPHONE[39m)
+     [90m 311 |[39m     expect([33mJSON[39m[33m.[39mstringify(home))[33m.[39mnot[33m.[39mtoContain([33mMASKED[39m)
+     [90m 312 |[39m     [36mconst[39m dial [33m=[39m [36mawait[39m familyService[33m.[39mfamilyGetReminderPhone([32m'B'[39m)[0m
+
+      at Object.toMatchObject (tests/unit/a6-phone-reminder.test.js:309:32)
+
+  ● A6 · 服务端电话提醒 › read=false、remind=true：只允许电话提醒——无健康数据、无提醒明细、二级页拒绝
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: {"bloodGlucose": false, "bloodPressure": false, "medicine": false, "report": false}
+    Received: undefined
+
+    [0m [90m 322 |[39m     })
+     [90m 323 |[39m     [36mconst[39m home [33m=[39m [36mawait[39m familyService[33m.[39mgetHomeFamilyData([32m'B'[39m)
+    [31m[1m>[22m[39m[90m 324 |[39m     expect(home[33m.[39mreadPermissions)[33m.[39mtoEqual({ bloodPressure[33m:[39m [36mfalse[39m[33m,[39m bloodGlucose[33m:[39m [36mfalse[39m[33m,[39m medicine[33m:[39m [36mfalse[39m[33m,[39m report[33m:[39m [36mfalse[39m })
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 325 |[39m     expect(home[33m.[39mlatestMetrics)[33m.[39mtoEqual([])
+     [90m 326 |[39m     expect(home[33m.[39mmedicineLogs)[33m.[39mtoEqual([])
+     [90m 327 |[39m     expect(home[33m.[39mphoneReminder[33m.[39mcanCall)[33m.[39mtoBe([36mtrue[39m)[0m
+
+      at Object.toEqual (tests/unit/a6-phone-reminder.test.js:324:34)
+
+  ● A6 · 服务端电话提醒 › 拨号按需取号：active+remind 返回完整号；撤销后立即不再返回
+
+    TypeError: familyService.familyGetReminderPhone is not a function
+
+    [0m [90m 344 |[39m       records[33m:[39m [][33m,[39m profiles[33m:[39m [{ _id[33m:[39m [32m'p'[39m[33m,[39m _openid[33m:[39m [32m'A'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }]
+     [90m 345 |[39m     })
+    [31m[1m>[22m[39m[90m 346 |[39m     [36mconst[39m dial [33m=[39m [36mawait[39m familyService[33m.[39mfamilyGetReminderPhone([32m'B'[39m)
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 347 |[39m     expect(dial[33m.[39mphone)[33m.[39mtoBe([33mPHONE[39m)
+     [90m 348 |[39m     expect(dial[33m.[39mmasked)[33m.[39mtoBe([33mMASKED[39m)
+     [90m 349 |[39m[0m
+
+      at Object.familyGetReminderPhone (tests/unit/a6-phone-reminder.test.js:346:38)
+
+  ● A6 · 服务端电话提醒 › 无绑定成员取号：noBinding 拒绝
+
+    TypeError: familyService.familyGetReminderPhone is not a function
+
+    [0m [90m 356 |[39m   it([32m'无绑定成员取号：noBinding 拒绝'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 357 |[39m     [36mconst[39m { familyService } [33m=[39m build({ familyAuth[33m:[39m [authDoc()][33m,[39m familyMembers[33m:[39m [] })
+    [31m[1m>[22m[39m[90m 358 |[39m     [36mconst[39m dial [33m=[39m [36mawait[39m familyService[33m.[39mfamilyGetReminderPhone([32m'C'[39m)
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 359 |[39m     expect(dial[33m.[39mphoneDenied)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'noBinding'[39m })
+     [90m 360 |[39m   })
+     [90m 361 |[39m[0m
+
+      at Object.familyGetReminderPhone (tests/unit/a6-phone-reminder.test.js:358:38)
+
+  ● A6 · 服务端电话提醒 › member 设置电话只写自己的配置，不能污染所拨号码（owner 文档权威）
+
+    TypeError: familyService.setFamilyContactPhone is not a function
+
+    [0m [90m 366 |[39m       records[33m:[39m [][33m,[39m profiles[33m:[39m [{ _id[33m:[39m [32m'p'[39m[33m,[39m _openid[33m:[39m [32m'A'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }]
+     [90m 367 |[39m     })
+    [31m[1m>[22m[39m[90m 368 |[39m     [36mawait[39m familyService[33m.[39msetFamilyContactPhone([32m'B'[39m[33m,[39m { contactPhone[33m:[39m [32m'13900009999'[39m })
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 369 |[39m     [36mconst[39m dial [33m=[39m [36mawait[39m familyService[33m.[39mfamilyGetReminderPhone([32m'B'[39m)
+     [90m 370 |[39m     expect(dial[33m.[39mphone)[33m.[39mtoBe([33mPHONE[39m) [90m// 仍是 owner A 配置的号码[39m
+     [90m 371 |[39m   })[0m
+
+      at Object.setFamilyContactPhone (tests/unit/a6-phone-reminder.test.js:368:25)
+
+  ● A6 · 服务端电话提醒 › createFamilyInvite 可携带 contactPhone：合法落库；非法拒绝且零写入
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "13800001234"
+    Received: undefined
+
+    [0m [90m 378 |[39m       contactPhone[33m:[39m [33mPHONE[39m
+     [90m 379 |[39m     })
+    [31m[1m>[22m[39m[90m 380 |[39m     expect(db[33m.[39m_stores[33m.[39mfamily_auth[33m.[39mrows[[35m0[39m][33m.[39mcontactPhone)[33m.[39mtoBe([33mPHONE[39m)
+     [90m     |[39m                                                         [31m[1m^[22m[39m
+     [90m 381 |[39m
+     [90m 382 |[39m     [36mconst[39m before [33m=[39m [33mJSON[39m[33m.[39mstringify(db[33m.[39m_stores[33m.[39mfamily_auth[33m.[39mrows)
+     [90m 383 |[39m     [36mawait[39m expect(familyService[33m.[39mcreateFamilyInvite([32m'A'[39m[33m,[39m {[0m
+
+      at Object.toBe (tests/unit/a6-phone-reminder.test.js:380:57)
+
+  ● A6 · 客户端服务层 › setFamilyContactPhone 走 action（不入读缓存），成功后家族页失效置脏
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "function"
+    Received: "undefined"
+
+    [0m [90m 452 |[39m   it([32m'setFamilyContactPhone 走 action（不入读缓存），成功后家族页失效置脏'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 453 |[39m     [36mconst[39m { core[33m,[39m family } [33m=[39m freshServices()
+    [31m[1m>[22m[39m[90m 454 |[39m     expect([36mtypeof[39m family[33m.[39msetFamilyContactPhone)[33m.[39mtoBe([32m'function'[39m)
+     [90m     |[39m                                                 [31m[1m^[22m[39m
+     [90m 455 |[39m     [36mawait[39m family[33m.[39msetFamilyContactPhone({ contactPhone[33m:[39m [33mPHONE[39m })
+     [90m 456 |[39m     expect(actionCalls[33m.[39msome(c [33m=>[39m c[33m.[39maction [33m===[39m [32m'setFamilyContactPhone'[39m [33m&&[39m c[33m.[39mpayload[33m.[39mcontactPhone [33m===[39m [33mPHONE[39m))[33m.[39mtoBe([36mtrue[39m)
+     [90m 457 |[39m     expect(core[33m.[39misDirty([32m'homeFamily'[39m))[33m.[39mtoBe([36mtrue[39m)[0m
+
+      at Object.toBe (tests/unit/a6-phone-reminder.test.js:454:49)
+
+  ● A6 · 客户端服务层 › familyGetReminderPhone 走 action 按需取号；完整号码不写入任何本地存储
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "function"
+    Received: "undefined"
+
+    [0m [90m 461 |[39m     cloudRouter [33m=[39m (d) [33m=>[39m (d[33m.[39maction [33m===[39m [32m'familyGetReminderPhone'[39m [33m?[39m { phone[33m:[39m [33mPHONE[39m[33m,[39m masked[33m:[39m [33mMASKED[39m } [33m:[39m { ok[33m:[39m [35m1[39m })
+     [90m 462 |[39m     [36mconst[39m { family } [33m=[39m freshServices()
+    [31m[1m>[22m[39m[90m 463 |[39m     expect([36mtypeof[39m family[33m.[39mfamilyGetReminderPhone)[33m.[39mtoBe([32m'function'[39m)
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 464 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m family[33m.[39mfamilyGetReminderPhone()
+     [90m 465 |[39m     expect(res[33m.[39mphone)[33m.[39mtoBe([33mPHONE[39m)
+     [90m 466 |[39m     expect([33mJSON[39m[33m.[39mstringify(storageMap))[33m.[39mnot[33m.[39mtoContain([33mPHONE[39m)[0m
+
+      at Object.toBe (tests/unit/a6-phone-reminder.test.js:463:50)
+
+  ● A6 · 页面电话提醒 › home-family 点击电话提醒：按需取号→makePhoneCall；完整号不进 data/存储
+
+    TypeError: page.handleCallReminder is not a function
+
+    [0m [90m 532 |[39m     [36mawait[39m page[33m.[39monLoad()
+     [90m 533 |[39m     expect(page[33m.[39mdata[33m.[39mphoneReminder[33m.[39mcanCall)[33m.[39mtoBe([36mtrue[39m)
+    [31m[1m>[22m[39m[90m 534 |[39m     [36mawait[39m page[33m.[39mhandleCallReminder()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 535 |[39m     expect(mockApi[33m.[39mfamilyGetReminderPhone)[33m.[39mtoHaveBeenCalled()
+     [90m 536 |[39m     expect(global[33m.[39mwx[33m.[39mmakePhoneCall)[33m.[39mtoHaveBeenCalledWith(expect[33m.[39mobjectContaining({ phoneNumber[33m:[39m [33mPHONE[39m }))
+     [90m 537 |[39m     expect([33mJSON[39m[33m.[39mstringify(page[33m.[39mdata))[33m.[39mnot[33m.[39mtoContain([33mPHONE[39m)[0m
+
+      at Object.handleCallReminder (tests/unit/a6-phone-reminder.test.js:534:16)
+
+  ● A6 · 页面电话提醒 › home-family 取号被拒（revoked）：不拨号、显式提示、记录 phoneError
+
+    TypeError: page.handleCallReminder is not a function
+
+    [0m [90m 544 |[39m     [36mconst[39m page [33m=[39m makePage(pageConfigs[[35m0[39m])
+     [90m 545 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 546 |[39m     [36mawait[39m page[33m.[39mhandleCallReminder()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 547 |[39m     expect(global[33m.[39mwx[33m.[39mmakePhoneCall)[33m.[39mnot[33m.[39mtoHaveBeenCalled()
+     [90m 548 |[39m     expect(page[33m.[39mdata[33m.[39mphoneError)[33m.[39mtoBe([32m'revoked'[39m)
+     [90m 549 |[39m     expect(global[33m.[39mwx[33m.[39mshowToast)[33m.[39mtoHaveBeenCalledWith(expect[33m.[39mobjectContaining({ icon[33m:[39m [32m'none'[39m }))[0m
+
+      at Object.handleCallReminder (tests/unit/a6-phone-reminder.test.js:546:16)
+
+  ● A6 · 页面电话提醒 › makePhoneCall 失败：明确提示未拨出，不假设成功
+
+    TypeError: page.handleCallReminder is not a function
+
+    [0m [90m 558 |[39m     [36mawait[39m page[33m.[39monLoad()
+     [90m 559 |[39m     global[33m.[39mwx[33m.[39mshowToast[33m.[39mmockClear()
+    [31m[1m>[22m[39m[90m 560 |[39m     [36mawait[39m page[33m.[39mhandleCallReminder()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 561 |[39m     expect(callOpts)[33m.[39mtoBeTruthy()
+     [90m 562 |[39m     callOpts[33m.[39mfail({ errMsg[33m:[39m [32m'makePhoneCall:fail cancel'[39m })
+     [90m 563 |[39m     [36mconst[39m toasted [33m=[39m global[33m.[39mwx[33m.[39mshowToast[33m.[39mmock[33m.[39mcalls[33m.[39mmap(c [33m=>[39m c[[35m0[39m][33m.[39mtitle)[33m.[39mjoin([32m'|'[39m)[0m
+
+      at Object.handleCallReminder (tests/unit/a6-phone-reminder.test.js:560:16)
+
+  ● A6 · 页面电话提醒 › family-auth：加载回显电话；保存合法号走接口；非法号客户端拦截不出网
+
+    TypeError: page.saveContactPhone is not a function
+
+    [0m [90m 599 |[39m     [90m// 非法号：客户端拦截，不调接口[39m
+     [90m 600 |[39m     page[33m.[39msetData({ contactPhoneInput[33m:[39m [32m'12345'[39m })
+    [31m[1m>[22m[39m[90m 601 |[39m     [36mawait[39m page[33m.[39msaveContactPhone()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 602 |[39m     expect(mockApi[33m.[39msetFamilyContactPhone)[33m.[39mnot[33m.[39mtoHaveBeenCalled()
+     [90m 603 |[39m     expect(page[33m.[39mdata[33m.[39mcontactPhoneError)[33m.[39mtoBeTruthy()
+     [90m 604 |[39m[0m
+
+      at Object.saveContactPhone (tests/unit/a6-phone-reminder.test.js:601:16)
+
+  ● A6 · 页面电话提醒 › family-invite：未勾选电话授权时携带号码生成被拦截；勾选后号码随邀请提交
+
+    expect(jest.fn()).not.toHaveBeenCalled()
+
+    Expected number of calls: 0
+    Received number of calls: 1
+
+    1: {"scopes": [{"key": "bloodPressure", "meta": "m", "read": true, "remind": true, "title": "血压记录", "write": false}, {"key": "bloodGlucose", "meta": "m", "read": true, "remind": true, "title": "血糖记录", "write": false}, {"key": "medicine", "meta": "m", "read": true, "remind": true, "title": "用药确认", "write": false}, {"key": "report", "meta": "m", "read": false, "remind": true, "title": "健康记录周报", "write": false}], "selectedRelation": "daughter"}
+
+    [0m [90m 626 |[39m     page[33m.[39msetData({ contactPhoneInput[33m:[39m [33mPHONE[39m[33m,[39m phoneAgreed[33m:[39m [36mfalse[39m })
+     [90m 627 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+    [31m[1m>[22m[39m[90m 628 |[39m     expect(mockApi[33m.[39mcreateFamilyInvite)[33m.[39mnot[33m.[39mtoHaveBeenCalled()
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 629 |[39m     expect(global[33m.[39mwx[33m.[39mshowToast)[33m.[39mtoHaveBeenCalled()
+     [90m 630 |[39m
+     [90m 631 |[39m     global[33m.[39mwx[33m.[39mshowToast[33m.[39mmockClear()[0m
+
+      at Object.toHaveBeenCalled (tests/unit/a6-phone-reminder.test.js:628:44)
+
+Test Suites: 1 failed, 1 total
+Tests:       20 failed, 2 passed, 22 total
+Snapshots:   0 total
+Time:        1.011 s
+Ran all test suites matching /tests\\unit\\a6-phone-reminder.test.js/i.

@@ -1,0 +1,133 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a2-invite-security.test.js tests/unit/a2-followup.test.js tests/unit/a1-member-isolation.test.js tests/unit/a0-contract-integration.test.js
+
+PASS tests/unit/a0-contract-integration.test.js
+  A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权）
+    √ scopes 缺失：服务入口拒绝，不写数据库 (25 ms)
+    √ scopes null：服务入口拒绝，不写数据库 (1 ms)
+    √ scopes 字符串：服务入口拒绝，不写数据库 (1 ms)
+    √ scopes 对象：服务入口拒绝，不写数据库
+    √ scopes=[]：邀请可生成但落库四块 read/write/remind 全部 false，不恢复授权 (4 ms)
+    √ 部分 scopes：仅提交的块按值归一化，未提交块全部 false（不补开） (1 ms)
+    √ 显式合法的完整授权：按提交值正确保存（write 仅 BP/BG/medicine） (1 ms)
+    √ 未知关系在入口被拒绝，不写入
+    √ report write=true、非布尔、未知/重复 scope 在创建入口被拒绝 (1 ms)
+    √ 8 种关系可往返，提交的关系名称写入邀请成员 (1 ms)
+  A0-2 集成 · 加入家庭
+    √ 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active (2 ms)
+  A0-2 集成 · 家属首页按 read 输出受控明细
+    √ 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏） (1 ms)
+    √ 全块 read：血压血糖均输出，用药与周报可见
+    √ 血糖块开、血压块关：只输出血糖
+  A0-2 集成 · 授权保存/回显
+    √ updateFamilyAuth：新 scopes 同步到 family_members，绑定的 family_auth 同步 (1 ms)
+    √ updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key（A1 后须带有效 memberId） (2 ms)
+    √ getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules (1 ms)
+  A0-2 集成 · owner 本人功能不被误伤
+    √ getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成
+
+PASS tests/unit/a2-followup.test.js
+  A2 收尾 · 无邀请码说明态
+    √ 缺码：noInvite 说明态——无有效期、无可查看范围、无有效标志、不计数 (2 ms)
+    √ 空串与纯空白串同缺码处理，不计数
+    √ 非字符串输入（数字）按 INVALID 计数，不冒充缺码 (1 ms)
+    √ 非字符串输入（对象）按 INVALID 计数，不冒充缺码
+    √ 非字符串输入（布尔）按 INVALID 计数，不冒充缺码 (1 ms)
+    √ 非字符串输入（数组）按 INVALID 计数，不冒充缺码
+    √ 本地镜像：无邀请码加入不假成功 (30 ms)
+  A2 收尾 · 有效期边界
+    √ expiresAt 不可解析：查询与加入均按 INVALID 拒绝，不产生 NaN 剩余时间 (1 ms)
+    √ 刚好到期（expiresAt == now）：按已过期拒绝 (2 ms)
+    √ 未来有效期：正常预览，remainHours 为有限正数
+  A2 收尾 · 重邀/加入交错（事务分支控制流）
+    √ 事务路径 happy path：锚点文档创建、邀请转 active (1 ms)
+    √ 交错：外层读到旧码 A，事务开始前 owner 重邀换码 B——旧码请求被拒，新邀请不被消耗 (1 ms)
+    √ 事务内锚点读取发生基础设施异常：原样上抛，零写入（不吞异常继续写） (9 ms)
+  A2 收尾 · 原子频控（预留-核销-退还）
+    √ 失败累计到计数文档：第 20 次失败后额度用尽，第 21 次拒绝且不再探测
+    √ 计数文档为每 (openId, 北京日) 单文档，含 day 键，不含邀请码明文 (1 ms)
+    √ 成功查询退还额度：失败 19 次后一次成功，计数回到 19
+    √ 自绑/已绑定他人属业务拒绝但非枚举失败：退还额度 (1 ms)
+    √ join 与查询共用额度：查询失败 20 次后 join 直接被拒
+    √ 自然日切换：昨日计数满额不影响今日（key 内嵌北京日） (1 ms)
+    √ 并发建计数文档冲突（add 撞 _id）：重试条件更新后正常计 1
+  A2 收尾 · 重邀必须发新码
+    √ 候选码与 owner 自己当前码相同：不复用，重新生成 (1 ms)
+    √ 连续 3 次候选码均被占用（含自己旧码）：抛冲突且零写入 (1 ms)
+
+PASS tests/unit/a2-invite-security.test.js
+  A2 · getFamilyJoinData 错误态与错误码
+    √ 缺失 inviteCode：noInvite 说明态，无 inviteError、不计失败 (1 ms)
+    √ 格式错误：FAMILY_INVITE_INVALID，失败额度计 1，零成员写入 (1 ms)
+    √ 不存在：FAMILY_INVITE_NOT_FOUND，额度计 1 (1 ms)
+    √ expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容
+    √ 已过期：FAMILY_INVITE_EXPIRED (1 ms)
+    √ 已撤销：FAMILY_INVITE_REVOKED
+    √ 已被其他成员使用：FAMILY_INVITE_USED
+    √ 正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，额度退还为 0 (1 ms)
+    √ 任何失败路径：family_members 零写入、family_auth 不被改为 active
+  A2 · 频控（openId + 北京自然日，额度 20，原子预留）
+    √ 第 1 次失败额度计 1；累计到 20 后第 21 次查询被拒且额度不再增长
+    √ 自然日切换：昨日额度用尽不影响今日查询（key 内嵌北京日） (1 ms)
+    √ 频控计数文档不含邀请码明文，字段为 openId/day/count
+    √ 频控按调用者隔离：caller-2 不受 caller-1 的失败影响
+  A2 · joinFamilyByInvite 错误码与频控防绕过
+    √ 不存在 → FAMILY_INVITE_NOT_FOUND 且计数
+    √ 已过期 → FAMILY_INVITE_EXPIRED
+    √ 已撤销 → FAMILY_INVITE_REVOKED
+    √ 已被他人使用 → FAMILY_INVITE_USED
+    √ expiresAt 缺失 → FAMILY_INVITE_INVALID（不做兼容）
+    √ 自绑 → FAMILY_INVITE_SELF（既有语义补码，不占失败额度）
+    √ 已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码） (1 ms)
+    √ 频控拒绝直接刷 join 接口：RATE_LIMITED，零写入
+  A2 · createFamilyInvite 唯一性前置检查
+    √ 候选码与他人文档冲突时重新生成，落库用新码 (1 ms)
+    √ 连续冲突 3 次：抛错且不写入新邀请 (22 ms)
+    √ 重邀必须发新码：候选码命中自己旧文档同样视为冲突（A2 收尾修订） (1 ms)
+  A2 · 本地镜像过期校验（decisions #15）
+    √ 本地邀请已过期：拒绝且不假成功 (5 ms)
+    √ 本地邀请缺失 expiresAt：一律无效 (1 ms)
+    √ 邀请码与本地记录不一致：按不存在处理
+    √ 有效本地邀请：正常镜像 joined 状态 (1 ms)
+    √ createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验） (1 ms)
+  A2 · 页面消费契约
+    √ normalizeFamilyJoinData 透传 inviteError（页面据 code 渲染状态）
+
+PASS tests/unit/a1-member-isolation.test.js
+  A1 · 一位老人关联多位家属
+    √ O1 先后绑定 M1、M2：两行 active 关系互不影响 (3 ms)
+  A1 · 重新邀请：清空绑定但不动已有成员
+    √ 重邀后 family_auth memberOpenId 清空、status=pending，M1 关系行原样保留 (1 ms)
+  A1 · 精准改权
+    √ 修改 M1 后：M2 权限与无关待加入邀请保持不变 (1 ms)
+    √ memberId 缺失：拒绝且 family_auth 与 family_members 零写入 (20 ms)
+    √ memberId 伪造：拒绝且 family_auth 与 family_members 零写入 (1 ms)
+    √ memberId 空字符串：拒绝且 family_auth 与 family_members 零写入 (1 ms)
+    √ 其他 owner 的 memberId：拒绝且零写入 (2 ms)
+    √ getFamilyAuthData 预览分支不得回填 family_auth id 充当 memberId
+    √ getFamilyData 预览卡不得携带 family_auth id 作为成员 id
+  A1 · 精准撤销
+    √ 撤销 M1 后：M1 新请求被拒（空数据），M2 新请求仍允许 (2 ms)
+    √ 重复撤销：幂等返回且零写入，不触碰无关邀请与其他成员 (1 ms)
+    √ 撤销要求 memberId：缺失时拒绝且不清 family_auth (1 ms)
+    √ 撤销只重置确实绑定该成员的 family_auth，不动他人绑定
+  A1 · 加入家庭：1:1、幂等与自绑
+    √ 已绑定 O1 的成员加入 O2 被拒，零新行、O2 邀请保持 pending (1 ms)
+    √ 同 owner 重复加入：幂等，不增行、不重置已调整权限 (1 ms)
+    √ 拒绝本人自绑定 (3 ms)
+    √ 同一邀请码顺序竞争：先到者绑定，后到者被拒（并发原子性属云端待验证） (1 ms)
+    √ 被撤销的成员可重新加入（新邀请），锚点复活为新关系 (1 ms)
+  A1 · 注销关联清理
+    √ 家属 M1 注销：只删本人关系行，M2 与 O1 数据不受影响 (1 ms)
+    √ 注销者是当前绑定成员时，才重置对应 family_auth；绑定他人则不动 (1 ms)
+  A1 · 客户端镜像：memberId 精确更新，无假成功
+    √ 无 memberId 的改权结果：不镜像、不造卡，返回远端结果 (1 ms)
+    √ 带 memberId 的改权：只更新对应成员卡
+    √ 撤销镜像：只移除目标成员
+
+Test Suites: 4 passed, 4 total
+Tests:       93 passed, 93 total
+Snapshots:   0 total
+Time:        0.879 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a2-invite-security.test.js|tests\\unit\\a2-followup.test.js|tests\\unit\\a1-member-isolation.test.js|tests\\unit\\a0-contract-integration.test.js/i.

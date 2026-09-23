@@ -1,0 +1,41 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a1-member-isolation.test.js
+
+PASS tests/unit/a1-member-isolation.test.js
+  A1 · 一位老人关联多位家属
+    √ O1 先后绑定 M1、M2：两行 active 关系互不影响 (7 ms)
+  A1 · 重新邀请：清空绑定但不动已有成员
+    √ 重邀后 family_auth memberOpenId 清空、status=pending，M1 关系行原样保留 (1 ms)
+  A1 · 精准改权
+    √ 修改 M1 后：M2 权限与无关待加入邀请保持不变 (1 ms)
+    √ memberId 缺失：拒绝且 family_auth 与 family_members 零写入 (23 ms)
+    √ memberId 伪造：拒绝且 family_auth 与 family_members 零写入 (2 ms)
+    √ memberId 空字符串：拒绝且 family_auth 与 family_members 零写入 (1 ms)
+    √ 其他 owner 的 memberId：拒绝且零写入 (2 ms)
+    √ getFamilyAuthData 预览分支不得回填 family_auth id 充当 memberId
+    √ getFamilyData 预览卡不得携带 family_auth id 作为成员 id
+  A1 · 精准撤销
+    √ 撤销 M1 后：M1 新请求被拒（空数据），M2 新请求仍允许 (2 ms)
+    √ 重复撤销：幂等返回且零写入，不触碰无关邀请与其他成员 (1 ms)
+    √ 撤销要求 memberId：缺失时拒绝且不清 family_auth (1 ms)
+    √ 撤销只重置确实绑定该成员的 family_auth，不动他人绑定 (1 ms)
+  A1 · 加入家庭：1:1、幂等与自绑
+    √ 已绑定 O1 的成员加入 O2 被拒，零新行、O2 邀请保持 pending (1 ms)
+    √ 同 owner 重复加入：幂等，不增行、不重置已调整权限
+    √ 拒绝本人自绑定 (1 ms)
+    √ 同一邀请码顺序竞争：先到者绑定，后到者被拒（并发原子性属云端待验证） (2 ms)
+    √ 被撤销的成员可重新加入（新邀请），锚点复活为新关系
+  A1 · 注销关联清理
+    √ 家属 M1 注销：只删本人关系行，M2 与 O1 数据不受影响 (1 ms)
+    √ 注销者是当前绑定成员时，才重置对应 family_auth；绑定他人则不动 (1 ms)
+  A1 · 客户端镜像：memberId 精确更新，无假成功
+    √ 无 memberId 的改权结果：不镜像、不造卡，返回远端结果 (1 ms)
+    √ 带 memberId 的改权：只更新对应成员卡 (1 ms)
+    √ 撤销镜像：只移除目标成员 (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       23 passed, 23 total
+Snapshots:   0 total
+Time:        0.452 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a1-member-isolation.test.js/i.

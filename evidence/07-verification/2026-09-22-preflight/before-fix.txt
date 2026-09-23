@@ -1,0 +1,10 @@
+# 修复前失败运行记录（2026-09-22 preflight 批次，reserveFailureSlot add-catch 缺陷）
+# 命令：npm test -- --runInBand tests/unit/a2-followup.test.js（新增“基础设施异常不得伪装成频控拒绝”用例后、实现修正前）
+# 终端实录摘录：
+√ 事务内锚点读取发生基础设施异常：原样上抛，零写入（不吞异常继续写） (13 ms)
+× add 发生非重复键的基础设施异常：原样上抛，不得伪装成频控拒绝 (2 ms)
+● A2 收尾 · 原子频控（预留-核销-退还） › add 发生非重复键的基础设施异常：原样上抛，不得伪装成频控拒绝
+Tests:       1 failed, 22 passed, 23 total
+# 失败原因：add 抛 'network timeout' 被 catch 吞掉按重复键重试，两轮耗尽后 return null → RATE_LIMITED 页面态，
+# 与断言 rejects.toThrow('network timeout') 不符 → 证实“基础设施异常伪装成频控拒绝”缺陷。
+# 修正后同命令：23/23 通过（见 followup-after-fix.txt）。

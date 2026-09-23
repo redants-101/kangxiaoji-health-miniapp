@@ -1,0 +1,1614 @@
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index 71a6d5d..12d4420 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -33,9 +33,11 @@ function createFamilyService({
+   normalizeFamilyInvitePayloadV2,
+   validateInviteCodePayload,
+   getLimitedString,
+-  createInviteCode
++  createInviteCode,
++  getRecordService,
++  getMedicationService
+ }) {
+-  // ============ A2：邀请错误码、频控与失效分类 ============
++  // ============ A2：邀请错误码、原子频控与失效分类 ============
+ 
+   // 构造带稳定错误码的异常（errMsg 供 toast，code 供页面状态分支）
+   function inviteError(key) {
+@@ -45,56 +47,117 @@ function createFamilyService({
+     return error
+   }
+ 
+-  // 当日失败计数：openId + 北京自然日（云函数运行在 UTC，必须用北京日界，否则 0-8 点串日）
+-  async function countTodayInviteFailures(openId) {
+-    const { total } = await db.collection(collections.inviteAttempts)
+-      .where({ openId, day: getTodayDateValue() })
+-      .count()
+-    return total
++  // 计入失败额量的错误码（枚举类失败）；自绑/已绑定/频控本身不占额度
++  const COUNTED_FAILURE_CODES = new Set([
++    FAMILY_INVITE_ERRORS.notFound.code,
++    FAMILY_INVITE_ERRORS.invalid.code,
++    FAMILY_INVITE_ERRORS.expired.code,
++    FAMILY_INVITE_ERRORS.revoked.code,
++    FAMILY_INVITE_ERRORS.used.code
++  ])
++
++  // 频控计数文档：每 (openId, 北京自然日) 一条，_id 确定性生成。
++  // 日界正确性由 key 内嵌 day 保证；TTL 索引只负责物理清理。
++  function inviteFailureKey(openId) {
++    return `invite-fail-${openId}-${getTodayDateValue()}`
+   }
+ 
+-  // 失败记录：只存 openId/日期/错误码，不存邀请码明文（decisions #10）
+-  async function recordInviteFailure(openId, reasonCode) {
+-    await db.collection(collections.inviteAttempts).add({
+-      data: {
+-        openId,
+-        day: getTodayDateValue(),
+-        reason: reasonCode,
+-        createdAt: db.serverDate()
++  /**
++   * 原子预留一个失败额度（reserve）：
++   * 条件更新 where({_id, count < 20}).update(count+1) 依赖单文档写原子性
++   * （MongoDB 官方乐观锁模式，能力来源见 rate-limit-plan.md §2），
++   * 并发请求不可能全部先通过门限再各自探测邀请。
++   * 文档不存在时以确定性 _id 创建；add 撞唯一冲突则回到条件更新重试一次。
++   * @returns {Promise<{key: string}|null>} null 表示额度已满，应拒绝（RATE_LIMITED）。
++   */
++  async function reserveFailureSlot(openId) {
++    const key = inviteFailureKey(openId)
++    const day = getTodayDateValue()
++    for (let attempt = 0; attempt < 2; attempt += 1) {
++      const res = await db.collection(collections.inviteAttempts)
++        .where({ _id: key, count: _.lt(INVITE_FAILURE_LIMIT_PER_DAY) })
++        .update({ data: { count: _.inc(1), updatedAt: db.serverDate() } })
++      if (res && res.stats && res.stats.updated > 0) {
++        return { key }
+       }
+-    })
++      const { data } = await db.collection(collections.inviteAttempts)
++        .where({ _id: key })
++        .limit(1)
++        .get()
++      if (data.length) {
++        return null // 文档存在但条件更新未命中 → count 已达上限
++      }
++      try {
++        await db.collection(collections.inviteAttempts).add({
++          data: {
++            _id: key,
++            openId,
++            day,
++            count: 1,
++            createdAt: db.serverDate(),
++            updatedAt: db.serverDate()
++          }
++        })
++        return { key }
++      } catch (e) {
++        // 仅"已确认的重复键冲突"（并发创建撞 _id）回到条件更新重试；
++        // 网络/权限等基础设施异常原样上抛，不得伪装成频控拒绝。
++        // 重复键签名 E11000/duplicate key 为 Mongo 标准报文透传（本地 SDK 无专属错误码，
++        // 真实云端签名属测试环境待验证项；若签名不匹配则按基础设施异常上抛，方向 fail-closed）。
++        const msg = String((e && (e.errMsg || e.message)) || e)
++        if (!/E11000|duplicate key/i.test(msg)) {
++          throw e
++        }
++      }
++    }
++    return null // 两轮仍未取得额度：保守拒绝（fail-closed）
+   }
+ 
+-  async function assertInviteRateLimit(openId) {
+-    const failures = await countTodayInviteFailures(openId)
+-    if (failures >= INVITE_FAILURE_LIMIT_PER_DAY) {
+-      throw inviteError('rateLimited')
++  /**
++   * 退还预留额度（成功/非枚举类业务拒绝/基础设施异常时调用）。
++   * 退还失败只会使额度偏紧（fail-closed），不放宽，不阻断主流程。
++   */
++  async function releaseFailureSlot(key) {
++    try {
++      await db.collection(collections.inviteAttempts)
++        .where({ _id: key, count: _.gt(0) })
++        .update({ data: { count: _.inc(-1), updatedAt: db.serverDate() } })
++    } catch (e) {
++      // 方向安全（只会更严），静默
+     }
+   }
+ 
+-  // 邀请文档失效分类（decisions #9/#15）：
+-  // 不存在 → notFound；expiresAt 缺失一律 invalid（不做兼容）；revoked/used/expired 依序判定。
++  // 邀请文档失效分类（decisions #9/#15 + 收尾修正）：
++  // 不存在 → notFound；expiresAt 缺失或不可解析一律 invalid（不做兼容）；
++  // revoked/used 依序判定；刚好到期（<=now）按 expired。
+   // self/bound 不在本分类内（需结合调用者身份，由 join 流程单独判定）。
+   function classifyInviteAuth(auth, openId) {
+     if (!auth) return 'notFound'
+     if (!auth.expiresAt) return 'invalid'
+     if (auth.status === 'revoked') return 'revoked'
+     if (auth.status === 'active' && auth.memberOpenId && auth.memberOpenId !== openId) return 'used'
+-    if (new Date(auth.expiresAt).getTime() < Date.now()) return 'expired'
++    const expiry = new Date(auth.expiresAt).getTime()
++    if (!Number.isFinite(expiry)) return 'invalid'
++    if (expiry <= Date.now()) return 'expired'
+     return null
+   }
+ 
+   // 邀请码唯一性前置检查（decisions #11 的代码侧部分）：
+-  // 生成后按码查重，他人持有则重生成（最多 3 次）；owner 单文档重邀命中自己旧码不算冲突。
+-  // 注意：这只是前置检查，并发唯一性的最终保障是云端 family_auth.inviteCode sparse 唯一索引（控制台部署条件）。
+-  async function generateUniqueInviteCode(openId) {
++  // 候选码与任何现存文档同码（含 owner 自己的当前码）都视为冲突并重新生成——
++  // 重邀必须发新码，否则旧码在重邀后仍有效，构成"重邀/加入交错"的攻击面。
++  // 并发唯一性的最终保障是云端 family_auth.inviteCode sparse 唯一索引（已建）。
++  async function generateUniqueInviteCode() {
+     for (let attempt = 0; attempt < 3; attempt += 1) {
+       const candidate = createInviteCode()
++      // 生成器异常输出按冲突处理，继续重试；3 次后统一抛错
++      if (typeof candidate !== 'string' || !INVITE_CODE_PATTERN.test(candidate)) {
++        continue
++      }
+       const { data: dup = [] } = await db.collection(collections.familyAuth)
+         .where({ inviteCode: candidate })
+         .limit(1)
+         .get()
+-      if (!dup.length || dup[0]._openid === openId) {
++      if (!dup.length) {
+         return candidate
+       }
+     }
+@@ -353,10 +416,30 @@ function createFamilyService({
+   }
+ 
+   async function getFamilyJoinData(openId, payload = {}) {
+-    const rawCode = (payload && (payload.inviteCode || payload.inviteId)) || ''
+-    const inviteCode = typeof rawCode === 'string' ? rawCode.trim() : ''
++    const rawCode = payload ? (payload.inviteCode !== undefined ? payload.inviteCode : payload.inviteId) : undefined
++
++    // 无邀请码说明态：仅 undefined/null/空串/纯空白串；不显示有效期与可查看范围，不计失败
++    const isAbsent = rawCode === undefined || rawCode === null ||
++      (typeof rawCode === 'string' && rawCode.trim() === '')
++    if (isAbsent) {
++      return {
++        noInvite: true,
++        inviteCode: '',
++        inviteTitle: '尚未获得邀请',
++        inviteSubtitle: '请通过家人分享的邀请链接或邀请码进入。',
++        remainHours: 0,
++        agreed: false,
++        identity: {
++          initial: '家',
++          title: '家属',
++          meta: '获得邀请后可查看授权范围'
++        },
++        scopes: []
++      }
++    }
++
+     const basePage = {
+-      inviteCode,
++      inviteCode: typeof rawCode === 'string' ? rawCode.trim() : '',
+       inviteTitle: '家庭健康记录邀请',
+       inviteSubtitle: '加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。',
+       remainHours: 24,
+@@ -369,9 +452,6 @@ function createFamilyService({
+       scopes: getDefaultInviteScopesV2().filter(scope => scope.read === true)
+     }
+ 
+-    // 未携带邀请码：默认说明页，不算失败、不计数
+-    if (!inviteCode) return basePage
+-
+     const failPage = (key) => ({
+       ...basePage,
+       scopes: [],
+@@ -379,50 +459,64 @@ function createFamilyService({
+       inviteError: { ...FAMILY_INVITE_ERRORS[key] }
+     })
+ 
+-    // 频控门限（decisions #10）：当日失败 ≥20 次拒绝继续查询；拒绝本身不计数
+-    const failures = await countTodayInviteFailures(openId)
+-    if (failures >= INVITE_FAILURE_LIMIT_PER_DAY) return failPage('rateLimited')
++    // 原子预留额度（查询与 join 共用；预留成功才允许探测邀请）
++    const slot = await reserveFailureSlot(openId)
++    if (!slot) return failPage('rateLimited')
+ 
+-    // 格式错误：不查库，记失败
+-    if (!INVITE_CODE_PATTERN.test(inviteCode)) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS.invalid.code)
++    // 非字符串真值属非法输入，不得冒充缺码：按 INVALID 处理并占用额度
++    if (typeof rawCode !== 'string') {
+       return failPage('invalid')
+     }
++    const inviteCode = rawCode.trim()
++
++    let auth = null
++    let failureKey = null
++    try {
++      if (!INVITE_CODE_PATTERN.test(inviteCode)) {
++        failureKey = 'invalid'
++      } else {
++        const { data: authList = [] } = await withPerfLog({
++          routeType: 'key',
++          route: 'familyJoin',
++          step: 'db.familyAuth.byInvite'
++        }, () => db.collection(collections.familyAuth)
++          .where({ inviteCode })
++          .field({
++            _id: true,
++            _openid: true,
++            ownerOpenId: true,
++            ownerName: true,
++            status: true,
++            member: true,
++            scopes: true,
++            expiresAt: true
++          })
++          .limit(1)
++          .get())
++        auth = authList[0]
++        failureKey = classifyInviteAuth(auth, openId)
++      }
++    } catch (err) {
++      // 基础设施异常：退还额度（不计为用户失败），原样上抛走页面网络失败态
++      await releaseFailureSlot(slot.key)
++      throw err
++    }
+ 
+-    const { data: authList = [] } = await withPerfLog({
+-      routeType: 'key',
+-      route: 'familyJoin',
+-      step: 'db.familyAuth.byInvite'
+-    }, () => db.collection(collections.familyAuth)
+-      .where({ inviteCode })
+-      .field({
+-        _id: true,
+-        _openid: true,
+-        ownerOpenId: true,
+-        ownerName: true,
+-        status: true,
+-        member: true,
+-        scopes: true,
+-        expiresAt: true
+-      })
+-      .limit(1)
+-      .get())
+-
+-    const auth = authList[0]
+-    const failureKey = classifyInviteAuth(auth, openId)
+     if (failureKey) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS[failureKey].code)
+-      return failPage(failureKey)
++      return failPage(failureKey) // 预留额度即失败计数，不退还
+     }
+ 
++    // 查询成功：退还额度
++    await releaseFailureSlot(slot.key)
++
+     const ownerOpenId = auth.ownerOpenId || auth._openid
+     const ownerName = auth.ownerName || await withPerfLog({
+       routeType: 'key',
+       route: 'familyJoin',
+       step: 'db.profiles.ownerName'
+     }, () => getProfileDisplayName(ownerOpenId))
+-    // classify 已保证 expiresAt 存在（decisions #15），此处无需兼容分支
+-    const remainHours = Math.max(0, Math.ceil((new Date(auth.expiresAt).getTime() - Date.now()) / (60 * 60 * 1000)))
++    // classify 已保证 expiresAt 存在、可解析且未到期，remainHours 必为有限正数
++    const remainHours = Math.max(1, Math.ceil((new Date(auth.expiresAt).getTime() - Date.now()) / (60 * 60 * 1000)))
+     const relation = auth.member || getDefaultFamilyMember()
+     return {
+       inviteCode,
+@@ -606,7 +700,7 @@ function createFamilyService({
+         .get())
+     ])
+ 
+-    const inviteCode = await generateUniqueInviteCode(openId)
++    const inviteCode = await generateUniqueInviteCode()
+     const inviteData = {
+       ownerOpenId: openId,
+       ownerName,
+@@ -699,11 +793,30 @@ function createFamilyService({
+   async function joinFamilyByInvite(openId, payload) {
+     const inviteCode = validateInviteCodePayload(payload)
+ 
+-    // A2 频控门限：join 与查询共用同一计数，防止绕过查询接口直接刷 join 枚举
+-    await assertInviteRateLimit(openId)
++    // 原子预留额度：join 与查询共用同一计数（防止绕过查询接口直接刷 join 枚举）。
++    // 预留成功才允许探测邀请；额度已满直接拒绝，不发生任何邀请查询。
++    const slot = await reserveFailureSlot(openId)
++    if (!slot) {
++      throw inviteError('rateLimited')
++    }
++
++    let result
++    try {
++      result = await executeFamilyJoin(openId, inviteCode)
++    } catch (err) {
++      // 枚举类失败（notFound/invalid/expired/revoked/used）保留额度即计数；
++      // 自绑/已绑定等非枚举业务拒绝与基础设施异常（无 code）退还额度后原样上抛。
++      if (!err || !COUNTED_FAILURE_CODES.has(err.code)) {
++        await releaseFailureSlot(slot.key)
++      }
++      throw err
++    }
++    await releaseFailureSlot(slot.key) // 成功（含幂等重复加入）退还额度
++    return result
++  }
+ 
++  async function executeFamilyJoin(openId, inviteCode) {
+     if (!INVITE_CODE_PATTERN.test(inviteCode)) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS.invalid.code)
+       throw inviteError('invalid')
+     }
+ 
+@@ -719,7 +832,6 @@ function createFamilyService({
+     const auth = authList[0]
+     const failureKey = classifyInviteAuth(auth, openId)
+     if (failureKey) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS[failureKey].code)
+       throw inviteError(failureKey)
+     }
+     const ownerOpenId = assertJoinableAuth(auth, openId)
+@@ -754,18 +866,16 @@ function createFamilyService({
+       }, () => getProfileDisplayName(ownerOpenId))
+ 
+     // 原子路径（云函数环境）：确定性锚点文档把同一成员的并发加入压到同一把事务锁；
+-    // 邀请文档在事务内重读复核，两名成员抢同一邀请码时后写事务触发冲突重试并被状态复核拒绝。
+-    // 事务为快照隔离：保障来自单文档写锁，而非查询快照（见 A1 data-flow-review §3）。
++    // 事务内重读邀请文档并复核 inviteCode 一致性——owner 重邀换码后，
++    // 持旧码的在途请求按 notFound 拒绝，不得消耗新邀请。
++    // doc.get 依赖 cloud.database({throwOnNotFound:false})：不存在返回 data:null（确认的不存在），
++    // 网络/权限/事务冲突等异常直接上抛，绝不吞掉后继续写入。
+     if (typeof db.runTransaction === 'function') {
+       return await db.runTransaction(async (transaction) => {
+         const anchorId = getMemberAnchorId(openId)
+         const anchorRef = transaction.collection(collections.familyMembers).doc(anchorId)
+-        let anchor = null
+-        try {
+-          anchor = await anchorRef.get()
+-        } catch (e) {
+-          anchor = null // 锚点不存在
+-        }
++        const anchorRes = await anchorRef.get()
++        const anchor = anchorRes && anchorRes.data ? anchorRes.data : null
+         if (anchor && anchor.status === 'active') {
+           if (anchor.ownerOpenId !== ownerOpenId) {
+             throw inviteError('bound')
+@@ -774,13 +884,17 @@ function createFamilyService({
+         }
+ 
+         const authRef = transaction.collection(collections.familyAuth).doc(auth._id)
+-        let latestAuth = null
+-        try {
+-          latestAuth = await authRef.get()
+-        } catch (e) {
+-          latestAuth = null
++        const authRes = await authRef.get()
++        const latestAuth = authRes && authRes.data ? authRes.data : null
++        // 重验提交码与最新邀请一致（重邀交错防线）
++        if (!latestAuth || latestAuth.inviteCode !== inviteCode) {
++          throw inviteError('notFound')
++        }
++        // 复核状态/有效期/自绑
++        const txOwnerOpenId = assertJoinableAuth(latestAuth, openId)
++        if (txOwnerOpenId !== ownerOpenId) {
++          throw inviteError('notFound')
+         }
+-        assertJoinableAuth(latestAuth, openId)
+ 
+         const relationData = buildJoinRelationData(latestAuth, ownerOpenId, ownerName, openId, inviteCode)
+         if (anchor) {
+@@ -928,14 +1042,126 @@ function createFamilyService({
+     }
+   }
+ 
++  // ============ A3：家属视图闸口（二级页只读闭环） ============
++  // 数据主体只能由服务端从 active 绑定关系推导（getFamilyAccessContext），
++  // 客户端传入的 ownerOpenId 等参数一律忽略；拒绝响应显式带 familyView.allowed=false + reason，
++  // 不用空数据冒充权限验证结果。
++
++  function familyViewDenied(reason) {
++    return { familyView: { allowed: false, reason } }
++  }
++
++  async function resolveFamilyView(openId, payload) {
++    if (!payload || payload.familyView !== true) return { mode: 'self' }
++    const ctx = await getFamilyAccessContext(openId)
++    if (ctx && ctx.mode === 'member') {
++      return { mode: 'member', ownerOpenId: ctx.ownerOpenId, relation: ctx.relation }
++    }
++    if (ctx && ctx.mode === 'ownerPreview') return { mode: 'self' }
++    // 无成员关系：若本人是 owner（持有关系行或邀请文档）按 self 处理；
++    // 否则区分已撤销成员与完全无绑定。
++    const [{ data: ownedRows = [] }, { data: authRows = [] }, { data: myRows = [] }] = await Promise.all([
++      db.collection(collections.familyMembers).where({ ownerOpenId: openId }).limit(1).get(),
++      db.collection(collections.familyAuth).where({ _openid: openId }).limit(1).get(),
++      db.collection(collections.familyMembers).where({ memberOpenId: openId }).limit(1).get()
++    ])
++    if (ownedRows.length || authRows.length) return { mode: 'self' }
++    if (myRows.length && myRows[0].status === 'revoked') {
++      return { mode: 'denied', reason: 'revoked' }
++    }
++    return { mode: 'denied', reason: 'noBinding' }
++  }
++
++  function familyReadAllowed(resolution, keys) {
++    return keys.every(key => canViewScope(resolution.relation.scopes, key))
++  }
++
++  function decorateFamilyView(data, resolution) {
++    data.familyView = {
++      allowed: true,
++      readOnly: true,
++      ownerName: resolution.relation.ownerName || ''
++    }
++    return data
++  }
++
++  async function getFamilyTrendData(openId, payload = {}) {
++    const resolution = await resolveFamilyView(openId, payload)
++    if (resolution.mode === 'self') return getRecordService().getTrendData(openId, payload)
++    if (resolution.mode === 'denied') return familyViewDenied(resolution.reason)
++    const metric = payload.metric || 'bpBg'
++    const required = metric === 'medication' ? ['medicine'] : ['bloodPressure', 'bloodGlucose']
++    if (!familyReadAllowed(resolution, required)) return familyViewDenied('scopeDenied')
++    return decorateFamilyView(
++      await getRecordService().getTrendData(resolution.ownerOpenId, payload),
++      resolution
++    )
++  }
++
++  async function getFamilyRecordListData(openId, payload = {}) {
++    const resolution = await resolveFamilyView(openId, payload)
++    if (resolution.mode === 'self') return getRecordService().getRecordListData(openId, payload)
++    if (resolution.mode === 'denied') return familyViewDenied(resolution.reason)
++    const allowedTypes = []
++    if (canViewScope(resolution.relation.scopes, 'bloodPressure')) allowedTypes.push('bp')
++    if (canViewScope(resolution.relation.scopes, 'bloodGlucose')) allowedTypes.push('bg')
++    if (!allowedTypes.length) return familyViewDenied('scopeDenied')
++    if (payload.type && !allowedTypes.includes(payload.type)) return familyViewDenied('scopeDenied')
++    return decorateFamilyView(
++      await getRecordService().getRecordListData(resolution.ownerOpenId, payload, { allowedTypes }),
++      resolution
++    )
++  }
++
++  async function getFamilyMedListData(openId, payload = {}) {
++    const resolution = await resolveFamilyView(openId, payload)
++    if (resolution.mode === 'self') return getMedicationService().getMedListData(openId)
++    if (resolution.mode === 'denied') return familyViewDenied(resolution.reason)
++    if (!familyReadAllowed(resolution, ['medicine'])) return familyViewDenied('scopeDenied')
++    return decorateFamilyView(
++      await getMedicationService().getMedListData(resolution.ownerOpenId),
++      resolution
++    )
++  }
++
++  async function getFamilyMedHistoryData(openId, payload = {}) {
++    const resolution = await resolveFamilyView(openId, payload)
++    if (resolution.mode === 'self') return getMedicationService().getMedHistoryData(openId, payload)
++    if (resolution.mode === 'denied') return familyViewDenied(resolution.reason)
++    if (!familyReadAllowed(resolution, ['medicine'])) return familyViewDenied('scopeDenied')
++    return decorateFamilyView(
++      await getMedicationService().getMedHistoryData(resolution.ownerOpenId, payload),
++      resolution
++    )
++  }
++
++  async function getFamilyRecordDetailData(openId, payload = {}) {
++    const resolution = await resolveFamilyView(openId, payload)
++    if (resolution.mode === 'self') return getRecordService().getRecordDetailData(openId, payload)
++    if (resolution.mode === 'denied') return familyViewDenied(resolution.reason)
++    const data = await getRecordService().getRecordDetailData(resolution.ownerOpenId, payload)
++    const type = data && data.record && data.record.type
++    const key = type === 'bp' ? 'bloodPressure' : type === 'bg' ? 'bloodGlucose' : null
++    if (!key || !canViewScope(resolution.relation.scopes, key)) {
++      return familyViewDenied('scopeDenied')
++    }
++    return decorateFamilyView(data, resolution)
++  }
++
+   return {
+     createFamilyInvite,
+     getFamilyAuthData,
+     getFamilyData,
+     getFamilyInviteData,
+     getFamilyJoinData,
++    getFamilyMedHistoryData,
++    getFamilyMedListData,
++    getFamilyRecordDetailData,
++    getFamilyRecordListData,
++    getFamilyTrendData,
+     getHomeFamilyData,
+     joinFamilyByInvite,
++    resolveFamilyView,
+     revokeFamilyMember,
+     updateFamilyAuth
+   }
+diff --git a/cloudfunctions/healthApi/index.js b/cloudfunctions/healthApi/index.js
+index 801cd6b..6a5d8c4 100644
+--- a/cloudfunctions/healthApi/index.js
++++ b/cloudfunctions/healthApi/index.js
+@@ -45,7 +45,11 @@ cloud.init({
+   env: cloud.DYNAMIC_CURRENT_ENV  // 自动使用当前云环境
+ })
+ 
+-const db = cloud.database()
++// throwOnNotFound:false —— 事务内 doc.get 对"确认不存在"返回 data:null，
++// 让 A1/A2 的事务分支能区分【不存在】与【网络/权限/冲突异常】，不再吞异常。
++// 副作用核查：全仓仅 daily-stats-service 两处 doc.get（未命中原本走 catch 回退空统计），
++// 改后走 data:null → getDocData 返回 null → 同样回退空统计，最终行为不变，仅日志分类更准确。
++const db = cloud.database({ throwOnNotFound: false })
+ const _ = db.command
+ const $ = db.command.aggregate
+ const { getResultCount, logPerf, withPerfLog } = createPerfLogger(console)
+@@ -875,13 +879,23 @@ const finishRoute = (result, ok = true) => {
+         'profile': () => getProfileData(openId),
+         'recordBp': () => getRecordService().getRecordBpData(),
+         'recordBg': () => getRecordService().getRecordBgData(),
+-        'recordDetail': () => getRecordService().getRecordDetailData(openId, payload),
+-        'recordList': () => getRecordService().getRecordListData(openId, payload),
+-        'medList': () => getMedicationService().getMedListData(openId),
+-        'medHistory': () => getMedicationService().getMedHistoryData(openId, payload),
++        'recordDetail': () => (payload && payload.familyView === true)
++          ? getFamilyService().getFamilyRecordDetailData(openId, payload)
++          : getRecordService().getRecordDetailData(openId, payload),
++        'recordList': () => (payload && payload.familyView === true)
++          ? getFamilyService().getFamilyRecordListData(openId, payload)
++          : getRecordService().getRecordListData(openId, payload),
++        'medList': () => (payload && payload.familyView === true)
++          ? getFamilyService().getFamilyMedListData(openId, payload)
++          : getMedicationService().getMedListData(openId),
++        'medHistory': () => (payload && payload.familyView === true)
++          ? getFamilyService().getFamilyMedHistoryData(openId, payload)
++          : getMedicationService().getMedHistoryData(openId, payload),
+         'medEdit': () => getMedicationService().getMedEditData(openId, payload?.planId),
+         'medConfirm': () => getMedicationService().getMedConfirmData(openId, payload?.planId, payload?.logId),
+-        'trend': () => getRecordService().getTrendData(openId, payload),
++        'trend': () => (payload && payload.familyView === true)
++          ? getFamilyService().getFamilyTrendData(openId, payload)
++          : getRecordService().getTrendData(openId, payload),
+         'family': () => getFamilyService().getFamilyData(openId),
+         'familyInvite': () => getFamilyService().getFamilyInviteData(),
+         'familyJoin': () => getFamilyService().getFamilyJoinData(openId, payload),
+diff --git a/cloudfunctions/healthApi/record-service.js b/cloudfunctions/healthApi/record-service.js
+index ff99136..752d722 100644
+--- a/cloudfunctions/healthApi/record-service.js
++++ b/cloudfunctions/healthApi/record-service.js
+@@ -145,11 +145,19 @@ function createRecordService({ db, _, collections, getRecordStatus, withPerfLog
+     return formatDetailRecord(records[0])
+   }
+ 
+-  async function getRecordListData(openId, payload = {}) {
+-    const type = payload.type === 'bp' || payload.type === 'bg' ? payload.type : ''
++  async function getRecordListData(openId, payload = {}, options = {}) {
++    // A3：家属视图由闸口层传入 allowedTypes，服务端按 read 授权过滤类型；
++    // payload.type 请求未授权类型时由闸口层拒绝，此处再做一道防御。
++    const allowed = Array.isArray(options.allowedTypes) && options.allowedTypes.length
++      ? options.allowedTypes
++      : null
++    let type = payload.type === 'bp' || payload.type === 'bg' ? payload.type : ''
++    if (type && allowed && !allowed.includes(type)) type = ''
+     const limit = Math.min(Math.max(Number(payload.limit) || 20, 1), 50)
+     const offset = Math.max(Number(payload.offset) || 0, 0)
+-    const condition = type ? { _openid: openId, type } : { _openid: openId }
++    const condition = type
++      ? { _openid: openId, type }
++      : (allowed ? { _openid: openId, type: _.in(allowed) } : { _openid: openId })
+ 
+     const { data = [] } = await withPerfLog({
+       routeType: 'key',
+diff --git a/pages/family-sub/home-family/index.js b/pages/family-sub/home-family/index.js
+index 5e69ad9..f99fb14 100644
+--- a/pages/family-sub/home-family/index.js
++++ b/pages/family-sub/home-family/index.js
+@@ -69,7 +69,15 @@ Page({
+    * @returns {void}
+    */
+   handleQuickAction(event) {
+-    goRoute(event.detail.route)
++    // A3：家属视图二级页携带 familyView；trend 为 tabBar 页，经全局标记传递
++    const route = event.detail.route
++    if (route === 'trend') {
++      const app = getApp()
++      if (app && app.globalData) app.globalData.familyView = true
++      goRoute(route)
++      return
++    }
++    goRoute(route, 'familyView=1')
+   },
+ 
+   /**
+@@ -78,7 +86,14 @@ Page({
+    * @returns {void}
+    */
+   handleMetricTap(event) {
+-    goRoute(event.detail.route)
++    const route = event.detail.route
++    if (route === 'trend') {
++      const app = getApp()
++      if (app && app.globalData) app.globalData.familyView = true
++      goRoute(route)
++      return
++    }
++    goRoute(route, 'familyView=1')
+   },
+ 
+   /**
+@@ -87,11 +102,12 @@ Page({
+    * @returns {void} 待确认进入确认页，其他进入用药列表。
+    */
+   handleMedicineTap(event) {
++    // A3：家属视图只读；代录（medConfirm）入口不开放
+     if (event.currentTarget.dataset.action === 'confirm') {
+-      goRoute('medConfirm')
++      wx.showToast({ title: '家属视图为只读，代录待开放', icon: 'none' })
+       return
+     }
+-    goRoute('medList')
++    goRoute('medList', 'familyView=1')
+   },
+ 
+   /** @returns {void} 返回家庭页。 */
+@@ -99,14 +115,14 @@ Page({
+     goRoute('family')
+   },
+ 
+-  /** @returns {void} 进入用药确认页。 */
++  /** @returns {void} 进入用药确认页（家属视图只读，不开放）。 */
+   goMedConfirm() {
+-    goRoute('medConfirm')
++    wx.showToast({ title: '家属视图为只读，代录待开放', icon: 'none' })
+   },
+ 
+-  /** @returns {void} 进入历史记录页。 */
++  /** @returns {void} 进入历史记录页（家属视图）。 */
+   goRecordList() {
+-    goRoute('recordList')
++    goRoute('recordList', 'familyView=1')
+   },
+ 
+   /** @returns {void} 进入趋势页（已合并周报功能）。 */
+diff --git a/pages/medication/med-history/index.js b/pages/medication/med-history/index.js
+index 578cac5..83e2cd9 100644
+--- a/pages/medication/med-history/index.js
++++ b/pages/medication/med-history/index.js
+@@ -39,21 +39,26 @@ Page({
+     dateGroups: [],
+     visibleGroups: [],
+     summary: { totalRecords: 0, takenCount: 0, skippedCount: 0 },
+-    adaptive: {}
++    adaptive: {},
++    isFamilyView: false,
++    familyDenied: false
+   },
+ 
+   async loadData() {
+     const startDate = this.data.startDate || getDateDaysAgo(6)
+     const endDate = this.data.endDate || getTodayDateValue()
+-    return loadPageData(this, () => getMedHistoryData(startDate, endDate)).then(() => {
++    return loadPageData(this, () => getMedHistoryData(startDate, endDate, this.data.isFamilyView || undefined)).then((data) => {
+       this._applyFilter()
+-      try { this.setData({ _loaded: true }) } catch (e) { /* 页面可能已销毁 */ }
++      try { this.setData({ _loaded: true, familyDenied: !!(data && data.familyView && data.familyView.allowed === false) }) } catch (e) { /* 页面可能已销毁 */ }
+     })
+   },
+ 
+-  onLoad() {
++  onLoad(options = {}) {
+     wx.setNavigationBarTitle({ title: '历史用药记录' })
+     bindAdaptiveResize(this)
++    if (options.familyView === '1' || options.familyView === true) {
++      this.setData({ isFamilyView: true })
++    }
+     const startDate = getDateDaysAgo(6)
+     const endDate = getTodayDateValue()
+     this.setData({ startDate, endDate })
+diff --git a/pages/medication/med-history/index.wxml b/pages/medication/med-history/index.wxml
+index e152e01..4c43fd2 100644
+--- a/pages/medication/med-history/index.wxml
++++ b/pages/medication/med-history/index.wxml
+@@ -4,6 +4,12 @@
+     <view class="state-meta">加载完成后可查看历史用药记录。</view>
+   </view>
+ </view>
++<view wx:elif="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
++  <view class="state-panel">
++    <view class="state-title">暂无用药历史查看权限</view>
++    <view class="state-meta">对方未向你开放用药确认的查看权限。</view>
++  </view>
++</view>
+ <view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+   <view class="state-panel">
+     <view class="state-title">历史记录加载失败</view>
+diff --git a/pages/medication/med-list/index.js b/pages/medication/med-list/index.js
+index 8cb7166..29f7215 100644
+--- a/pages/medication/med-list/index.js
++++ b/pages/medication/med-list/index.js
+@@ -13,23 +13,43 @@ const { promptSubscribeAfterAction } = require('../../../utils/subscribe-prompt'
+ Page({
+   data: {
+     isLoading: true,
+-    loadError: ''
++    loadError: '',
++    isFamilyView: false,
++    familyDenied: false
+   },
+ 
+   async loadData() {
+-    return loadPageData(this, getMedListData).then(() => {
+-      try { this.setData({ _loaded: true }) } catch (e) { /* 页面可能已销毁 */ }
++    return loadPageData(this, () => getMedListData(this.data.isFamilyView || undefined)).then((data) => {
++      try {
++        this.setData({
++          _loaded: true,
++          familyDenied: !!(data && data.familyView && data.familyView.allowed === false)
++        })
++      } catch (e) { /* 页面可能已销毁 */ }
+     })
+   },
+ 
+-  async onLoad() {
++  async onLoad(options = {}) {
+     wx.setNavigationBarTitle({
+       title: '用药提醒'
+     })
+     bindAdaptiveResize(this)
++    // A3 家属只读视图：写入口全部禁用
++    if (options.familyView === '1' || options.familyView === true) {
++      this.setData({ isFamilyView: true })
++    }
+     await this.loadData()
+   },
+ 
++  /** A3：家属视图只读守卫；命中则提示并返回 true。 */
++  _familyReadOnly() {
++    if (this.data.isFamilyView) {
++      wx.showToast({ title: '家属视图为只读', icon: 'none' })
++      return true
++    }
++    return false
++  },
++
+   onShow() {
+     if (this.data._loaded) {
+       this.loadData()
+@@ -46,6 +66,7 @@ Page({
+   },
+ 
+   handleCardTap(event) {
++    if (this._familyReadOnly()) return
+     const id = event.currentTarget.dataset.id
+     const pendingIndex = event.currentTarget.dataset.pendingIndex
+     if (pendingIndex >= 0) {
+@@ -60,6 +81,7 @@ Page({
+   },
+ 
+   handleConfirmTap(event) {
++    if (this._familyReadOnly()) return
+     const planId = event.currentTarget.dataset.planId
+     const logId = event.currentTarget.dataset.logId
+     if (!planId) return
+@@ -67,6 +89,10 @@ Page({
+   },
+ 
+   handleLogTap(event) {
++    if (this.data.isFamilyView && event.currentTarget.dataset.action !== 'view' && event.currentTarget.dataset.action !== 'none') {
++      this._familyReadOnly()
++      return
++    }
+     const action = event.currentTarget.dataset.action
+     const logId = event.currentTarget.dataset.logId
+     const planId = event.currentTarget.dataset.planId
+@@ -109,6 +135,7 @@ Page({
+   },
+ 
+   handleRevokeConfirmation(event) {
++    if (this._familyReadOnly()) return
+     const logId = event.currentTarget.dataset.logId
+     if (!logId) return
+     this._doRevoke(logId)
+@@ -120,6 +147,7 @@ Page({
+   },
+ 
+   async handleBatchConfirm() {
++    if (this._familyReadOnly()) return
+     const cards = this.data.todayCards
+     if (!cards || !cards.length) return
+ 
+@@ -190,11 +218,13 @@ Page({
+   },
+ 
+   editPlan(event) {
++    if (this._familyReadOnly()) return
+     const id = event.currentTarget.dataset.id
+     safeNavigateTo(id ? `/pages/medication/med-edit/index?id=${id}` : '/pages/medication/med-edit/index')
+   },
+ 
+   handlePlanLongPress(event) {
++    if (this._familyReadOnly()) return
+     const id = event.currentTarget.dataset.id
+     const status = event.currentTarget.dataset.status
+     if (!id) return
+@@ -214,6 +244,7 @@ Page({
+   },
+ 
+   async handleTogglePlan(planId, currentStatus) {
++    if (this._familyReadOnly()) return
+     try {
+       await toggleMedicationPlanStatus(planId, currentStatus)
+       wx.showToast({ title: '状态已更新', icon: 'success' })
+@@ -227,6 +258,7 @@ Page({
+   },
+ 
+   async handleDeletePlan(planId) {
++    if (this._familyReadOnly()) return
+     wx.showModal({
+       title: '确认删除该用药计划？',
+       content: '删除后，该计划的所有提醒将不再显示。',
+@@ -249,10 +281,11 @@ Page({
+   },
+ 
+   goMedEdit() {
++    if (this._familyReadOnly()) return
+     goRoute('medEdit')
+   },
+ 
+   goMedHistory() {
+-    safeNavigateTo('/pages/medication/med-history/index')
++    safeNavigateTo('/pages/medication/med-history/index' + (this.data.isFamilyView ? '?familyView=1' : ''))
+   }
+ })
+diff --git a/pages/medication/med-list/index.wxml b/pages/medication/med-list/index.wxml
+index 2711cb4..5f18af9 100644
+--- a/pages/medication/med-list/index.wxml
++++ b/pages/medication/med-list/index.wxml
+@@ -11,7 +11,14 @@
+     <button class="state-button" bindtap="reloadPage">重新加载</button>
+   </view>
+ </view>
++<view wx:elif="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
++  <view class="state-panel">
++    <view class="state-title">暂无用药查看权限</view>
++    <view class="state-meta">对方未向你开放用药确认的查看权限。</view>
++  </view>
++</view>
+ <view wx:else class="med-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
++  <view wx:if="{{isFamilyView}}" class="scope-meta">家属视图 · 只读，不能确认、撤销或管理计划</view>
+ 
+   <view class="section">
+     <view class="section-title">今日待确认</view>
+@@ -49,7 +56,7 @@
+               </view>
+             </view>
+           </view>
+-          <view class="card-action" wx:if="{{item.pendingIndex >= 0}}">
++          <view class="card-action" wx:if="{{item.pendingIndex >= 0 && !familyView}}">
+             <view class="action-highlight">{{item.logs[item.pendingIndex].time}} 待确认</view>
+             <view class="action-btn" data-plan-id="{{item.id}}" data-log-id="{{item.logs[item.pendingIndex].id}}" bindtap="handleConfirmTap">确认</view>
+           </view>
+@@ -119,7 +126,7 @@
+               <text class="confirm-status {{item.status === 'taken' ? 'status-taken' : 'status-skipped'}}">{{item.statusText}}</text>
+             </view>
+           </view>
+-          <view class="confirm-revoke" data-log-id="{{item.logId}}" bindtap="handleRevokeConfirmation">撤销</view>
++          <view wx:if="{{!familyView}}" class="confirm-revoke" data-log-id="{{item.logId}}" bindtap="handleRevokeConfirmation">撤销</view>
+         </view>
+       </view>
+     </block>
+@@ -133,5 +140,5 @@
+     <notice-bar text="用药信息由用户自行记录，请按医生或药师指导用药。" />
+   </view>
+ 
+-  <fixed-action text="添加用药" bindactiontap="goMedEdit" />
++  <fixed-action wx:if="{{!familyView}}" text="添加用药" bindactiontap="goMedEdit" />
+ </view>
+diff --git a/pages/record/record-detail/index.js b/pages/record/record-detail/index.js
+index decd10d..7d40975 100644
+--- a/pages/record/record-detail/index.js
++++ b/pages/record/record-detail/index.js
+@@ -5,7 +5,9 @@ Page({
+   data: {
+     record: null,
+     details: [],
+-    adaptive: {}
++    adaptive: {},
++    isFamilyView: false,
++    familyDenied: false
+   },
+ 
+   onUnload() {
+@@ -13,16 +15,19 @@ Page({
+   },
+ 
+   async onLoad(options) {
+-    const { id } = options
++    const { id, familyView } = options
+     wx.setNavigationBarTitle({
+       title: '记录详情'
+     })
+-    
++    if (familyView === '1' || familyView === true) {
++      this.setData({ isFamilyView: true })
++    }
+     try {
+-      const data = await getRecordDetailData(id)
++      const data = await getRecordDetailData(id, this.data.isFamilyView || undefined)
+       this.setData({
+         record: data.record,
+-        details: data.details || []
++        details: data.details || [],
++        familyDenied: !!(data.familyView && data.familyView.allowed === false)
+       })
+     } catch (error) {
+       wx.showToast({
+@@ -33,6 +38,11 @@ Page({
+   },
+ 
+   handleDelete() {
++    // A3：家属视图只读，禁止删除
++    if (this.data.isFamilyView) {
++      wx.showToast({ title: '家属视图为只读', icon: 'none' })
++      return
++    }
+     wx.showModal({
+       title: '删除记录',
+       content: '确认删除这条记录吗？',
+diff --git a/pages/record/record-detail/index.wxml b/pages/record/record-detail/index.wxml
+index 42611a0..2110f40 100644
+--- a/pages/record/record-detail/index.wxml
++++ b/pages/record/record-detail/index.wxml
+@@ -1,4 +1,11 @@
+-<view class="record-detail-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
++<view wx:if="{{familyDenied}}" class="page-state {{adaptive.scaleScaleClass || adaptive.scaleClass}}">
++  <view class="state-panel">
++    <view class="state-title">暂无该记录查看权限</view>
++    <view class="state-meta">对方未向你开放该类型记录的查看权限。</view>
++  </view>
++</view>
++<view wx:else class="record-detail-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
++  <view wx:if="{{isFamilyView}}" class="scope-meta">家属视图 · 只读</view>
+   <view wx:if="{{!record}}" class="empty-state">
+     <view class="empty-icon">📋</view>
+     <view class="empty-text">记录不存在</view>
+@@ -27,7 +34,7 @@
+     </view>
+ 
+     <view class="action-buttons">
+-      <button class="danger-button" bindtap="handleDelete">删除记录</button>
++      <button wx:if="{{!familyView}}" class="danger-button" bindtap="handleDelete">删除记录</button>
+     </view>
+   </view>
+ </view>
+diff --git a/pages/record/record-list/index.js b/pages/record/record-list/index.js
+index c8bfcff..9495164 100644
+--- a/pages/record/record-list/index.js
++++ b/pages/record/record-list/index.js
+@@ -11,19 +11,24 @@ Page({
+     ],
+     records: [],
+     visibleRecords: [],
+-    adaptive: {}
++    adaptive: {},
++    isFamilyView: false,
++    familyDenied: false
+   },
+ 
+-  async onLoad() {
++  async onLoad(options = {}) {
+     wx.setNavigationBarTitle({
+       title: '历史记录'
+     })
+-    
++    if (options.familyView === '1' || options.familyView === true) {
++      this.setData({ isFamilyView: true })
++    }
+     try {
+-      const data = await getRecordListData()
++      const data = await getRecordListData(this.data.isFamilyView || undefined)
+       this.setData({
+         records: data.records || [],
+-        visibleRecords: data.records || []
++        visibleRecords: data.records || [],
++        familyDenied: !!(data.familyView && data.familyView.allowed === false)
+       })
+     } catch (error) {
+       wx.showToast({
+@@ -47,6 +52,6 @@ Page({
+ 
+   handleRecordTap(event) {
+     const id = event.currentTarget.dataset.id
+-    safeNavigateTo(`/pages/record/record-detail/index?id=${id}`)
++    safeNavigateTo(`/pages/record/record-detail/index?id=${id}${this.data.isFamilyView ? '&familyView=1' : ''}`)
+   }
+ })
+diff --git a/pages/record/record-list/index.wxml b/pages/record/record-list/index.wxml
+index 5a0ecde..40c5abb 100644
+--- a/pages/record/record-list/index.wxml
++++ b/pages/record/record-list/index.wxml
+@@ -1,4 +1,11 @@
+-<view class="record-list-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
++<view wx:if="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
++  <view class="state-panel">
++    <view class="state-title">暂无记录查看权限</view>
++    <view class="state-meta">对方未向你开放血压/血糖记录的查看权限。</view>
++  </view>
++</view>
++<view wx:else class="record-list-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
++  <view wx:if="{{isFamilyView}}" class="scope-meta">家属视图 · 只读</view>
+   <view class="list-header">
+     <view class="list-title">历史记录</view>
+     <view class="filter-row">
+diff --git a/pages/trend/index.js b/pages/trend/index.js
+index 7012ea8..d29d283 100644
+--- a/pages/trend/index.js
++++ b/pages/trend/index.js
+@@ -91,7 +91,9 @@ function buildLatestMetrics(records) {
+ Page({
+   data: {
+     isLoading: true,
+-    loadError: ''
++    loadError: '',
++    isFamilyView: false,
++    familyDenied: false
+   },
+ 
+   /**
+@@ -102,12 +104,12 @@ Page({
+   async loadData(options) {
+     const metric = (options && options.metric) || this.data.activeMetric || 'bpBg'
+     const range = (options && options.range) || this.data.activeRange || '7d'
+-    const loader = () => getTrendData(metric, range)
++    const loader = () => getTrendData(metric, range, this.data.isFamilyView || undefined)
+     const data = await loadPageData(this, loader)
+     if (data) {
+       // 将 records 转换为 metric-card 数据格式
+       const latestMetrics = buildLatestMetrics(this.data.records)
+-      this.setData({ latestMetrics })
++      this.setData({ latestMetrics, familyDenied: !!(data.familyView && data.familyView.allowed === false) })
+       this.updateChart()
+     }
+     return data
+@@ -123,9 +125,13 @@ Page({
+       title: '趋势'
+     })
+     bindAdaptiveResize(this)
++    // A3 家属只读视图：编译参数或家庭页全局标记
++    const fv = (options && (options.familyView === '1' || options.familyView === true))
++      || !!(getApp() && getApp().globalData && getApp().globalData.familyView === true)
++    if (fv) this.setData({ isFamilyView: true })
+     await this.loadData(options || {})
+-    // 首次加载完成后，引导授权下周健康周报提醒（事件驱动）
+-    this._promptWeeklyReportReminder()
++    // 首次加载完成后，引导授权下周健康周报提醒（事件驱动）；家属视图不引导
++    if (!this.data.isFamilyView) this._promptWeeklyReportReminder()
+   },
+ 
+   /**
+@@ -246,7 +252,7 @@ Page({
+   /** @returns {void} 进入历史记录页（用药时跳转历史用药记录，否则跳转记录列表）。 */
+   goRecordList() {
+     const route = this.data.activeMetric === 'medication' ? 'medHistory' : 'recordList'
+-    goRoute(route)
++    goRoute(route, this.data.isFamilyView ? 'familyView=1' : '')
+   },
+ 
+   /**
+diff --git a/pages/trend/index.wxml b/pages/trend/index.wxml
+index 05f8328..14253d9 100644
+--- a/pages/trend/index.wxml
++++ b/pages/trend/index.wxml
+@@ -4,6 +4,12 @@
+     <view class="state-meta">请稍候，系统正在整理近 7 天到 90 天的记录变化。</view>
+   </view>
+ </view>
++<view wx:elif="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
++  <view class="state-panel">
++    <view class="state-title">暂无趋势查看权限</view>
++    <view class="state-meta">对方未向你开放该指标所需的记录查看权限。</view>
++  </view>
++</view>
+ <view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
+   <view class="state-panel">
+     <view class="state-title">趋势数据加载失败</view>
+diff --git a/services/medication-confirm.js b/services/medication-confirm.js
+index b02bbd8..ae7cdbe 100644
+--- a/services/medication-confirm.js
++++ b/services/medication-confirm.js
+@@ -122,8 +122,9 @@ function normalizeMedHistoryData(remoteData) {
+   return withMockPageData('medHistory', remoteData, (baseData, remote) => deepMerge(baseData, remote))
+ }
+ 
+-function getMedHistoryData(startDate, endDate) {
++function getMedHistoryData(startDate, endDate, familyView) {
+   const payload = {}
++  if (familyView) payload.familyView = true
+   if (startDate) payload.startDate = startDate
+   if (endDate) payload.endDate = endDate
+   return resolveMockData('medHistory', payload)
+diff --git a/services/medication-merge.js b/services/medication-merge.js
+index 9688779..f7dd6ef 100644
+--- a/services/medication-merge.js
++++ b/services/medication-merge.js
+@@ -474,8 +474,9 @@ function normalizeMedListData(remoteData) {
+   return withMockPageData('medList', remoteData, (baseData, remote) => deepMerge(baseData, remote))
+ }
+ 
+-function getMedListData() {
+-  return resolveMockData('medList')
++function getMedListData(familyView) {
++  const payload = familyView ? { familyView: true } : {}
++  return resolveMockData('medList', payload)
+     .then(normalizeMedListData)
+     .then(mergeMedicationPlans)
+ }
+diff --git a/services/records.js b/services/records.js
+index 101e82f..af2b64e 100644
+--- a/services/records.js
++++ b/services/records.js
+@@ -401,13 +401,15 @@ function getRecordBgData() {
+   return resolveMockData('recordBg').then(normalizeRecordBgData)
+ }
+ 
+-function getRecordDetailData(recordId) {
++function getRecordDetailData(recordId, familyView) {
+   const payload = recordId ? { recordId } : {}
++  if (familyView) payload.familyView = true
+   return resolveMockData('recordDetail', payload).then((remoteData) => normalizeRecordDetailData(remoteData, recordId))
+ }
+ 
+-function getRecordListData() {
+-  return resolveMockData('recordList').then(normalizeRecordListData)
++function getRecordListData(familyView) {
++  const payload = familyView ? { familyView: true } : {}
++  return resolveMockData('recordList', payload).then(normalizeRecordListData)
+ }
+ 
+ function getDataManagementData() {
+diff --git a/services/report.js b/services/report.js
+index ecce2c8..1f13a31 100644
+--- a/services/report.js
++++ b/services/report.js
+@@ -419,13 +419,13 @@ function mergeMedPlans(cloudPlans) {
+  * @param {string} range  时间范围：7d / 30d / 90d
+  * @returns {Promise<Object>} 包含摘要、关注项、图表、记录列表等完整数据
+  */
+-async function getTrendData(metric = 'bpBg', range = '7d') {
++async function getTrendData(metric = 'bpBg', range = '7d', familyView) {
+   const days = parseInt(range, 10) || 7
+   const isWeekly = range === '7d'
+ 
+   // ─── 用药指标：独立数据分支 ───
+   if (metric === 'medication') {
+-    return getMedicationTrendData(range, days, isWeekly)
++    return getMedicationTrendData(range, days, isWeekly, familyView)
+   }
+ 
+   // ─── 血压血糖指标：原有逻辑 ───
+@@ -433,13 +433,14 @@ async function getTrendData(metric = 'bpBg', range = '7d') {
+   const chartMetric = metric === 'bpBg' ? 'bloodPressure' : metric
+ 
+   // 并行获取：本地存储记录 + 云端趋势数据 + 云端记录列表（补充本地可能缺失的记录）
++  // A3 家属视图：不混入本人本地记录，远程调用携带 familyView 由服务端按 read 过滤
+   const [localRecords, remoteData, listRemoteData] = await Promise.all([
+-    Promise.resolve(getStoredRecords()),
+-    resolveMockData('trend').catch(err => {
++    Promise.resolve(familyView ? [] : getStoredRecords()),
++    resolveMockData('trend', familyView ? { familyView: true } : undefined).catch(err => {
+       console.warn('[Trend] resolveMockData("trend") 失败:', err.message || err)
+       return null
+     }),
+-    resolveMockData('recordList').catch(err => {
++    resolveMockData('recordList', familyView ? { familyView: true } : undefined).catch(err => {
+       console.warn('[Trend] resolveMockData("recordList") 失败:', err.message || err)
+       return null
+     })
+@@ -577,7 +578,7 @@ async function getTrendData(metric = 'bpBg', range = '7d') {
+  * 用药趋势数据加载（独立分支）。
+  * 复用 medHistory 云端接口 + 本地用药计划，计算每日服药率并聚合。
+  */
+-async function getMedicationTrendData(range, days, isWeekly) {
++async function getMedicationTrendData(range, days, isWeekly, familyView) {
+   const now = new Date()
+   const todayStr = getTodayDateValue(now)
+ 
+@@ -592,11 +593,11 @@ async function getMedicationTrendData(range, days, isWeekly) {
+ 
+   // 并行获取：云端用药历史 + 首页数据（取 weekMedPlans）
+   const [medHistoryData, homeData] = await Promise.all([
+-    resolveMockData('medHistory', { startDate, endDate: todayStr }).catch(err => {
++    resolveMockData('medHistory', familyView ? { startDate, endDate: todayStr, familyView: true } : { startDate, endDate: todayStr }).catch(err => {
+       console.warn('[Trend/Med] resolveMockData("medHistory") 失败:', err.message || err)
+       return null
+     }),
+-    resolveMockData('home').catch(err => {
++    (familyView ? Promise.resolve(null) : resolveMockData('home')).catch(err => {
+       console.warn('[Trend/Med] resolveMockData("home") 失败:', err.message || err)
+       return null
+     })
+diff --git a/tests/unit/a3-family-readonly.test.js b/tests/unit/a3-family-readonly.test.js
+new file mode 100644
+index 0000000..cc6a7f1
+--- /dev/null
++++ b/tests/unit/a3-family-readonly.test.js
+@@ -0,0 +1,363 @@
++/**
++ * A3 二级页面家属只读权限闭环。
++ * 服务端闸口测试：family-service 家属视图方法 + record-service allowedTypes；
++ * 页面守卫测试：med-list / record-detail 在 familyView 下禁用写入口。
++ * 不用空数据代替权限验证：拒绝响应必须带 familyView.allowed=false + reason。
++ */
++
++const { createRecordService } = require('../../cloudfunctions/healthApi/record-service')
++const { createMedicationService } = require('../../cloudfunctions/healthApi/medication-service')
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
++  profiles: 'profiles'
++}
++
++function clone(v) { return JSON.parse(JSON.stringify(v)) }
++
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store; this.query = query
++    this.orderField = ''; this.orderDir = 'asc'; this.max = Infinity; this.skipN = 0
++    this.docId = ''; this.hasDocId = false
++  }
++  where(c) { return new StoreQuery(this.store, c) }
++  orderBy(f, d) { const q = new StoreQuery(this.store, this.query); q.orderField = f; q.orderDir = d; q.max = this.max; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  limit(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = n; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  skip(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; q.skipN = n; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.hasDocId = true; q.max = this.max; q.skipN = this.skipN; return q }
++  field() { return this }
++  _matches(doc) {
++    return Object.entries(this.query).every(([k, v]) => {
++      if (v && v.__op === 'in') return v.values.includes(doc[k])
++      if (v && v.__op === 'lt') return typeof doc[k] === 'number' || typeof doc[k] === 'string' ? doc[k] < v.value : false
++      if (v && v.__op === 'gt') return typeof doc[k] === 'number' || typeof doc[k] === 'string' ? doc[k] > v.value : false
++      if (v && v.__op === 'range') {
++        const val = doc[k]
++        if (val === undefined) return false
++        if (v.gte !== undefined && !(val >= v.gte)) return false
++        if (v.lte !== undefined && !(val <= v.lte)) return false
++        return true
++      }
++      return doc[k] === v
++    })
++  }
++  _targets() {
++    if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
++    return this.store.rows.filter(d => this._matches(d))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    if (this.skipN) rows = rows.slice(this.skipN)
++    return { data: this.max === Infinity ? rows : rows.slice(0, this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) { const e = new Error('E11000 duplicate key error'); e.errCode = -502005; throw e }
++    this.store.rows.push({ _id, ...clone(data) })
++    return { _id }
++  }
++  async update({ data }) {
++    const t = this._targets()
++    t.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
++    return { stats: { updated: t.length } }
++  }
++  async remove() {
++    const ids = new Set(this._targets().map(d => d._id))
++    const before = this.store.rows.length
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((a) => { stores[COLLECTIONS[a]] = { rows: Array.isArray(initial[a]) ? clone(initial[a]) : [], seq: 1 } })
++  return {
++    collection(n) { if (!stores[n]) stores[n] = { rows: [], seq: 1 }; return new StoreQuery(stores[n]) },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++}
++
++function rangeOp(op, v) {
++  const m = { __op: 'range' }
++  m[op] = v
++  m.and = (other) => { m[op === 'gte' ? 'lte' : 'gte'] = other.value; return m }
++  return m
++}
++
++const commands = {
++  in: values => ({ __op: 'in', values }),
++  lt: v => ({ __op: 'lt', value: v }),
++  gt: v => ({ __op: 'gt', value: v }),
++  gte: v => rangeOp('gte', v),
++  lte: v => rangeOp('lte', v),
++  inc: v => ({ __op: 'inc', value: v })
++}
++
++function scopesOf(bp, bg, med) {
++  return [
++    { key: 'bloodPressure', title: '血压记录', meta: 'm', read: bp, write: false, remind: false },
++    { key: 'bloodGlucose', title: '血糖记录', meta: 'm', read: bg, write: false, remind: false },
++    { key: 'medicine', title: '用药确认', meta: 'm', read: med, write: false, remind: false },
++    { key: 'report', title: '健康记录周报', meta: 'm', read: false, write: false, remind: false }
++  ]
++}
++
++function buildServices(seed) {
++  const db = createStoreDb(seed)
++  const withPerfLog = (m, fn) => fn()
++  const recordService = createRecordService({ db, _: commands, collections: COLLECTIONS, getRecordStatus: helpers.getRecordStatus, withPerfLog })
++  const medicationService = createMedicationService({
++    db, _: commands, collections: COLLECTIONS,
++    assertOwnedDocument: async (coll, openId, id, label) => {
++      const { data } = await db.collection(coll).where({ _id: id, _openid: openId }).limit(1).get()
++      if (!data.length) throw new Error(`${label}不存在或无权操作`)
++      return data[0]
++    },
++    validateMedicationPlanPayload: p => p,
++    validateMedicationConfirmationPayload: p => p,
++    withPerfLog
++  })
++  const familyService = createFamilyService({
++    db, _: commands, collections: COLLECTIONS, withPerfLog,
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: helpers.getLimitedString,
++    createInviteCode: () => 'KXJTEST00001',
++    getRecordService: () => recordService,
++    getMedicationService: () => medicationService
++  })
++  return { db, recordService, medicationService, familyService }
++}
++
++const SEED = {
++  records: [
++    { _id: 'r-bp', _openid: 'owner-1', type: 'bp', systolic: 128, diastolic: 78, measuredAt: '今天 08:00', tag: '晨起', level: '', createdAt: '2026-09-23T08:00:00' },
++    { _id: 'r-bg', _openid: 'owner-1', type: 'bg', glucose: 6.4, measuredAt: '今天 09:00', tag: '餐后', level: '', createdAt: '2026-09-23T09:00:00' },
++    { _id: 'r-victim', _openid: 'victim-1', type: 'bp', systolic: 99, diastolic: 60, measuredAt: '今天 07:00', tag: '晨起', level: '', createdAt: '2026-09-23T07:00:00' }
++  ],
++  medicationPlans: [
++    { _id: 'plan-1', _openid: 'owner-1', name: '降压药', dosage: '1片', times: ['07:00'], status: '启用', updatedAt: '2026-09-23T07:00:00' }
++  ],
++  medicationConfirmations: [],
++  familyMembers: [
++    { _id: 'active-member-1', _openid: 'member-1', ownerOpenId: 'owner-1', ownerName: '王阿姨', memberOpenId: 'member-1', scopes: scopesOf(true, false, true), status: 'active' },
++    { _id: 'active-member-3', _openid: 'member-3', ownerOpenId: 'owner-1', ownerName: '王阿姨', memberOpenId: 'member-3', scopes: scopesOf(true, true, false), status: 'active' },
++    { _id: 'revoked-member-2', _openid: 'member-2', ownerOpenId: 'owner-1', ownerName: '王阿姨', memberOpenId: 'member-2', scopes: scopesOf(true, true, true), status: 'revoked' }
++  ]
++}
++
++describe('A3 · 家属视图闸口：read 决定数据可见性', () => {
++  it('recordList：read=true 的块返回 owner 数据，read=false 的块被服务端剔除', async () => {
++    const { familyService } = buildServices(SEED)
++    const data = await familyService.getFamilyRecordListData('member-1', { familyView: true })
++    expect(data.familyView).toMatchObject({ allowed: true, readOnly: true })
++    const types = data.records.map(r => r.type)
++    expect(types).toContain('bp')
++    expect(types).not.toContain('bg') // bg read=false，服务端剔除而非页面隐藏
++  })
++
++  it('recordList：请求 read=false 的块（参数切换）被拒绝', async () => {
++    const { familyService } = buildServices(SEED)
++    const data = await familyService.getFamilyRecordListData('member-1', { familyView: true, type: 'bg' })
++    expect(data.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++    expect(data.records).toBeUndefined()
++  })
++
++  it('trend：bpBg 需血压+血糖双 read；缺其一拒绝', async () => {
++    const { familyService } = buildServices(SEED)
++    const denied = await familyService.getFamilyTrendData('member-1', { familyView: true })
++    expect(denied.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++  })
++
++  it('trend：medication 指标按 medicine.read 放行', async () => {
++    const { familyService } = buildServices(SEED)
++    const data = await familyService.getFamilyTrendData('member-1', { familyView: true, metric: 'medication' })
++    expect(data.familyView).toMatchObject({ allowed: true, readOnly: true })
++  })
++
++  it('trend：medicine read=false 的成员请求 medication 被拒绝', async () => {
++    const { familyService } = buildServices(SEED)
++    const data = await familyService.getFamilyTrendData('member-3', { familyView: true, metric: 'medication' })
++    expect(data.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++  })
++
++  it('medList/medHistory：medicine read=true 返回 owner 数据；read=false 拒绝', async () => {
++    const { familyService } = buildServices(SEED)
++    const list = await familyService.getFamilyMedListData('member-1', { familyView: true })
++    expect(list.familyView).toMatchObject({ allowed: true, readOnly: true })
++    expect(list.plans.length).toBeGreaterThan(0)
++    const history = await familyService.getFamilyMedHistoryData('member-1', { familyView: true })
++    expect(history.familyView).toMatchObject({ allowed: true, readOnly: true })
++    const deniedList = await familyService.getFamilyMedListData('member-3', { familyView: true })
++    expect(deniedList.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++  })
++})
++
++describe('A3 · 身份与数据主体：参数不能切换 owner', () => {
++  it('payload 携带 ownerOpenId 被忽略，数据主体仍为绑定 owner', async () => {
++    const { familyService } = buildServices(SEED)
++    const data = await familyService.getFamilyRecordListData('member-1', { familyView: true, ownerOpenId: 'victim-1' })
++    expect(data.familyView.allowed).toBe(true)
++    const ids = data.records.map(r => r.id || r._id)
++    expect(ids).not.toContain('r-victim')
++    expect(data.records.some(r => (r.type === 'bp'))).toBe(true)
++  })
++
++  it('无绑定成员：denied noBinding；已撤销成员：denied revoked', async () => {
++    const { familyService } = buildServices(SEED)
++    const noBinding = await familyService.getFamilyRecordListData('member-9', { familyView: true })
++    expect(noBinding.familyView).toMatchObject({ allowed: false, reason: 'noBinding' })
++    const revoked = await familyService.getFamilyRecordListData('member-2', { familyView: true })
++    expect(revoked.familyView).toMatchObject({ allowed: false, reason: 'revoked' })
++  })
++
++  it('owner 本人带 familyView：按 self 处理，行为与原路由一致', async () => {
++    const { familyService, recordService } = buildServices(SEED)
++    const data = await familyService.getFamilyRecordListData('owner-1', { familyView: true })
++    const normal = await recordService.getRecordListData('owner-1', {})
++    expect(data.records.length).toBe(normal.records.length)
++    expect(data.familyView).toBeUndefined()
++  })
++
++  it('空数据不等于权限验证：owner 无记录时 allowed=true 且列表为空，与 denied 形态可区分', async () => {
++    const seed = clone(SEED)
++    seed.records = []
++    const { familyService } = buildServices(seed)
++    const data = await familyService.getFamilyRecordListData('member-3', { familyView: true })
++    expect(data.familyView).toMatchObject({ allowed: true, readOnly: true })
++    expect(data.records).toEqual([])
++    const denied = await familyService.getFamilyRecordListData('member-9', { familyView: true })
++    expect(denied.familyView.allowed).toBe(false)
++    expect(denied.records).toBeUndefined()
++  })
++})
++
++describe('A3 · record-service allowedTypes 服务端过滤', () => {
++  it('allowedTypes 限制查询类型，filter 参数不能越权', async () => {
++    const { recordService } = buildServices(SEED)
++    const data = await recordService.getRecordListData('owner-1', {}, { allowedTypes: ['bp'] })
++    expect(data.records.map(r => r.type)).toEqual(['bp'])
++  })
++})
++
++// ─── 页面守卫（familyView 下写入口禁用） ───
++const mockApi = {
++  getMedListData: jest.fn(),
++  deleteMedicationPlan: jest.fn(),
++  toggleMedicationPlanStatus: jest.fn(),
++  revokeMedicationConfirmation: jest.fn(),
++  confirmMedication: jest.fn(),
++  getRecordDetailData: jest.fn(),
++  deleteRecord: jest.fn()
++}
++const mockFactory = {
++  bindAdaptiveResize: jest.fn(),
++  unbindAdaptiveResize: jest.fn(),
++  goRoute: jest.fn(),
++  clearPageLoadState: jest.fn(),
++  safeNavigateBack: jest.fn(),
++  loadPageData: jest.fn()
++}
++jest.mock('../../utils/api', () => mockApi)
++jest.mock('../../utils/page-factory', () => mockFactory)
++jest.mock('../../services/snooze', () => ({ removeSnoozeReminderByLogId: jest.fn() }))
++jest.mock('../../utils/subscribe-prompt', () => ({ promptSubscribeAfterAction: jest.fn() }))
++
++global.Page = (cfg) => { pageConfigs.push(cfg); return cfg }
++global.wx = {
++  setNavigationBarTitle: jest.fn(),
++  showToast: jest.fn(),
++  showModal: jest.fn((opt) => opt.success && opt.success({ confirm: true })),
++  setClipboardData: jest.fn(),
++  showActionSheet: jest.fn()
++}
++const pageConfigs = []
++require('../../pages/medication/med-list/index.js')
++require('../../pages/record/record-detail/index.js')
++
++function makePage(cfg) {
++  return Object.assign({}, cfg, {
++    data: JSON.parse(JSON.stringify(cfg.data)),
++    route: 'x',
++    setData(patch) { Object.assign(this.data, patch) }
++  })
++}
++
++describe('A3 · 页面只读守卫', () => {
++  beforeEach(() => {
++    jest.clearAllMocks()
++    mockFactory.loadPageData.mockImplementation(async (page, loader) => {
++      const d = await loader()
++      Object.assign(page.data, d)
++      return d
++    })
++    mockApi.getMedListData.mockResolvedValue({ plans: [], confirmations: [], familyView: { allowed: true, readOnly: true } })
++    mockApi.getRecordDetailData.mockResolvedValue({ record: { id: 'r-bp', type: 'bp' }, details: [], familyView: { allowed: true, readOnly: true } })
++  })
++
++  it('med-list familyView：editPlan/goMedEdit/确认/撤销 均被守卫拦截', async () => {
++    const page = makePage(pageConfigs[0])
++    await page.onLoad({ familyView: '1' })
++    expect(page.data.isFamilyView).toBe(true)
++    page.editPlan({ currentTarget: { dataset: { planId: 'plan-1' } } })
++    page.goMedEdit()
++    page.handleConfirmTap({ currentTarget: { dataset: { planId: 'plan-1', logId: 'log-1' } } })
++    page.handleRevokeConfirmation({ currentTarget: { dataset: { logId: 'log-1' } } })
++    expect(mockFactory.goRoute).not.toHaveBeenCalled()
++    expect(mockApi.confirmMedication).not.toHaveBeenCalled()
++    expect(mockApi.revokeMedicationConfirmation).not.toHaveBeenCalled()
++    expect(mockApi.toggleMedicationPlanStatus).not.toHaveBeenCalled()
++    expect(global.wx.showToast).toHaveBeenCalled()
++  })
++
++  it('med-list 非 familyView：编辑入口正常可用', async () => {
++    const page = makePage(pageConfigs[0])
++    await page.onLoad({})
++    page.goMedEdit()
++    expect(mockFactory.goRoute).toHaveBeenCalled()
++  })
++
++  it('record-detail familyView：删除入口被守卫拦截', async () => {
++    const page = makePage(pageConfigs[1])
++    await page.onLoad({ id: 'r-bp', familyView: '1' })
++    expect(page.data.isFamilyView).toBe(true)
++    page.handleDelete()
++    expect(mockApi.deleteRecord).not.toHaveBeenCalled()
++  })
++})
+diff --git a/utils/page-factory.js b/utils/page-factory.js
+index ff33b46..4e1d910 100644
+--- a/utils/page-factory.js
++++ b/utils/page-factory.js
+@@ -23,8 +23,8 @@ const pendingPageLoads = new Map()
+  * @param {string} routeKey routes.js 中定义的路由键名。
+  * @returns {void} 无返回值；内部根据目标页面类型调用 wx.switchTab 或 wx.navigateTo。
+  */
+-function goRoute(routeKey) {
+-  const url = routes[routeKey]
++function goRoute(routeKey, query) {
++  const url = routes[routeKey] + (query ? (routes[routeKey].includes('?') ? '&' : '?') + query : '')
+   if (!url) {
+     wx.showToast({
+       title: '页面暂未配置',

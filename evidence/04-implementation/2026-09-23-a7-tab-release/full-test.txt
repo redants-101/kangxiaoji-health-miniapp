@@ -1,0 +1,6 @@
+
+Test Suites: 1 failed, 28 passed, 29 total
+Tests:       2 failed, 631 passed, 633 total
+Snapshots:   0 total
+Time:        2.397 s
+Ran all test suites.

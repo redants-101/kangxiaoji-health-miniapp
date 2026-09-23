@@ -1,0 +1,58 @@
+== S1 noInvite ==
+✔ [healthApi] call succeeded
+
+Runtime：1.00ms
+Memory usage：23.51MB
+Billing time：100ms
+Request Id ：69cb1653-ae0c-4b67-a29f-ae7401ac14cc
+Return result：{"noInvite":true,"inviteCode":"","inviteTitle":"尚未获得邀请","inviteSubtitle":"请通过家人分享的邀请链接或邀请码进入。","remainHours":0,"agreed":false,"identity":{"initial":"家","title":"家属","meta":"获得邀请后可查看授权范围"},"scopes":[]}
+Invocation log：
+START RequestId: 69cb1653-ae0c-4b67-a29f-ae7401ac14cc
+Event RequestId: 69cb1653-ae0c-4b67-a29f-ae7401ac14cc
+2026-09-23T02:55:43.610Z	69cb1653-ae0c-4b67-a29f-ae7401ac14cc	[healthApi:perf:v1] {"schemaVersion":1,"event":"healthApi.perf","timestamp":"2026-09-23T02:55:43.610Z","routeType":"key","route":"familyJoin","step":"route.total","durationMs":1,"ok":true}
+Response RequestId: 69cb1653-ae0c-4b67-a29f-ae7401ac14cc RetMsg: {"noInvite":true,"inviteCode":"","inviteTitle":"尚未获得邀请","inviteSubtitle":"请通过家人分享的邀请链接或邀请码进入。","remainHours":0,"agreed":false,"identity":{"initial":"家","title":"家属","meta":"获得邀请后可查看授权范围"},"scopes":[]}
+END RequestId: 69cb1653-ae0c-4b67-a29f-ae7401ac14cc
+Report RequestId: 69cb1653-ae0c-4b67-a29f-ae7401ac14cc Duration: 1ms Memory: 256MB MemUsage: 23.511719MB
+
+ℹ 
+Next steps:
+ℹ   View invocation logs    tcb fn log healthApi
+== S2 invalid ==
+✔ [healthApi] call succeeded
+
+Runtime：164.00ms
+Memory usage：23.26MB
+Billing time：200ms
+Request Id ：0cd44140-32c4-4341-83c6-fa1b4c8f245a
+Return result：{"inviteCode":"BADCODE","inviteTitle":"家庭健康记录邀请","inviteSubtitle":"加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。","remainHours":0,"agreed":false,"identity":{"initial":"家","title":"家属","meta":"可在家庭页查看授权记录"},"scopes":[],"inviteError":{"code":"FAMILY_INVITE_INVALID","message":"邀请码无效，请核对后重试"}}
+Invocation log：
+START RequestId: 0cd44140-32c4-4341-83c6-fa1b4c8f245a
+Event RequestId: 0cd44140-32c4-4341-83c6-fa1b4c8f245a
+2026-09-23T02:55:49.202Z	0cd44140-32c4-4341-83c6-fa1b4c8f245a	[healthApi:perf:v1] {"schemaVersion":1,"event":"healthApi.perf","timestamp":"2026-09-23T02:55:49.202Z","routeType":"key","route":"familyJoin","step":"route.total","durationMs":163,"ok":true}
+Response RequestId: 0cd44140-32c4-4341-83c6-fa1b4c8f245a RetMsg: {"inviteCode":"BADCODE","inviteTitle":"家庭健康记录邀请","inviteSubtitle":"加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。","remainHours":0,"agreed":false,"identity":{"initial":"家","title":"家属","meta":"可在家庭页查看授权记录"},"scopes":[],"inviteError":{"code":"FAMILY_INVITE_INVALID","message":"邀请码无效，请核对后重试"}}
+END RequestId: 0cd44140-32c4-4341-83c6-fa1b4c8f245a
+Report RequestId: 0cd44140-32c4-4341-83c6-fa1b4c8f245a Duration: 164ms Memory: 256MB MemUsage: 23.257813MB
+
+ℹ 
+Next steps:
+ℹ   View invocation logs    tcb fn log healthApi
+== S3 notFound ==
+✔ [healthApi] call succeeded
+
+Runtime：99.00ms
+Memory usage：24.03MB
+Billing time：100ms
+Request Id ：ae47b7a3-0b19-409f-8639-0c432018b0d6
+Return result：{"inviteCode":"KXJ000000000","inviteTitle":"家庭健康记录邀请","inviteSubtitle":"加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。","remainHours":0,"agreed":false,"identity":{"initial":"家","title":"家属","meta":"可在家庭页查看授权记录"},"scopes":[],"inviteError":{"code":"FAMILY_INVITE_NOT_FOUND","message":"邀请不存在或已失效"}}
+Invocation log：
+START RequestId: ae47b7a3-0b19-409f-8639-0c432018b0d6
+Event RequestId: ae47b7a3-0b19-409f-8639-0c432018b0d6
+2026-09-23T02:55:55.056Z	ae47b7a3-0b19-409f-8639-0c432018b0d6	[healthApi:perf:v1] {"schemaVersion":1,"event":"healthApi.perf","timestamp":"2026-09-23T02:55:55.056Z","routeType":"key","route":"familyJoin","step":"db.familyAuth.byInvite","durationMs":44,"count":0,"ok":true}
+2026-09-23T02:55:55.056Z	ae47b7a3-0b19-409f-8639-0c432018b0d6	[healthApi:perf:v1] {"schemaVersion":1,"event":"healthApi.perf","timestamp":"2026-09-23T02:55:55.056Z","routeType":"key","route":"familyJoin","step":"route.total","durationMs":97,"ok":true}
+Response RequestId: ae47b7a3-0b19-409f-8639-0c432018b0d6 RetMsg: {"inviteCode":"KXJ000000000","inviteTitle":"家庭健康记录邀请","inviteSubtitle":"加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。","remainHours":0,"agreed":false,"identity":{"initial":"家","title":"家属","meta":"可在家庭页查看授权记录"},"scopes":[],"inviteError":{"code":"FAMILY_INVITE_NOT_FOUND","message":"邀请不存在或已失效"}}
+END RequestId: ae47b7a3-0b19-409f-8639-0c432018b0d6
+Report RequestId: ae47b7a3-0b19-409f-8639-0c432018b0d6 Duration: 99ms Memory: 256MB MemUsage: 24.031250MB
+
+ℹ 
+Next steps:
+ℹ   View invocation logs    tcb fn log healthApi

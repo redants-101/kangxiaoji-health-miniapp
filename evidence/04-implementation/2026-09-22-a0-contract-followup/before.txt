@@ -1,0 +1,123 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a0-contract-integration.test.js
+
+FAIL tests/unit/a0-contract-integration.test.js
+  A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权）
+    × scopes 缺失：服务入口拒绝，不写数据库 (11 ms)
+    × scopes null：服务入口拒绝，不写数据库 (2 ms)
+    × scopes 字符串：服务入口拒绝，不写数据库
+    × scopes 对象：服务入口拒绝，不写数据库 (1 ms)
+    × scopes=[]：邀请可生成但落库四块 read/write/remind 全部 false，不恢复授权 (4 ms)
+    √ 部分 scopes：仅提交的块按值归一化，未提交块全部 false（不补开） (1 ms)
+    √ 显式合法的完整授权：按提交值正确保存（write 仅 BP/BG/medicine） (1 ms)
+    √ 未知关系在入口被拒绝，不写入 (26 ms)
+    √ report write=true、非布尔、未知/重复 scope 在创建入口被拒绝 (2 ms)
+    √ 8 种关系可往返，提交的关系名称写入邀请成员 (1 ms)
+  A0-2 集成 · 加入家庭
+    √ 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active (1 ms)
+  A0-2 集成 · 家属首页按 read 输出受控明细
+    √ 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏） (1 ms)
+    √ 全块 read：血压血糖均输出，用药与周报可见 (1 ms)
+    √ 血糖块开、血压块关：只输出血糖
+  A0-2 集成 · 授权保存/回显
+    √ updateFamilyAuth：新 scopes 同步到 family_auth 与 family_members (2 ms)
+    √ updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key (1 ms)
+    √ getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules (1 ms)
+  A0-2 集成 · owner 本人功能不被误伤
+    √ getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成 (1 ms)
+
+  ● A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权） › scopes 缺失：服务入口拒绝，不写数据库
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"inviteCode": "KXJTEST01", "inviteId": "KXJTEST01", "invitePreview": {"expire": "24 小时", "meta": "可查看：血压记录、血糖记录、用药确认、健康记录周报", "title": "王阿姨邀请女儿查看健康记录"}, "sharePath": "/pages/family-sub/family-join/index?inviteCode=KXJTEST01"}
+
+    [0m [90m 139 |[39m     [36mconst[39m db [33m=[39m createStoreDb({ profiles[33m:[39m [{ _id[33m:[39m [32m'p-1'[39m[33m,[39m _openid[33m:[39m [32m'owner-1'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }] })
+     [90m 140 |[39m     [36mconst[39m service [33m=[39m createService(db)
+    [31m[1m>[22m[39m[90m 141 |[39m     [36mawait[39m expect(service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes }))[33m.[39mrejects[33m.[39mtoThrow([32m'授权范围'[39m)
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 142 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mfamilyAuth][33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)
+     [90m 143 |[39m   })
+     [90m 144 |[39m[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at expect (tests/unit/a0-contract-integration.test.js:141:11)
+
+  ● A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权） › scopes null：服务入口拒绝，不写数据库
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"inviteCode": "KXJTEST01", "inviteId": "KXJTEST01", "invitePreview": {"expire": "24 小时", "meta": "可查看：血压记录、血糖记录、用药确认、健康记录周报", "title": "王阿姨邀请女儿查看健康记录"}, "sharePath": "/pages/family-sub/family-join/index?inviteCode=KXJTEST01"}
+
+    [0m [90m 139 |[39m     [36mconst[39m db [33m=[39m createStoreDb({ profiles[33m:[39m [{ _id[33m:[39m [32m'p-1'[39m[33m,[39m _openid[33m:[39m [32m'owner-1'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }] })
+     [90m 140 |[39m     [36mconst[39m service [33m=[39m createService(db)
+    [31m[1m>[22m[39m[90m 141 |[39m     [36mawait[39m expect(service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes }))[33m.[39mrejects[33m.[39mtoThrow([32m'授权范围'[39m)
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 142 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mfamilyAuth][33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)
+     [90m 143 |[39m   })
+     [90m 144 |[39m[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at expect (tests/unit/a0-contract-integration.test.js:141:11)
+
+  ● A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权） › scopes 字符串：服务入口拒绝，不写数据库
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"inviteCode": "KXJTEST01", "inviteId": "KXJTEST01", "invitePreview": {"expire": "24 小时", "meta": "可查看：血压记录、血糖记录、用药确认、健康记录周报", "title": "王阿姨邀请女儿查看健康记录"}, "sharePath": "/pages/family-sub/family-join/index?inviteCode=KXJTEST01"}
+
+    [0m [90m 139 |[39m     [36mconst[39m db [33m=[39m createStoreDb({ profiles[33m:[39m [{ _id[33m:[39m [32m'p-1'[39m[33m,[39m _openid[33m:[39m [32m'owner-1'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }] })
+     [90m 140 |[39m     [36mconst[39m service [33m=[39m createService(db)
+    [31m[1m>[22m[39m[90m 141 |[39m     [36mawait[39m expect(service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes }))[33m.[39mrejects[33m.[39mtoThrow([32m'授权范围'[39m)
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 142 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mfamilyAuth][33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)
+     [90m 143 |[39m   })
+     [90m 144 |[39m[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at expect (tests/unit/a0-contract-integration.test.js:141:11)
+
+  ● A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权） › scopes 对象：服务入口拒绝，不写数据库
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"inviteCode": "KXJTEST01", "inviteId": "KXJTEST01", "invitePreview": {"expire": "24 小时", "meta": "可查看：血压记录、血糖记录、用药确认、健康记录周报", "title": "王阿姨邀请女儿查看健康记录"}, "sharePath": "/pages/family-sub/family-join/index?inviteCode=KXJTEST01"}
+
+    [0m [90m 139 |[39m     [36mconst[39m db [33m=[39m createStoreDb({ profiles[33m:[39m [{ _id[33m:[39m [32m'p-1'[39m[33m,[39m _openid[33m:[39m [32m'owner-1'[39m[33m,[39m name[33m:[39m [32m'王阿姨'[39m }] })
+     [90m 140 |[39m     [36mconst[39m service [33m=[39m createService(db)
+    [31m[1m>[22m[39m[90m 141 |[39m     [36mawait[39m expect(service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes }))[33m.[39mrejects[33m.[39mtoThrow([32m'授权范围'[39m)
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 142 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mfamilyAuth][33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)
+     [90m 143 |[39m   })
+     [90m 144 |[39m[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at expect (tests/unit/a0-contract-integration.test.js:141:11)
+
+  ● A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权） › scopes=[]：邀请可生成但落库四块 read/write/remind 全部 false，不恢复授权
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    [0m [90m 151 |[39m     [36mconst[39m auth [33m=[39m db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mfamilyAuth][33m.[39mrows[[35m0[39m]
+     [90m 152 |[39m     expect(auth)[33m.[39mtoMatchObject({ ownerOpenId[33m:[39m [32m'owner-1'[39m[33m,[39m ownerName[33m:[39m [32m'王阿姨'[39m[33m,[39m status[33m:[39m [32m'pending'[39m })
+    [31m[1m>[22m[39m[90m 153 |[39m     expect(auth[33m.[39mscopes[33m.[39mevery(s [33m=>[39m s[33m.[39mread [33m===[39m [36mfalse[39m [33m&&[39m s[33m.[39mwrite [33m===[39m [36mfalse[39m [33m&&[39m s[33m.[39mremind [33m===[39m [36mfalse[39m))[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                                                                                 [31m[1m^[22m[39m
+     [90m 154 |[39m     expect(invite[33m.[39minvitePreview[33m.[39mmeta)[33m.[39mtoBe([32m'暂未选择可查看内容'[39m)
+     [90m 155 |[39m   })
+     [90m 156 |[39m[0m
+
+      at Object.toBe (tests/unit/a0-contract-integration.test.js:153:97)
+
+Test Suites: 1 failed, 1 total
+Tests:       5 failed, 13 passed, 18 total
+Snapshots:   0 total
+Time:        1.006 s
+Ran all test suites matching /tests\\unit\\a0-contract-integration.test.js/i.

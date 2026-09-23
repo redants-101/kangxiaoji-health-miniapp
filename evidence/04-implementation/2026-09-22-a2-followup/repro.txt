@@ -1,0 +1,3 @@
+garbage expiresAt  → null (期望 invalid, null=放行=BUG)
+exactly-now        → expired (期望 expired, null=放行=BUG)
+numeric-string ts  → null (可解析但类型可疑)

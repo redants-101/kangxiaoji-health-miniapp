@@ -1,0 +1,2127 @@
+diff --git a/cloudfunctions/healthApi/family-policy.js b/cloudfunctions/healthApi/family-policy.js
+index 7c93c5b..3a171bb 100644
+--- a/cloudfunctions/healthApi/family-policy.js
++++ b/cloudfunctions/healthApi/family-policy.js
+@@ -1,7 +1,12 @@
+ /**
+- * 家庭权限域纯逻辑：默认成员/授权/提醒规则/关系名单、权限判断、展示文案与归一化。
+- * 云函数 index.js 与 scripts/health-api-regression.js 共同引用，
+- * 回归脚本不再复制这份业务权限逻辑。本文件不依赖 wx-server-sdk。
++ * 家庭权限域：默认成员、三级权限规则、提醒规则与归一化。
++ * 云函数 index.js、family-service.js、scripts/health-api-regression.js 共同引用，
++ * 权限判断只有这一份实现。本文件不依赖 wx-server-sdk，require 无初始化/网络副作用。
++ *
++ * 契约来源：2026-09-22 decisions.md 与用户三项确认：
++ * - write 动作要求同 scope read+write；report 不支持 write；
++ * - read=false、remind=true 仅出电话提醒按钮，不显示数据或提醒明细；
++ * - 提醒明细可见 = read && remind && noticeRules 对应项（合取）。
+  */
+ 
+ const { assertPayloadObject, getLimitedString } = require('./payload-helpers')
+@@ -20,256 +25,6 @@ function getDefaultFamilyMember() {
+   }
+ }
+ 
+-/**
+- * 获取默认家属授权范围。
+- * @returns {Array<Object>} 默认授权项。
+- */
+-function getDefaultFamilyScopes() {
+-  return [
+-    {
+-      key: 'bloodPressure',
+-      title: '血压记录',
+-      meta: '数值、测量时间、场景标签和趋势',
+-      enabled: true
+-    },
+-    {
+-      key: 'bloodGlucose',
+-      title: '血糖记录',
+-      meta: '数值、测量时间、测量场景和趋势',
+-      enabled: true
+-    },
+-    {
+-      key: 'medicine',
+-      title: '用药确认',
+-      meta: '用药计划、确认状态和未确认记录',
+-      enabled: true
+-    },
+-    {
+-      key: 'report',
+-      title: '健康记录周报',
+-      meta: '每周记录汇总和趋势回顾',
+-      enabled: true
+-    }
+-  ]
+-}
+-
+-/**
+- * 获取默认家属提醒规则。
+- * @returns {Array<Object>} 默认提醒规则。
+- */
+-function getDefaultNoticeRules() {
+-  return [
+-    {
+-      key: 'missedMedicine',
+-      title: '用药未确认提醒',
+-      meta: '超过设定时间未确认时提醒家属查看',
+-      enabled: true
+-    },
+-    {
+-      key: 'missingRecord',
+-      title: '连续未记录提醒',
+-      meta: '连续多天未记录时提醒家属关注',
+-      enabled: false
+-    },
+-    {
+-      key: 'weeklyReport',
+-      title: '周报生成提醒',
+-      meta: '周报生成后通知家属查看',
+-      enabled: true
+-    }
+-  ]
+-}
+-
+-/**
+- * 获取邀请页默认关系。
+- * @returns {Array<Object>} 可选择的家属关系。
+- */
+-function getDefaultInviteRelations() {
+-  return [
+-    { key: 'daughter', label: '女儿', meta: '主要照护人' },
+-    { key: 'son', label: '儿子', meta: '紧急联系人' },
+-    { key: 'spouse', label: '配偶', meta: '共同管理' },
+-    { key: 'other', label: '其他', meta: '自定义关系' }
+-  ]
+-}
+-
+-/**
+- * 获取邀请关系配置。
+- * @param {string} relationKey 关系 key。
+- * @returns {Object} 命中的关系配置。
+- */
+-function getInviteRelation(relationKey) {
+-  return getDefaultInviteRelations().find(item => item.key === relationKey) || getDefaultInviteRelations()[0]
+-}
+-
+-/**
+- * 判断授权项是否开启。
+- * @param {Object} auth 家属授权文档。
+- * @param {Array<string>} keys 可接受的授权 key，兼容页面长 key 和云端短 key。
+- * @returns {boolean} true 表示当前授权允许查看。
+- */
+-function isScopeEnabled(auth, keys) {
+-  const scopes = Array.isArray(auth.scopes) ? auth.scopes : []
+-  return scopes.some(scope => keys.includes(scope.key) && scope.enabled)
+-}
+-
+-/**
+- * 从授权关系中判断 scope 是否开启。
+- * @param {Object} relation 家庭成员关系文档。
+- * @param {Array<string>} keys 授权 key 列表。
+- * @returns {boolean} true 表示可查看。
+- */
+-function isRelationScopeEnabled(relation, keys) {
+-  return isScopeEnabled({ scopes: relation.scopes || [] }, keys)
+-}
+-
+-/**
+- * 生成家属授权范围展示文案。
+- * @param {Object} auth 家属授权文档。
+- * @returns {string} 已授权范围文案。
+- */
+-function getScopeText(auth) {
+-  const scopes = Array.isArray(auth.scopes) ? auth.scopes : []
+-  const enabledTitles = scopes
+-    .filter(scope => scope.enabled)
+-    .map(scope => scope.title)
+-  return enabledTitles.length ? enabledTitles.join('、') : '暂未授权'
+-}
+-
+-/**
+- * 归一化家属授权入参。
+- * @param {Object} payload 页面提交的家属授权。
+- * @returns {Object} family_auth 集合目标字段。
+- */
+-function normalizeFamilyAuthPayload(payload = {}) {
+-  const member = {
+-    ...getDefaultFamilyMember(),
+-    ...(payload.member || {})
+-  }
+-  return {
+-    member,
+-    memberName: payload.memberName || member.name || '',
+-    inviteCode: payload.inviteCode || '',
+-    scopes: Array.isArray(payload.scopes) ? payload.scopes : getDefaultFamilyScopes(),
+-    noticeRules: Array.isArray(payload.noticeRules) ? payload.noticeRules : getDefaultNoticeRules(),
+-    activities: Array.isArray(payload.activities) ? payload.activities : [],
+-    status: payload.status || 'active'
+-  }
+-}
+-
+-/**
+- * 归一化家庭邀请入参。
+- * @param {Object} payload 邀请页参数。
+- * @returns {Object} 家庭邀请配置。
+- */
+-function normalizeFamilyInvitePayload(payload = {}) {
+-  const relation = getInviteRelation(payload.selectedRelation)
+-  const scopes = Array.isArray(payload.scopes)
+-    ? payload.scopes.filter(scope => scope && scope.key)
+-    : getDefaultFamilyScopes()
+-  if (!scopes.some(scope => scope.enabled)) {
+-    throw new Error('请至少选择一个授权范围')
+-  }
+-  return {
+-    relation,
+-    scopes,
+-    member: {
+-      ...getDefaultFamilyMember(),
+-      name: relation.label,
+-      relation: relation.label,
+-      role: relation.meta,
+-      status: '待加入',
+-      desc: '家属加入后，可在授权范围内查看健康记录和提醒状态。'
+-    }
+-  }
+-}
+-
+-/**
+- * 校验邀请码。
+- * @param {Object} payload 入参。
+- * @returns {string} 邀请码。
+- */
+-function validateInviteCodePayload(payload) {
+-  const data = assertPayloadObject(payload, '家庭邀请')
+-  return getLimitedString(data.inviteCode || data.inviteId, '邀请码', 32, true)
+-}
+-
+-/**
+- * 创建用户显示名称查询函数。
+- * @param {Object} deps 依赖。
+- * @param {Object} deps.db 数据库实例。
+- * @param {Object} deps.collections 集合名映射。
+- * @returns {(openId: string) => Promise<string>}
+- */
+-function createProfileDisplayName({ db, collections }) {
+-  return async function getProfileDisplayName(openId) {
+-    const { data } = await db.collection(collections.profiles)
+-      .where({ _openid: openId })
+-      .limit(1)
+-      .get()
+-    return data[0]?.name || '家人'
+-  }
+-}
+-
+-/**
+- * 创建家属访问上下文查询函数（含 owner 本人预览的 ownerPreview 回退分支）。
+- * @param {Object} deps 依赖。
+- * @param {Object} deps.db 数据库实例。
+- * @param {Object} deps.collections 集合名映射。
+- * @returns {(openId: string) => Promise<Object|null>}
+- */
+-function createFamilyAccessContext({ db, collections }) {
+-  return async function getFamilyAccessContext(openId) {
+-    const { data: relations } = await db.collection(collections.familyMembers)
+-      .where({
+-        memberOpenId: openId,
+-        status: 'active'
+-      })
+-      .orderBy('updatedAt', 'desc')
+-      .limit(1)
+-      .get()
+-
+-    if (relations.length) {
+-      return {
+-        mode: 'member',
+-        ownerOpenId: relations[0].ownerOpenId,
+-        relation: relations[0]
+-      }
+-    }
+-
+-    // 本人预览家属视角时使用自己的授权配置，不跨账号读取。
+-    const { data: authList } = await db.collection(collections.familyAuth)
+-      .where({ _openid: openId })
+-      .limit(1)
+-      .get()
+-
+-    const auth = authList[0]
+-    if (!auth || auth.status === 'revoked') return null
+-    return {
+-      mode: 'ownerPreview',
+-      ownerOpenId: openId,
+-      relation: {
+-        ownerOpenId: openId,
+-        memberOpenId: auth.memberOpenId || '',
+-        member: auth.member || getDefaultFamilyMember(),
+-        memberName: auth.memberName || auth.member?.name || '家属',
+-        scopes: auth.scopes || getDefaultFamilyScopes(),
+-        noticeRules: auth.noticeRules || getDefaultNoticeRules(),
+-        status: auth.status || 'active'
+-      }
+-    }
+-  }
+-}
+-
+-// ============================================================================
+-// A0：三级权限规则（新契约）
+-// 与上方 enabled 旧模型并存：旧入口仍用旧函数，A0-2 再整体切换调用链。
+-// 规则来源：2026-09-22 decisions.md 第 1/4.1 节与用户三项确认：
+-// - write 动作要求同 scope read+write；
+-// - read=false、remind=true 仅出电话提醒按钮；
+-// - 提醒明细可见 = read && remind && noticeRules 对应项。
+-// ============================================================================
+-
+ // 四种 scope 的固定展示信息（标题与用途不接受前端改写）
+ const SCOPE_CATALOG_V2 = {
+   bloodPressure: { title: '血压记录', meta: '数值、测量时间、场景标签和趋势' },
+@@ -356,12 +111,16 @@ function normalizeFamilyScopesV2(rawScopes) {
+ const NOTICE_RULE_KEYS_V2 = ['missedMedicine', 'missingRecord', 'weeklyReport']
+ 
+ /**
+- * 归一化提醒规则：三维布尔，缺失默认 false，非布尔拒绝，多余键剔除。
++ * 归一化提醒规则：三维布尔对象（统一存储/接口契约）。
++ * 缺失默认 false，非布尔拒绝，多余键剔除；数组（旧页面形态）拒绝而不静默重置。
+  * @param {Object} [rawRules] 页面提交的 noticeRules。
+  * @returns {Object} 三维 noticeRules。
+  */
+ function normalizeNoticeRulesV2(rawRules = {}) {
+-  const source = rawRules && typeof rawRules === 'object' && !Array.isArray(rawRules) ? rawRules : {}
++  if (Array.isArray(rawRules)) {
++    throw new Error('提醒规则格式不正确')
++  }
++  const source = rawRules && typeof rawRules === 'object' ? rawRules : {}
+   const result = {}
+   NOTICE_RULE_KEYS_V2.forEach((key) => {
+     const value = source[key]
+@@ -410,6 +169,85 @@ function canShowPhoneReminder(scopes, key) {
+   return !!(scope && scope.remind === true)
+ }
+ 
++/**
++ * 生成家属授权范围展示文案：read=true 的标题顿号连接；无授权返回暂未授权。
++ * @param {Array<Object>} scopes 归一化 scopes。
++ * @returns {string}
++ */
++function getScopeTextV2(scopes) {
++  const titles = (Array.isArray(scopes) ? scopes : [])
++    .filter(scope => scope && scope.read === true)
++    .map(scope => scope.title || (SCOPE_CATALOG_V2[scope.key] && SCOPE_CATALOG_V2[scope.key].title))
++    .filter(Boolean)
++  return titles.length ? titles.join('、') : '暂未授权'
++}
++
++/**
++ * 邀请页 scopes 初始态：四块 read+remind 默认开、write 默认关（代录须显式打开）。
++ * @returns {Array<Object>}
++ */
++function getDefaultInviteScopesV2() {
++  return normalizeFamilyScopesV2(SCOPE_KEYS_V2.map(key => ({ key, read: true, remind: true })))
++}
++
++/**
++ * 邀请默认提醒规则：沿用旧默认意图（漏服开、连续未记录关、周报开）。
++ * @returns {Object}
++ */
++function getDefaultInviteNoticeRulesV2() {
++  return { missedMedicine: true, missingRecord: false, weeklyReport: true }
++}
++
++/**
++ * 归一化家庭邀请入参：关系（8 种，未知拒绝，缺省女儿）+ scopes（缺省邀请初始态）+ 待加入成员。
++ * @param {Object} [payload] 邀请页参数。
++ * @returns {Object} { relation, scopes, member }
++ */
++function normalizeFamilyInvitePayloadV2(payload = {}) {
++  const relation = getFamilyRelationV2(payload.selectedRelation || 'daughter')
++  if (!relation) {
++    throw new Error(`家属关系不合法：${payload.selectedRelation}`)
++  }
++  const scopes = Array.isArray(payload.scopes) && payload.scopes.length
++    ? normalizeFamilyScopesV2(payload.scopes)
++    : getDefaultInviteScopesV2()
++  return {
++    relation,
++    scopes,
++    member: {
++      ...getDefaultFamilyMember(),
++      name: relation.label,
++      relation: relation.label,
++      role: relation.meta,
++      status: '待加入',
++      desc: '家属加入后，可在授权范围内查看健康记录和提醒状态。'
++    }
++  }
++}
++
++/**
++ * 归一化家属授权保存入参。scopes/noticeRules 非法时在服务入口抛错。
++ * @param {Object} [payload] 页面提交的家属授权。
++ * @returns {Object} family_auth 目标字段。
++ */
++function normalizeFamilyAuthPayloadV2(payload = {}) {
++  const member = {
++    ...getDefaultFamilyMember(),
++    ...(payload.member || {})
++  }
++  return {
++    member,
++    memberName: payload.memberName || member.name || '',
++    inviteCode: payload.inviteCode || '',
++    scopes: normalizeFamilyScopesV2(
++      Array.isArray(payload.scopes) ? payload.scopes : SCOPE_KEYS_V2.map(key => ({ key }))
++    ),
++    noticeRules: normalizeNoticeRulesV2(payload.noticeRules),
++    activities: Array.isArray(payload.activities) ? payload.activities : [],
++    status: payload.status || 'active'
++  }
++}
++
+ /**
+  * 动作白名单：返回动作所需的 scope 条件；不支持的动作无条目（恒拒绝）。
+  * 用药计划管理、健康记录删除对家属永远不开放。
+@@ -463,27 +301,102 @@ function canViewReminderInfo(scopes, rules, reminderKey) {
+   })
+ }
+ 
++/**
++ * 校验邀请码。
++ * @param {Object} payload 入参。
++ * @returns {string} 邀请码。
++ */
++function validateInviteCodePayload(payload) {
++  const data = assertPayloadObject(payload, '家庭邀请')
++  return getLimitedString(data.inviteCode || data.inviteId, '邀请码', 32, true)
++}
++
++/**
++ * 创建用户显示名称查询函数。
++ * @param {Object} deps 依赖。
++ * @param {Object} deps.db 数据库实例。
++ * @param {Object} deps.collections 集合名映射。
++ * @returns {(openId: string) => Promise<string>}
++ */
++function createProfileDisplayName({ db, collections }) {
++  return async function getProfileDisplayName(openId) {
++    const { data } = await db.collection(collections.profiles)
++      .where({ _openid: openId })
++      .limit(1)
++      .get()
++    return data[0]?.name || '家人'
++  }
++}
++
++/**
++ * 创建家属访问上下文查询函数（含 owner 本人预览的 ownerPreview 回退分支）。
++ * @param {Object} deps 依赖。
++ * @param {Object} deps.db 数据库实例。
++ * @param {Object} deps.collections 集合名映射。
++ * @returns {(openId: string) => Promise<Object|null>}
++ */
++function createFamilyAccessContext({ db, collections }) {
++  return async function getFamilyAccessContext(openId) {
++    const { data: relations } = await db.collection(collections.familyMembers)
++      .where({
++        memberOpenId: openId,
++        status: 'active'
++      })
++      .orderBy('updatedAt', 'desc')
++      .limit(1)
++      .get()
++
++    if (relations.length) {
++      return {
++        mode: 'member',
++        ownerOpenId: relations[0].ownerOpenId,
++        relation: relations[0]
++      }
++    }
++
++    // 本人预览家属视角时使用自己的授权配置，不跨账号读取。
++    const { data: authList } = await db.collection(collections.familyAuth)
++      .where({ _openid: openId })
++      .limit(1)
++      .get()
++
++    const auth = authList[0]
++    if (!auth || auth.status === 'revoked') return null
++    return {
++      mode: 'ownerPreview',
++      ownerOpenId: openId,
++      relation: {
++        ownerOpenId: openId,
++        memberOpenId: auth.memberOpenId || '',
++        member: auth.member || getDefaultFamilyMember(),
++        memberName: auth.memberName || auth.member?.name || '家属',
++        scopes: normalizeFamilyScopesV2(
++          Array.isArray(auth.scopes) ? auth.scopes : SCOPE_KEYS_V2.map(key => ({ key }))
++        ),
++        noticeRules: normalizeNoticeRulesV2(auth.noticeRules),
++        status: auth.status || 'active'
++      }
++    }
++  }
++}
++
+ module.exports = {
+   getDefaultFamilyMember,
+-  getDefaultFamilyScopes,
+-  getDefaultNoticeRules,
+-  getDefaultInviteRelations,
+-  getInviteRelation,
+-  isScopeEnabled,
+-  isRelationScopeEnabled,
+-  getScopeText,
+-  normalizeFamilyAuthPayload,
+-  normalizeFamilyInvitePayload,
+-  validateInviteCodePayload,
+-  createProfileDisplayName,
+-  createFamilyAccessContext,
+-  // A0 三级权限
++  SCOPE_KEYS_V2,
+   FAMILY_RELATIONS_V2,
+   getFamilyRelationV2,
+   normalizeFamilyScopesV2,
+   normalizeNoticeRulesV2,
+   canViewScope,
+   canShowPhoneReminder,
++  getScopeTextV2,
++  getDefaultInviteScopesV2,
++  getDefaultInviteNoticeRulesV2,
++  normalizeFamilyInvitePayloadV2,
++  normalizeFamilyAuthPayloadV2,
+   canPerformScopeAction,
+-  canViewReminderInfo
++  canViewReminderInfo,
++  validateInviteCodePayload,
++  createProfileDisplayName,
++  createFamilyAccessContext
+ }
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index 0d09827..c6d369a 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -1,12 +1,9 @@
+-// 北京时间日期（云函数运行在 UTC 时区，必须加偏移后取 UTC 方法，否则 0:00-8:00 会取到前一天）
+-const CHINA_TIME_OFFSET_MS = 8 * 60 * 60 * 1000
+-function getTodayDateValue() {
+-  const now = new Date()
+-  const chinaTime = new Date(now.getTime() + CHINA_TIME_OFFSET_MS)
+-  const y = chinaTime.getUTCFullYear()
+-  const m = String(chinaTime.getUTCMonth() + 1).padStart(2, '0')
+-  const d = String(chinaTime.getUTCDate()).padStart(2, '0')
+-  return `${y}-${m}-${d}`
++// 关系目录与北京日期口径直接引用共享模块（同部署目录、无循环依赖）
++const { FAMILY_RELATIONS_V2, SCOPE_KEYS_V2 } = require('./family-policy')
++const { getTodayDateValue } = require('./payload-helpers')
++
++function minimalScopes() {
++  return SCOPE_KEYS_V2.map(key => ({ key }))
+ }
+ 
+ function createFamilyService({
+@@ -16,15 +13,17 @@ function createFamilyService({
+   withPerfLog,
+   getProfileDisplayName,
+   getFamilyAccessContext,
+-  isRelationScopeEnabled,
+-  getScopeText,
+   getRecordStatus,
+   getDefaultFamilyMember,
+-  getDefaultFamilyScopes,
+-  getDefaultNoticeRules,
+-  getDefaultInviteRelations,
+-  normalizeFamilyAuthPayload,
+-  normalizeFamilyInvitePayload,
++  getFamilyRelationV2,
++  getDefaultInviteScopesV2,
++  getDefaultInviteNoticeRulesV2,
++  normalizeFamilyScopesV2,
++  normalizeNoticeRulesV2,
++  canViewScope,
++  getScopeTextV2,
++  normalizeFamilyAuthPayloadV2,
++  normalizeFamilyInvitePayloadV2,
+   validateInviteCodePayload,
+   getLimitedString,
+   createInviteCode
+@@ -53,10 +52,10 @@ function createFamilyService({
+     }
+ 
+     const { ownerOpenId, relation } = accessContext
+-    const canViewBp = isRelationScopeEnabled(relation, ['bp', 'bloodPressure'])
+-    const canViewBg = isRelationScopeEnabled(relation, ['bg', 'bloodGlucose'])
+-    const canViewMedicine = isRelationScopeEnabled(relation, ['med', 'medicine'])
+-    const canViewReport = isRelationScopeEnabled(relation, ['report'])
++    const canViewBp = canViewScope(relation.scopes, 'bloodPressure')
++    const canViewBg = canViewScope(relation.scopes, 'bloodGlucose')
++    const canViewMedicine = canViewScope(relation.scopes, 'medicine')
++    const canViewReport = canViewScope(relation.scopes, 'report')
+     const allowedTypes = []
+     if (canViewBp) allowedTypes.push('bp')
+     if (canViewBg) allowedTypes.push('bg')
+@@ -154,7 +153,7 @@ function createFamilyService({
+     return {
+       member: {
+         name: ownerName,
+-        scopeText: getScopeText(relation)
++        scopeText: getScopeTextV2(relation.scopes)
+       },
+       todayAlert: firstMedicine ? {
+         title: `${firstMedicine.time} 用药待确认`,
+@@ -202,7 +201,7 @@ function createFamilyService({
+           relation: relation.member?.relation || '家属',
+           role: relation.member?.role || '家属',
+           status: relation.member?.status || '已授权',
+-          scope: getScopeText(relation),
++          scope: getScopeTextV2(relation.scopes),
+           lastSeen: relation.updatedAt ? '最近刚更新授权' : '最近暂无查看记录',
+           isOwner: false
+         })),
+@@ -231,7 +230,7 @@ function createFamilyService({
+       .get())
+ 
+     const auth = authList[0] || {}
+-    const scope = getScopeText(auth)
++    const scope = getScopeTextV2(auth.scopes)
+ 
+     if (!auth._id || auth.status === 'revoked') {
+       return {
+@@ -267,39 +266,8 @@ function createFamilyService({
+   async function getFamilyInviteData() {
+     return {
+       selectedRelation: 'daughter',
+-      relations: getDefaultInviteRelations(),
+-      scopes: [
+-        {
+-          key: 'bloodPressure',
+-          title: '血压记录',
+-          meta: '数值、测量时间、趋势',
+-          enabled: true
+-        },
+-        {
+-          key: 'bloodGlucose',
+-          title: '血糖记录',
+-          meta: '数值、测量时间、趋势',
+-          enabled: true
+-        },
+-        {
+-          key: 'medicine',
+-          title: '用药确认',
+-          meta: '用药计划、提醒状态、确认记录',
+-          enabled: true
+-        },
+-        {
+-          key: 'report',
+-          title: '健康记录周报',
+-          meta: '每周记录汇总和趋势回顾',
+-          enabled: true
+-        },
+-        {
+-          key: 'missedNotice',
+-          title: '未确认提醒',
+-          meta: '用药未确认时提醒家属查看',
+-          enabled: false
+-        }
+-      ],
++      relations: FAMILY_RELATIONS_V2,
++      scopes: getDefaultInviteScopesV2(),
+       invitePreview: {
+         title: '邀请家属查看健康记录',
+         meta: '可查看：血压记录、血糖记录、用药确认、健康记录周报',
+@@ -352,7 +320,8 @@ function createFamilyService({
+             title: relation.relation || relation.name || '家属',
+             meta: `${relation.role || '家属'} · 可在家庭页查看授权记录`
+           },
+-          scopes: (auth.scopes || []).filter(scope => scope.enabled)
++          scopes: (Array.isArray(auth.scopes) ? auth.scopes : [])
++            .filter(scope => scope.read === true)
+         }
+       }
+     }
+@@ -367,7 +336,7 @@ function createFamilyService({
+         title: '家属',
+         meta: '可在家庭页查看授权记录'
+       },
+-      scopes: getDefaultFamilyScopes()
++      scopes: getDefaultInviteScopesV2().filter(scope => scope.read === true)
+     }
+   }
+ 
+@@ -404,10 +373,12 @@ function createFamilyService({
+             ...(relation.member || {}),
+             name: relation.memberName || relation.member?.name || '家属'
+           },
+-          scopes: relation.scopes || getDefaultFamilyScopes(),
+-          noticeRules: relation.noticeRules || getDefaultNoticeRules(),
++          scopes: Array.isArray(relation.scopes)
++            ? relation.scopes
++            : normalizeFamilyScopesV2(minimalScopes()),
++          noticeRules: normalizeNoticeRulesV2(relation.noticeRules),
+           activities: relation.activities || [],
+-          memberName: relation.memberName || relation.member?.name || ''
++          memberName: relation.memberName || ''
+         }
+       }
+     }
+@@ -435,8 +406,10 @@ function createFamilyService({
+       eyebrow: '授权管理',
+       memberId: auth._id || '',
+       member: auth.member || getDefaultFamilyMember(),
+-      scopes: auth.scopes || getDefaultFamilyScopes(),
+-      noticeRules: auth.noticeRules || getDefaultNoticeRules(),
++      scopes: Array.isArray(auth.scopes)
++        ? auth.scopes
++        : normalizeFamilyScopesV2(minimalScopes()),
++      noticeRules: normalizeNoticeRulesV2(auth.noticeRules),
+       activities: auth.activities || [],
+       memberName: auth.memberName || ''
+     }
+@@ -445,7 +418,7 @@ function createFamilyService({
+   async function updateFamilyAuth(openId, payload) {
+     const memberId = payload && payload.memberId
+     const authData = {
+-      ...normalizeFamilyAuthPayload(payload),
++      ...normalizeFamilyAuthPayloadV2(payload),
+       updatedAt: db.serverDate()
+     }
+ 
+@@ -518,7 +491,7 @@ function createFamilyService({
+   }
+ 
+   async function createFamilyInvite(openId, payload) {
+-    const invite = normalizeFamilyInvitePayload(payload)
++    const invite = normalizeFamilyInvitePayloadV2(payload)
+     const [ownerName, { data: existing = [] }] = await Promise.all([
+       withPerfLog({
+         routeType: 'action',
+@@ -543,7 +516,7 @@ function createFamilyService({
+       memberName: invite.member.name,
+       inviteCode,
+       scopes: invite.scopes,
+-      noticeRules: getDefaultNoticeRules(),
++      noticeRules: getDefaultInviteNoticeRulesV2(),
+       activities: [],
+       status: 'pending',
+       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+@@ -554,7 +527,7 @@ function createFamilyService({
+       await withPerfLog({
+         routeType: 'action',
+         route: 'createFamilyInvite',
+-        step: 'db.familyAuth.update'
++        step: 'db.familyAuth.createInvite.update'
+       }, () => db.collection(collections.familyAuth).doc(existing[0]._id).update({
+         data: inviteData
+       }))
+@@ -572,8 +545,8 @@ function createFamilyService({
+       }))
+     }
+ 
+-    const enabledScopes = invite.scopes
+-      .filter(scope => scope.enabled)
++    const readScopes = invite.scopes
++      .filter(scope => scope.read === true)
+       .map(scope => scope.title)
+ 
+     return {
+@@ -582,7 +555,7 @@ function createFamilyService({
+       sharePath: `/pages/family-sub/family-join/index?inviteCode=${inviteCode}`,
+       invitePreview: {
+         title: `${ownerName}邀请${invite.relation.label}查看健康记录`,
+-        meta: enabledScopes.length ? `可查看：${enabledScopes.join('、')}` : '暂未选择可查看内容',
++        meta: readScopes.length ? `可查看：${readScopes.join('、')}` : '暂未选择可查看内容',
+         expire: '24 小时'
+       }
+     }
+@@ -649,8 +622,10 @@ function createFamilyService({
+       },
+       memberName: auth.memberName || auth.member?.name || '家属',
+       inviteCode,
+-      scopes: auth.scopes || getDefaultFamilyScopes(),
+-      noticeRules: auth.noticeRules || getDefaultNoticeRules(),
++      scopes: normalizeFamilyScopesV2(
++        Array.isArray(auth.scopes) ? auth.scopes : minimalScopes()
++      ),
++      noticeRules: normalizeNoticeRulesV2(auth.noticeRules),
+       status: 'active',
+       joinedAt: db.serverDate(),
+       updatedAt: db.serverDate()
+@@ -801,5 +776,6 @@ function createFamilyService({
+ }
+ 
+ module.exports = {
+-  createFamilyService
++  createFamilyService,
++  minimalScopes
+ }
+diff --git a/cloudfunctions/healthApi/index.js b/cloudfunctions/healthApi/index.js
+index 3b97746..915ff57 100644
+--- a/cloudfunctions/healthApi/index.js
++++ b/cloudfunctions/healthApi/index.js
+@@ -27,13 +27,15 @@ const {
+ } = require('./payload-validation')
+ const {
+   getDefaultFamilyMember,
+-  getDefaultFamilyScopes,
+-  getDefaultNoticeRules,
+-  getDefaultInviteRelations,
+-  isRelationScopeEnabled,
+-  getScopeText,
+-  normalizeFamilyAuthPayload,
+-  normalizeFamilyInvitePayload,
++  getFamilyRelationV2,
++  getDefaultInviteScopesV2,
++  getDefaultInviteNoticeRulesV2,
++  normalizeFamilyScopesV2,
++  normalizeNoticeRulesV2,
++  canViewScope,
++  getScopeTextV2,
++  normalizeFamilyAuthPayloadV2,
++  normalizeFamilyInvitePayloadV2,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+   createFamilyAccessContext
+@@ -178,15 +180,17 @@ function getFamilyService() {
+       withPerfLog,
+       getProfileDisplayName,
+       getFamilyAccessContext,
+-      isRelationScopeEnabled,
+-      getScopeText,
+       getRecordStatus,
+       getDefaultFamilyMember,
+-      getDefaultFamilyScopes,
+-      getDefaultNoticeRules,
+-      getDefaultInviteRelations,
+-      normalizeFamilyAuthPayload,
+-      normalizeFamilyInvitePayload,
++      getFamilyRelationV2,
++      getDefaultInviteScopesV2,
++      getDefaultInviteNoticeRulesV2,
++      normalizeFamilyScopesV2,
++      normalizeNoticeRulesV2,
++      canViewScope,
++      getScopeTextV2,
++      normalizeFamilyAuthPayloadV2,
++      normalizeFamilyInvitePayloadV2,
+       validateInviteCodePayload,
+       getLimitedString,
+       createInviteCode
+diff --git a/pages/family-sub/family-auth/index.js b/pages/family-sub/family-auth/index.js
+index 73bce26..54dd431 100644
+--- a/pages/family-sub/family-auth/index.js
++++ b/pages/family-sub/family-auth/index.js
+@@ -7,6 +7,7 @@ const {
+ } = require('../../../utils/page-factory')
+ const { runButtonAction } = require('../../../utils/button-state')
+ const { getFamilyAuthData, revokeFamilyMember, updateFamilyAuth } = require('../../../utils/api')
++const { noticeRulesToList } = require('../../../services/family')
+ 
+ /**
+  * 家属权限页。
+@@ -17,15 +18,20 @@ Page({
+     isLoading: true,
+     loadError: '',
+     memberId: '',
+-    pendingAction: ''
++    pendingAction: '',
++    noticeRuleItems: []
+   },
+ 
+   /**
+-   * 加载授权设置。
++   * 加载授权设置。noticeRules 存储为对象，渲染前显式转为列表。
+    * @returns {Promise<void>} 数据写入 this.data。
+    */
+   async loadData() {
+-    return loadPageData(this, () => getFamilyAuthData(this.data.memberId))
++    const data = await loadPageData(this, () => getFamilyAuthData(this.data.memberId))
++    if (data) {
++      this.setData({ noticeRuleItems: noticeRulesToList(data.noticeRules) })
++    }
++    return data
+   },
+ 
+   /**
+@@ -56,39 +62,39 @@ Page({
+   },
+ 
+   /**
+-   * 切换可查看的数据范围。
+-   * @param {Object} event switch 事件；dataset.key 为权限项 key。
++   * 切换权限开关（read/write/remind 独立，互不联动）。
++   * @param {Object} event switch 事件；dataset.key/field 标识权限项与字段。
+    * @returns {void} 更新 scopes。
+    */
+   toggleScope(event) {
+-    const key = event.currentTarget.dataset.key
+-    const enabled = event.detail.value
++    const { key, field } = event.currentTarget.dataset
++    const value = event.detail.value
+     const scopes = this.data.scopes.map((item) => {
+       if (item.key !== key) return item
+       return {
+         ...item,
+-        enabled
++        [field]: value
+       }
+     })
+     this.setData({ scopes })
+   },
+ 
+   /**
+-   * 切换家属提醒规则。
++   * 切换家属提醒规则：更新 noticeRules 对象并刷新展示列表。
+    * @param {Object} event switch 事件；dataset.key 为提醒规则 key。
+-   * @returns {void} 更新 noticeRules。
++   * @returns {void}
+    */
+   toggleNoticeRule(event) {
+     const key = event.currentTarget.dataset.key
+     const enabled = event.detail.value
+-    const noticeRules = this.data.noticeRules.map((item) => {
+-      if (item.key !== key) return item
+-      return {
+-        ...item,
+-        enabled
+-      }
++    const noticeRules = {
++      ...(this.data.noticeRules || {}),
++      [key]: enabled
++    }
++    this.setData({
++      noticeRules,
++      noticeRuleItems: noticeRulesToList(noticeRules)
+     })
+-    this.setData({ noticeRules })
+   },
+ 
+   /**
+diff --git a/pages/family-sub/family-auth/index.wxml b/pages/family-sub/family-auth/index.wxml
+index e6498cc..8effe1e 100644
+--- a/pages/family-sub/family-auth/index.wxml
++++ b/pages/family-sub/family-auth/index.wxml
+@@ -32,12 +32,25 @@
+   <view class="section">
+     <view class="section-title">可查看内容</view>
+     <view class="scope-panel">
+-      <view wx:for="{{scopes}}" wx:key="key" class="scope-row">
++      <view wx:for="{{scopes}}" wx:key="key" class="scope-block">
+         <view class="row-main">
+           <view class="scope-title">{{item.title}}</view>
+           <view class="scope-meta">{{item.meta}}</view>
+         </view>
+-        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleScope" />
++        <view class="scope-switches">
++          <view class="switch-cell">
++            <text class="switch-label">查看</text>
++            <switch checked="{{item.read}}" color="#168957" data-key="{{item.key}}" data-field="read" bindchange="toggleScope" />
++          </view>
++          <view wx:if="{{item.key !== 'report'}}" class="switch-cell">
++            <text class="switch-label">代录</text>
++            <switch checked="{{item.write}}" color="#168957" data-key="{{item.key}}" data-field="write" bindchange="toggleScope" />
++          </view>
++          <view class="switch-cell">
++            <text class="switch-label">提醒</text>
++            <switch checked="{{item.remind}}" color="#168957" data-key="{{item.key}}" data-field="remind" bindchange="toggleScope" />
++          </view>
++        </view>
+       </view>
+     </view>
+   </view>
+@@ -45,12 +58,12 @@
+   <view class="section">
+     <view class="section-title">提醒给家属</view>
+     <view class="scope-panel">
+-      <view wx:for="{{noticeRules}}" wx:key="key" class="scope-row">
++      <view wx:for="{{noticeRuleItems}}" wx:key="key" class="scope-row">
+         <view class="row-main">
+           <view class="scope-title">{{item.title}}</view>
+           <view class="scope-meta">{{item.meta}}</view>
+         </view>
+-        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleNoticeRule" />
++        <switch checked="{{item.checked}}" color="#168957" data-key="{{item.key}}" bindchange="toggleNoticeRule" />
+       </view>
+     </view>
+   </view>
+diff --git a/pages/family-sub/family-auth/index.wxss b/pages/family-sub/family-auth/index.wxss
+index be8465d..4e50576 100644
+--- a/pages/family-sub/family-auth/index.wxss
++++ b/pages/family-sub/family-auth/index.wxss
+@@ -136,3 +136,30 @@
+ .danger-button {
+   width: 100%;
+ }
++
++.scope-block {
++  padding: 20rpx 0;
++  border-bottom: 1rpx solid #edf2ee;
++}
++
++.scope-block:last-child {
++  border-bottom: none;
++}
++
++.scope-switches {
++  display: flex;
++  gap: 24rpx;
++  margin-top: 16rpx;
++  justify-content: flex-end;
++}
++
++.switch-cell {
++  display: flex;
++  align-items: center;
++  gap: 8rpx;
++}
++
++.switch-label {
++  font-size: 24rpx;
++  color: #5c6b60;
++}
+diff --git a/pages/family-sub/family-invite/index.js b/pages/family-sub/family-invite/index.js
+index 9ab37c3..8eb7bc2 100644
+--- a/pages/family-sub/family-invite/index.js
++++ b/pages/family-sub/family-invite/index.js
+@@ -56,11 +56,11 @@ Page({
+   },
+ 
+   toggleScope(event) {
+-    const key = event.currentTarget.dataset.key
+-    const enabled = event.detail.value
++    const { key, field } = event.currentTarget.dataset
++    const value = event.detail.value
+     const scopes = this.data.scopes.map((item) => {
+       if (item.key !== key) return item
+-      return { ...item, enabled }
++      return { ...item, [field]: value }
+     })
+     this.setData({ scopes })
+     this.updateInvitePreview()
+@@ -68,7 +68,8 @@ Page({
+   },
+ 
+   selectAllScopes() {
+-    const scopes = this.data.scopes.map((item) => ({ ...item, enabled: true }))
++    // 全选只开放查看与提醒；代录涉及写操作，须逐块显式打开
++    const scopes = this.data.scopes.map(item => ({ ...item, read: true, remind: true }))
+     this.setData({ scopes })
+     this.updateInvitePreview()
+     this.createInvite()
+@@ -76,11 +77,11 @@ Page({
+ 
+   updateInvitePreview() {
+     const relation = this.data.relations.find((item) => item.key === this.data.selectedRelation)
+-    const enabledScopes = this.data.scopes.filter((item) => item.enabled).map((item) => item.title)
++    const readScopes = this.data.scopes.filter((item) => item.read).map((item) => item.title)
+     this.setData({
+       invitePreview: {
+         title: `妈妈邀请${relation ? relation.label : '家属'}查看健康记录`,
+-        meta: enabledScopes.length ? `可查看：${enabledScopes.join('、')}` : '暂未选择可查看内容',
++        meta: readScopes.length ? `可查看：${readScopes.join('、')}` : '暂未选择可查看内容',
+         expire: '24 小时'
+       }
+     })
+diff --git a/pages/family-sub/family-invite/index.wxml b/pages/family-sub/family-invite/index.wxml
+index c857ae4..413a4eb 100644
+--- a/pages/family-sub/family-invite/index.wxml
++++ b/pages/family-sub/family-invite/index.wxml
+@@ -37,12 +37,25 @@
+       <button class="link-button" bindtap="selectAllScopes" aria-label="全选授权范围">全选</button>
+     </view>
+     <view class="scope-panel">
+-      <view wx:for="{{scopes}}" wx:key="key" class="scope-row">
++      <view wx:for="{{scopes}}" wx:key="key" class="scope-block">
+         <view class="scope-main">
+           <view class="scope-title">{{item.title}}</view>
+           <view class="scope-meta">{{item.meta}}</view>
+         </view>
+-        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleScope" />
++        <view class="scope-switches">
++          <view class="switch-cell">
++            <text class="switch-label">查看</text>
++            <switch checked="{{item.read}}" color="#168957" data-key="{{item.key}}" data-field="read" bindchange="toggleScope" />
++          </view>
++          <view wx:if="{{item.key !== 'report'}}" class="switch-cell">
++            <text class="switch-label">代录</text>
++            <switch checked="{{item.write}}" color="#168957" data-key="{{item.key}}" data-field="write" bindchange="toggleScope" />
++          </view>
++          <view class="switch-cell">
++            <text class="switch-label">提醒</text>
++            <switch checked="{{item.remind}}" color="#168957" data-key="{{item.key}}" data-field="remind" bindchange="toggleScope" />
++          </view>
++        </view>
+       </view>
+     </view>
+   </view>
+diff --git a/pages/family-sub/family-invite/index.wxss b/pages/family-sub/family-invite/index.wxss
+index 13d9a3c..fd1b306 100644
+--- a/pages/family-sub/family-invite/index.wxss
++++ b/pages/family-sub/family-invite/index.wxss
+@@ -124,4 +124,31 @@
+ .secondary-button,
+ .primary-button {
+   flex: 1;
++}
++
++.scope-block {
++  padding: 20rpx 0;
++  border-bottom: 1rpx solid #edf2ee;
++}
++
++.scope-block:last-child {
++  border-bottom: none;
++}
++
++.scope-switches {
++  display: flex;
++  gap: 24rpx;
++  margin-top: 16rpx;
++  justify-content: flex-end;
++}
++
++.switch-cell {
++  display: flex;
++  align-items: center;
++  gap: 8rpx;
++}
++
++.switch-label {
++  font-size: 24rpx;
++  color: #5c6b60;
+ }
+\ No newline at end of file
+diff --git a/scripts/health-api-regression.js b/scripts/health-api-regression.js
+index bf6d405..e3d3218 100644
+--- a/scripts/health-api-regression.js
++++ b/scripts/health-api-regression.js
+@@ -15,13 +15,15 @@ const {
+ } = require('../cloudfunctions/healthApi/payload-validation')
+ const {
+   getDefaultFamilyMember,
+-  getDefaultFamilyScopes,
+-  getDefaultNoticeRules,
+-  getDefaultInviteRelations,
+-  isRelationScopeEnabled,
+-  getScopeText,
+-  normalizeFamilyAuthPayload,
+-  normalizeFamilyInvitePayload,
++  getFamilyRelationV2,
++  getDefaultInviteScopesV2,
++  getDefaultInviteNoticeRulesV2,
++  normalizeFamilyScopesV2,
++  normalizeNoticeRulesV2,
++  canViewScope,
++  getScopeTextV2,
++  normalizeFamilyAuthPayloadV2,
++  normalizeFamilyInvitePayloadV2,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+   createFamilyAccessContext
+@@ -322,15 +324,17 @@ async function testFamilyService() {
+     withPerfLog,
+     getProfileDisplayName,
+     getFamilyAccessContext,
+-    isRelationScopeEnabled,
+-    getScopeText,
+     getRecordStatus,
+     getDefaultFamilyMember,
+-    getDefaultFamilyScopes,
+-    getDefaultNoticeRules,
+-    getDefaultInviteRelations,
+-    normalizeFamilyAuthPayload,
+-    normalizeFamilyInvitePayload,
++    getFamilyRelationV2,
++    getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2,
++    canViewScope,
++    getScopeTextV2,
++    normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2,
+     validateInviteCodePayload,
+     getLimitedString,
+     // 确定性测试替身：固定邀请码以便断言；不是业务逻辑的复制。
+diff --git a/services/family.js b/services/family.js
+index 5138b67..0dd816b 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -5,14 +5,15 @@ const {
+   readStorage,
+   resolveMockData,
+   resolveRemote,
+-  writeStorage,
+   writeStorageAndInvalidate
+ } = require('./core')
+ const { deepMerge, withMockPageData } = require('./page-data')
+ 
+ /**
+- * 家庭协同服务模块。
+- * 负责家属邀请、加入家庭、家庭页成员展示和家属权限持久化。
++ * 家庭协同服务模块（三级权限契约）。
++ * 负责家属邀请、加入家庭、家庭页成员展示和家属权限的本地镜像持久化。
++ * 注意：本地镜像只在云端成功后写入，用于离线回显与缓存，
++ * 不是授权依据；任何接口以云端 family-policy 判定为准，镜像不放行任何动作。
+  */
+ 
+ function getStoredFamilyAuth() {
+@@ -30,20 +31,68 @@ function getRelationInitial(relation = '') {
+   return relation ? relation.slice(0, 1) : '家'
+ }
+ 
++// 小程序端关系目录：与云端 FAMILY_RELATIONS_V2 保持一致（云端目录无法打包进小程序，故前端自持一份展示数据）
++const FAMILY_RELATIONS = [
++  { key: 'daughter', label: '女儿', meta: '主要照护人' },
++  { key: 'son', label: '儿子', meta: '紧急联系人' },
++  { key: 'spouse', label: '配偶', meta: '共同管理' },
++  { key: 'granddaughter', label: '孙女', meta: '主要照护人' },
++  { key: 'grandson', label: '孙子', meta: '主要照护人' },
++  { key: 'sibling', label: '兄弟姐妹', meta: '共同管理' },
++  { key: 'caregiver', label: '护工', meta: '协助管理' },
++  { key: 'other', label: '家属', meta: '共同管理' }
++]
++
+ function getRelationMeta(relationKey) {
+-  const relationMap = {
+-    daughter: { relation: '女儿', role: '主要照护人' },
+-    son: { relation: '儿子', role: '紧急联系人' },
+-    spouse: { relation: '配偶', role: '共同管理' },
+-    other: { relation: '家属', role: '共同管理' }
+-  }
+-  return relationMap[relationKey] || relationMap.other
++  const found = FAMILY_RELATIONS.find(item => item.key === relationKey) || FAMILY_RELATIONS[0]
++  return { relation: found.label, role: found.meta }
+ }
+ 
++// scope 展示目录（与云端 SCOPE_CATALOG_V2 一致，供 UI 初始化与文案兜底）
++const SCOPE_CATALOG = {
++  bloodPressure: { title: '血压记录', meta: '数值、测量时间、场景标签和趋势' },
++  bloodGlucose: { title: '血糖记录', meta: '数值、测量时间、测量场景和趋势' },
++  medicine: { title: '用药确认', meta: '用药计划、确认状态和未确认记录' },
++  report: { title: '健康记录周报', meta: '每周记录汇总和趋势回顾' }
++}
++const SCOPE_KEYS = Object.keys(SCOPE_CATALOG)
++
+ function getScopeText(scopes, fallback = '暂未授权') {
+   if (!Array.isArray(scopes)) return fallback
+-  const enabledTitles = scopes.filter((item) => item.enabled).map((item) => item.title)
+-  return enabledTitles.length ? enabledTitles.join('、') : fallback
++  const readTitles = scopes
++    .filter(item => item && item.read === true)
++    .map(item => item.title || (SCOPE_CATALOG[item.key] && SCOPE_CATALOG[item.key].title))
++    .filter(Boolean)
++  return readTitles.length ? readTitles.join('、') : fallback
++}
++
++// 邀请页 scopes 初始态：查看/提醒默认开、代录默认关（与云端默认一致）
++function getDefaultInviteScopes() {
++  return SCOPE_KEYS.map(key => ({
++    key,
++    title: SCOPE_CATALOG[key].title,
++    meta: SCOPE_CATALOG[key].meta,
++    read: true,
++    write: false,
++    remind: true
++  }))
++}
++
++// 提醒规则固定目录：noticeRules 存储为对象，页面列表经显式转换
++const NOTICE_RULE_CATALOG = [
++  { key: 'missedMedicine', title: '用药未确认提醒', meta: '超过设定时间未确认时提醒家属查看' },
++  { key: 'missingRecord', title: '连续未记录提醒', meta: '连续多天未记录时提醒家属关注' },
++  { key: 'weeklyReport', title: '周报生成提醒', meta: '周报生成后通知家属查看' }
++]
++
++function noticeRulesToList(noticeRules) {
++  const rules = noticeRules || {}
++  return NOTICE_RULE_CATALOG.map(item => ({
++    key: item.key,
++    title: item.title,
++    meta: item.meta,
++    checked: rules[item.key] === true
++  }))
+ }
+ 
+ function mapFamilyMember(member, fallback = {}, index = 0) {
+@@ -81,10 +130,10 @@ function updateFamilyAuthLocal(payload, remoteResult) {
+     role: payload.member && payload.member.role,
+     status: payload.member && payload.member.status,
+     scope: getScopeText(scopes)
+-  }, storedAuth.members && storedAuth.members.find((item) => item.id === memberId))
++  }, storedAuth.members && storedAuth.members.find(item => item.id === memberId))
+ 
+   const members = Array.isArray(storedAuth.members) && storedAuth.members.length
+-    ? storedAuth.members.map((item) => (item.id === memberId ? targetCard : item))
++    ? storedAuth.members.map(item => (item.id === memberId ? targetCard : item))
+     : [targetCard]
+ 
+   const nextState = {
+@@ -94,7 +143,7 @@ function updateFamilyAuthLocal(payload, remoteResult) {
+     memberName: targetCard.name,
+     members,
+     scopes,
+-    noticeRules: Array.isArray(payload.noticeRules) ? payload.noticeRules : storedAuth.noticeRules || [],
++    noticeRules: payload.noticeRules || storedAuth.noticeRules || {},
+     activities: Array.isArray(payload.activities) ? payload.activities : storedAuth.activities || [],
+     status: payload.status || storedAuth.status || 'active',
+     updatedAt: new Date().toISOString()
+@@ -111,7 +160,7 @@ function createFamilyInviteLocal(payload, remoteResult) {
+   const relationMeta = getRelationMeta(payload.selectedRelation)
+   const inviteCode = (remoteResult && (remoteResult.inviteCode || remoteResult.inviteId)) || createRecordId('invite').replace(/-/g, '').slice(-12)
+   const memberId = storedAuth.currentMemberId || createRecordId('member')
+-  const scopes = Array.isArray(payload.scopes) ? payload.scopes : storedAuth.scopes || []
++  const scopes = Array.isArray(payload.scopes) ? payload.scopes : getDefaultInviteScopes()
+   const previewMember = mapFamilyMember({
+     id: memberId,
+     name: storedAuth.memberName || relationMeta.relation,
+@@ -129,6 +178,7 @@ function createFamilyInviteLocal(payload, remoteResult) {
+     member: mapMemberCardToAuthMember(previewMember),
+     members: Array.isArray(storedAuth.members) && storedAuth.members.length ? storedAuth.members : [previewMember],
+     scopes,
++    noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: true },
+     status: 'pending',
+     sharePath: (remoteResult && remoteResult.sharePath) || `/pages/family-sub/family-join/index?inviteCode=${inviteCode}`,
+     updatedAt: new Date().toISOString()
+@@ -161,7 +211,7 @@ function revokeFamilyMemberLocal(payload) {
+   const memberId = payload && payload.memberId ? payload.memberId : storedAuth.currentMemberId
+   const currentMembers = Array.isArray(storedAuth.members) ? storedAuth.members : []
+   const nextMembers = memberId
+-    ? currentMembers.filter((item) => item.id !== memberId)
++    ? currentMembers.filter(item => item.id !== memberId)
+     : currentMembers.slice(1)
+   const nextCurrent = nextMembers[0] || null
+ 
+@@ -269,7 +319,7 @@ function mergeFamilyAuth(baseData, memberId) {
+   const merged = storedAuth ? deepMerge(baseData, storedAuth) : baseData
+   const targetMemberId = memberId || (storedAuth && storedAuth.currentMemberId)
+   const storedMembers = storedAuth && Array.isArray(storedAuth.members) ? storedAuth.members : []
+-  const targetMember = storedMembers.find((item) => item.id === targetMemberId)
++  const targetMember = storedMembers.find(item => item.id === targetMemberId)
+ 
+   if (!targetMember) {
+     return {
+@@ -342,8 +392,11 @@ function revokeFamilyMember(payload) {
+ }
+ 
+ module.exports = {
++  FAMILY_RELATIONS,
++  SCOPE_KEYS,
+   createFamilyInvite,
+   enforceHomeFamilyAccess,
++  getDefaultInviteScopes,
+   getFamilyAuthData,
+   getFamilyData,
+   getFamilyInviteData,
+@@ -357,6 +410,7 @@ module.exports = {
+   joinFamilyByInvite,
+   mapFamilyMember,
+   normalizeMemberStatus,
++  noticeRulesToList,
+   revokeFamilyMember,
+   updateFamilyAuth
+ }
+diff --git a/tests/unit/a0-contract-integration.test.js b/tests/unit/a0-contract-integration.test.js
+new file mode 100644
+index 0000000..6091c46
+--- /dev/null
++++ b/tests/unit/a0-contract-integration.test.js
+@@ -0,0 +1,371 @@
++/**
++ * A0-2 集成测试：三级权限契约端到端穿过云端 createFamilyService。
++ * 存储替身只模拟数据库存取（where/orderBy/limit/projection/add/update），
++ * 不包含任何权限判断；授权判定全部来自真实 family-policy 规则。
++ * 预期值按已确认契约字面填写。
++ */
++
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  profiles: 'profiles'
++}
++
++function clone(value) {
++  return JSON.parse(JSON.stringify(value))
++}
++
++// 纯存储替身：行为对齐云数据库查询链的最小子集
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store
++    this.query = query
++    this.orderField = ''
++    this.orderDir = 'asc'
++    this.max = Infinity
++    this.docId = ''
++  }
++  where(cond) { return new StoreQuery(this.store, cond) }
++  orderBy(field, dir) { const q = new StoreQuery(this.store, this.query); q.orderField = field; q.orderDir = dir; return q }
++  limit(size) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = size; q.docId = this.docId; return q }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; return q }
++  field() { return this }
++  _targets() {
++    return this.docId
++      ? this.store.rows.filter(d => d._id === this.docId)
++      : this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
++        if (v && v.__op === 'in') return v.values.includes(d[k])
++        return d[k] === v
++      }))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    return { data: rows.slice(0, this.max === Infinity ? undefined : this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    const _id = `doc-${this.store.seq++}`
++    this.store.rows.push({ _id, ...clone(data) })
++    return { _id }
++  }
++  async update({ data }) {
++    const targets = this._targets()
++    targets.forEach(d => Object.assign(d, clone(data)))
++    return { stats: { updated: targets.length } }
++  }
++  async remove() {
++    const before = this.store.rows.length
++    const ids = new Set(this._targets().map(d => d._id))
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((alias) => {
++    const name = COLLECTIONS[alias]
++    stores[name] = { rows: Array.isArray(initial[alias]) ? clone(initial[alias]) : [], seq: 1 }
++  })
++  return {
++    collection(name) {
++      if (!stores[name]) stores[name] = { rows: [], seq: 1 }
++      return new StoreQuery(stores[name])
++    },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++}
++
++const commands = {
++  in: values => ({ __op: 'in', values })
++}
++
++// 全量装配：与 index.js 中 getFamilyService 使用同一套 family-policy 导出
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++function createService(db) {
++  return createFamilyService({
++    db,
++    _: commands,
++    collections: COLLECTIONS,
++    withPerfLog: (meta, fn) => fn(),
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: policy.getLimitedString,
++    createInviteCode: () => 'KXJTEST01'
++  })
++}
++
++function fullAccessScopes() {
++  return [
++    { key: 'bloodPressure', read: true, write: false, remind: true },
++    { key: 'bloodGlucose', read: true, write: false, remind: true },
++    { key: 'medicine', read: true, write: false, remind: true },
++    { key: 'report', read: true, write: false, remind: true }
++  ]
++}
++
++describe('A0-2 集成 · 创建邀请（默认契约）', () => {
++  it('空入参生成 pending 邀请：8 关系默认女儿、scopes 读取/提醒默认开、write 默认关', async () => {
++    const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const invite = await service.createFamilyInvite('owner-1', {})
++
++    expect(invite.inviteCode).toMatch(/^KXJ/)
++    const auth = db._stores[COLLECTIONS.familyAuth].rows[0]
++    expect(auth).toMatchObject({
++      ownerOpenId: 'owner-1',
++      ownerName: '王阿姨',
++      status: 'pending'
++    })
++    expect(auth.scopes.map(s => [s.key, s.read, s.write, s.remind])).toEqual([
++      ['bloodPressure', true, false, true],
++      ['bloodGlucose', true, false, true],
++      ['medicine', true, false, true],
++      ['report', true, false, true]
++    ])
++    expect(auth.noticeRules).toEqual({ missedMedicine: true, missingRecord: false, weeklyReport: true })
++    expect(invite.invitePreview.meta).toContain('血压记录')
++  })
++
++  it('未知关系在入口被拒绝，不写入', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    await expect(service.createFamilyInvite('owner-1', {
++      selectedRelation: 'not-a-relation',
++      scopes: fullAccessScopes()
++    })).rejects.toThrow('关系')
++    expect(db._stores[COLLECTIONS.familyAuth].rows).toHaveLength(0)
++  })
++
++  it('report write=true、非布尔、未知/重复 scope 在创建入口被拒绝', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    await expect(service.createFamilyInvite('owner-1', {
++      scopes: [{ key: 'report', read: true, write: true }]
++    })).rejects.toThrow('周报')
++    await expect(service.createFamilyInvite('owner-1', {
++      scopes: [{ key: 'bloodPressure', read: 'yes' }]
++    })).rejects.toThrow('布尔')
++    await expect(service.createFamilyInvite('owner-1', {
++      scopes: [
++        { key: 'bloodPressure', read: true },
++        { key: 'bloodPressure', read: false }
++      ]
++    })).rejects.toThrow('重复')
++  })
++
++  it('8 种关系可往返，提交的关系名称写入邀请成员', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    for (const relationKey of ['daughter', 'son', 'spouse', 'granddaughter', 'grandson', 'sibling', 'caregiver', 'other']) {
++      await service.createFamilyInvite('owner-1', {
++        selectedRelation: relationKey,
++        scopes: fullAccessScopes()
++      })
++      const auth = db._stores[COLLECTIONS.familyAuth].rows[0]
++      expect(auth.member.relation).toBe(policy.getFamilyRelationV2(relationKey).label)
++    }
++  })
++})
++
++describe('A0-2 集成 · 加入家庭', () => {
++  it('家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const invite = await service.createFamilyInvite('owner-1', { scopes: [
++      { key: 'bloodPressure', read: true, write: true, remind: true },
++      { key: 'bloodGlucose', read: false, remind: false },
++      { key: 'medicine', read: true, remind: false },
++      { key: 'report', read: true, remind: true }
++    ] })
++    const result = await service.joinFamilyByInvite('member-1', { inviteCode: invite.inviteCode })
++
++    expect(result.status).toBe('active')
++    const memberRow = db._stores[COLLECTIONS.familyMembers].rows[0]
++    expect(memberRow).toMatchObject({ ownerOpenId: 'owner-1', memberOpenId: 'member-1', status: 'active' })
++    expect(memberRow.scopes.map(s => [s.key, s.read, s.write])).toEqual([
++      ['bloodPressure', true, true],
++      ['bloodGlucose', false, false],
++      ['medicine', true, false],
++      ['report', true, false]
++    ])
++    expect(memberRow.noticeRules).toEqual({ missedMedicine: true, missingRecord: false, weeklyReport: true })
++
++    const auth = db._stores[COLLECTIONS.familyAuth].rows[0]
++    expect(auth.status).toBe('active')
++    expect(auth.memberOpenId).toBe('member-1')
++  })
++})
++
++describe('A0-2 集成 · 家属首页按 read 输出受控明细', () => {
++  function buildRows(scopes) {
++    const db = createStoreDb({
++      familyMembers: [{
++        _id: 'rel-1', ownerOpenId: 'owner-1', memberOpenId: 'member-1',
++        member: { name: '王阿姨', relation: '女儿', status: '已授权' },
++        scopes, noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: true },
++        status: 'active'
++      }],
++      records: [
++        { _id: 'r-bp', _openid: 'owner-1', type: 'bp', systolic: 128, diastolic: 78, measuredAt: '今天 08:00', tag: '晨起', level: '', createdAt: '2026-09-22T08:00:00' },
++        { _id: 'r-bg', _openid: 'owner-1', type: 'bg', glucose: 6.4, measuredAt: '今天 09:00', tag: '餐后', level: '', createdAt: '2026-09-22T09:00:00' }
++      ],
++      medicationPlans: [
++        { _id: 'plan-1', _openid: 'owner-1', name: '降压药', dosage: '1片', times: ['07:00'], status: '启用', updatedAt: '2026-09-22T07:00:00' }
++      ]
++    })
++    return createService(db)
++  }
++
++  it('仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏）', async () => {
++    const service = buildRows([
++      { key: 'bloodPressure', read: true, remind: true },
++      { key: 'bloodGlucose', read: false, remind: false },
++      { key: 'medicine', read: false, remind: false },
++      { key: 'report', read: false, remind: false }
++    ])
++    const home = await service.getHomeFamilyData('member-1')
++
++    expect(home.latestMetrics.map(m => m.label)).toEqual(['血压'])
++    expect(home.medicineLogs).toEqual([])
++    expect(home.reportSummary).toBe('暂未授权查看周报。')
++    expect(home.member.scopeText).toBe('血压记录')
++  })
++
++  it('全块 read：血压血糖均输出，用药与周报可见', async () => {
++    const service = buildRows(fullAccessScopes())
++    const home = await service.getHomeFamilyData('member-1')
++
++    expect(home.latestMetrics.map(m => m.label).sort()).toEqual(['血压', '血糖'])
++    expect(home.medicineLogs.length).toBeGreaterThan(0)
++    expect(home.reportSummary).not.toBe('暂未授权查看周报。')
++  })
++
++  it('血糖块开、血压块关：只输出血糖', async () => {
++    const service = buildRows([
++      { key: 'bloodPressure', read: false },
++      { key: 'bloodGlucose', read: true, remind: true },
++      { key: 'medicine', read: false },
++      { key: 'report', read: false }
++    ])
++    const home = await service.getHomeFamilyData('member-1')
++    expect(home.latestMetrics.map(m => m.label)).toEqual(['血糖'])
++  })
++})
++
++describe('A0-2 集成 · 授权保存/回显', () => {
++  it('updateFamilyAuth：新 scopes 同步到 family_auth 与 family_members', async () => {
++    const db = createStoreDb({
++      familyAuth: [{ _id: 'auth-1', _openid: 'owner-1', status: 'active', inviteCode: 'KXJ1' }],
++      familyMembers: [{ _id: 'rel-1', _openid: 'member-1', ownerOpenId: 'owner-1', memberOpenId: 'member-1', status: 'active' }]
++    })
++    const service = createService(db)
++    await service.updateFamilyAuth('owner-1', {
++      memberId: 'rel-1',
++      member: { name: '王阿姨' },
++      scopes: [
++        { key: 'bloodPressure', read: true, write: true, remind: true },
++        { key: 'bloodGlucose', read: true, write: false, remind: false },
++        { key: 'medicine', read: true, write: true, remind: false },
++        { key: 'report', read: true, write: false, remind: true }
++      ],
++      noticeRules: { missedMedicine: true, missingRecord: true, weeklyReport: false },
++      activities: []
++    })
++
++    const auth = db._stores[COLLECTIONS.familyAuth].rows[0]
++    expect(auth.scopes[0]).toMatchObject({ read: true, write: true })
++    expect(auth.scopes[2]).toMatchObject({ read: true, write: true })
++    expect(auth.noticeRules).toEqual({ missedMedicine: true, missingRecord: true, weeklyReport: false })
++
++    const rel = db._stores[COLLECTIONS.familyMembers].rows[0]
++    expect(rel.scopes[0].write).toBe(true)
++    expect(rel.noticeRules.missingRecord).toBe(true)
++  })
++
++  it('updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key', async () => {
++    const db = createStoreDb({
++      familyAuth: [{ _id: 'auth-1', _openid: 'owner-1', status: 'active' }]
++    })
++    const service = createService(db)
++    await expect(service.updateFamilyAuth('owner-1', {
++      scopes: [{ key: 'report', read: true, write: true }]
++    })).rejects.toThrow('周报')
++    await expect(service.updateFamilyAuth('owner-1', {
++      scopes: [{ key: 'unknown', read: true }]
++    })).rejects.toThrow('未知')
++    await expect(service.updateFamilyAuth('owner-1', {
++      scopes: [
++        { key: 'bloodPressure', read: true },
++        { key: 'bloodPressure', read: false }
++      ]
++    })).rejects.toThrow('重复')
++  })
++
++  it('getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules', async () => {
++    const db = createStoreDb({
++      familyMembers: [{
++        _id: 'rel-1', ownerOpenId: 'owner-1', memberOpenId: 'member-1',
++        member: { name: '王阿姨' }, memberName: '王阿姨',
++        scopes: fullAccessScopes(),
++        noticeRules: { missedMedicine: false, missingRecord: false, weeklyReport: true },
++        activities: [], status: 'active'
++      }]
++    })
++    const service = createService(db)
++    const data = await service.getFamilyAuthData('owner-1', { memberId: 'rel-1' })
++    expect(data.scopes).toHaveLength(4)
++    expect(data.scopes[0]).toMatchObject({ key: 'bloodPressure', read: true })
++    expect(data.noticeRules).toEqual({ missedMedicine: false, missingRecord: false, weeklyReport: true })
++  })
++})
++
++describe('A0-2 集成 · owner 本人功能不被误伤', () => {
++  it('getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成', async () => {
++    const db = createStoreDb({
++      familyMembers: [{
++        _id: 'rel-1', ownerOpenId: 'owner-1', memberOpenId: 'member-1',
++        member: { name: '小李', relation: '女儿', role: '主要照护人', status: '已授权' },
++        memberName: '小李', scopes: [
++          { key: 'bloodPressure', read: true, remind: true },
++          { key: 'bloodGlucose', read: false },
++          { key: 'medicine', read: false },
++          { key: 'report', read: false }
++        ], updatedAt: '2026-09-22T08:00:00', status: 'active'
++      }]
++    })
++    const service = createService(db)
++    const data = await service.getFamilyData('owner-1')
++    expect(data.familyCount).toBe(1)
++    expect(data.members[0].name).toBe('小李')
++    expect(data.members[0].scope).toBe('血压记录')
++  })
++})
+diff --git a/tests/unit/family.test.js b/tests/unit/family.test.js
+index ca03199..2b6bf42 100644
+--- a/tests/unit/family.test.js
++++ b/tests/unit/family.test.js
+@@ -65,28 +65,40 @@ describe('services/family', () => {
+       expect(meta.role).toBe('共同管理')
+     })
+ 
+-    it('未知关系 → 家属/共同管理', () => {
++    it('第 8 项 other → 家属/共同管理', () => {
+       const meta = getRelationMeta('other')
+       expect(meta.relation).toBe('家属')
+       expect(meta.role).toBe('共同管理')
+     })
++
++    it('孙女/孙子 → 主要照护人', () => {
++      expect(getRelationMeta('granddaughter')).toEqual({ relation: '孙女', role: '主要照护人' })
++      expect(getRelationMeta('grandson')).toEqual({ relation: '孙子', role: '主要照护人' })
++    })
++
++    it('兄弟姐妹 → 共同管理；护工 → 协助管理', () => {
++      expect(getRelationMeta('sibling')).toEqual({ relation: '兄弟姐妹', role: '共同管理' })
++      expect(getRelationMeta('caregiver')).toEqual({ relation: '护工', role: '协助管理' })
++    })
++
++    it('未知关系回退首项（女儿/主要照护人）', () => {
++      expect(getRelationMeta('not-a-key')).toEqual({ relation: '女儿', role: '主要照护人' })
++    })
+   })
+ 
+   describe('getScopeText', () => {
+-    it('返回已启用权限的标题', () => {
++    it('返回 read=true 权限的标题', () => {
+       const scopes = [
+-        { title: '血压记录', enabled: true },
+-        { title: '血糖记录', enabled: true },
+-        { title: '用药确认', enabled: false }
++        { title: '血压记录', read: true },
++        { title: '血糖记录', read: true },
++        { title: '用药确认', read: false }
+       ]
+       expect(getScopeText(scopes)).toBe('血压记录、血糖记录')
+     })
+ 
+-    it('无启用权限返回 fallback', () => {
+-      const scopes = [
+-        { title: '血压记录', enabled: false }
+-      ]
+-      expect(getScopeText(scopes)).toBe('暂未授权')
++    it('无 read 权限返回 fallback；旧 enabled 不产生文案', () => {
++      expect(getScopeText([{ title: '血压记录', read: false }])).toBe('暂未授权')
++      expect(getScopeText([{ title: '血压记录', enabled: true }])).toBe('暂未授权')
+     })
+ 
+     it('非数组返回 fallback', () => {
+diff --git a/tests/unit/shared-policy.test.js b/tests/unit/shared-policy.test.js
+index 3725418..6c7cda4 100644
+--- a/tests/unit/shared-policy.test.js
++++ b/tests/unit/shared-policy.test.js
+@@ -1,8 +1,7 @@
+ /**
+- * B3：云函数共享模块（B2 提取）的直接测试。
+- * 直接 require 真实模块，不在测试中复制业务算法；
+- * 预期值按已核实的 HEAD 原契约字面填写，不由被测函数生成。
+- * 本轮只测现有行为：enabled 模型、旧关系白名单；不提前断言 read/write/remind 新契约。
++ * 共享模块直接测试（A0-2 后）。
++ * payload-helpers 与用药校验用例为 B3 既有覆盖（行为未变，原样保留）；
++ * family-policy 组按三级权限新契约迁移，不复制业务算法，预期值字面填写。
+  */
+ 
+ const {
+@@ -24,15 +23,17 @@ const {
+ } = require('../../cloudfunctions/healthApi/payload-validation')
+ const {
+   getDefaultFamilyMember,
+-  getDefaultFamilyScopes,
+-  getDefaultNoticeRules,
+-  getDefaultInviteRelations,
+-  getInviteRelation,
+-  isScopeEnabled,
+-  isRelationScopeEnabled,
+-  getScopeText,
+-  normalizeFamilyAuthPayload,
+-  normalizeFamilyInvitePayload,
++  FAMILY_RELATIONS_V2,
++  getFamilyRelationV2,
++  getDefaultInviteScopesV2,
++  getDefaultInviteNoticeRulesV2,
++  normalizeFamilyScopesV2,
++  normalizeNoticeRulesV2,
++  canViewScope,
++  canShowPhoneReminder,
++  getScopeTextV2,
++  normalizeFamilyAuthPayloadV2,
++  normalizeFamilyInvitePayloadV2,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+   createFamilyAccessContext
+@@ -163,144 +164,7 @@ describe('payload-helpers · 纯断言与格式化', () => {
+   })
+ })
+ 
+-describe('family-policy · 默认结构（按 HEAD 契约字面断言）', () => {
+-  it('默认 scopes：四项、键名与默认全开', () => {
+-    expect(getDefaultFamilyScopes()).toEqual([
+-      { key: 'bloodPressure', title: '血压记录', meta: '数值、测量时间、场景标签和趋势', enabled: true },
+-      { key: 'bloodGlucose', title: '血糖记录', meta: '数值、测量时间、测量场景和趋势', enabled: true },
+-      { key: 'medicine', title: '用药确认', meta: '用药计划、确认状态和未确认记录', enabled: true },
+-      { key: 'report', title: '健康记录周报', meta: '每周记录汇总和趋势回顾', enabled: true }
+-    ])
+-  })
+-
+-  it('默认 noticeRules：三项，missingRecord 默认关、其余开', () => {
+-    expect(getDefaultNoticeRules().map(r => r.key))
+-      .toEqual(['missedMedicine', 'missingRecord', 'weeklyReport'])
+-    const byKey = Object.fromEntries(getDefaultNoticeRules().map(r => [r.key, r.enabled]))
+-    expect(byKey).toEqual({ missedMedicine: true, missingRecord: false, weeklyReport: true })
+-  })
+-
+-  it('默认关系白名单：旧四项（A0 前的现行为）', () => {
+-    expect(getDefaultInviteRelations().map(r => r.key))
+-      .toEqual(['daughter', 'son', 'spouse', 'other'])
+-  })
+-
+-  it('getInviteRelation：命中返回该项；未知 key 回退首项', () => {
+-    expect(getInviteRelation('son')).toEqual({ key: 'son', label: '儿子', meta: '紧急联系人' })
+-    expect(getInviteRelation('unknown')).toEqual({ key: 'daughter', label: '女儿', meta: '主要照护人' })
+-  })
+-
+-  it('默认成员：含名称/关系/角色/状态/说明', () => {
+-    expect(getDefaultFamilyMember()).toEqual({
+-      name: '家属',
+-      relation: '家属',
+-      role: '主要照护人',
+-      status: '已授权',
+-      desc: '可协助查看记录、用药确认和周报。权限变更后立即生效。'
+-    })
+-  })
+-})
+-
+-describe('family-policy · enabled 权限判断与展示文案（当前模型）', () => {
+-  it('isScopeEnabled：匹配键且 enabled 才允许；关闭/缺失拒绝', () => {
+-    const auth = {
+-      scopes: [
+-        { key: 'bloodPressure', enabled: true },
+-        { key: 'bloodGlucose', enabled: false }
+-      ]
+-    }
+-    expect(isScopeEnabled(auth, ['bp', 'bloodPressure'])).toBe(true)
+-    expect(isScopeEnabled(auth, ['bg', 'bloodGlucose'])).toBe(false)
+-    expect(isScopeEnabled(auth, ['medicine'])).toBe(false)
+-    expect(isScopeEnabled({ scopes: [] }, ['bloodPressure'])).toBe(false)
+-    expect(isScopeEnabled({}, ['bloodPressure'])).toBe(false)
+-  })
+-
+-  it('isRelationScopeEnabled：关系文档 scopes 形态判断', () => {
+-    expect(isRelationScopeEnabled({ scopes: [{ key: 'medicine', enabled: true }] }, ['med', 'medicine'])).toBe(true)
+-    expect(isRelationScopeEnabled({ scopes: [] }, ['report'])).toBe(false)
+-    expect(isRelationScopeEnabled({}, ['report'])).toBe(false)
+-  })
+-
+-  it('getScopeText：已授权标题顿号连接；无授权返回暂未授权', () => {
+-    expect(getScopeText({ scopes: [
+-      { title: '血压记录', enabled: true },
+-      { title: '血糖记录', enabled: false },
+-      { title: '健康记录周报', enabled: true }
+-    ] })).toBe('血压记录、健康记录周报')
+-    expect(getScopeText({ scopes: [{ title: '血糖记录', enabled: false }] })).toBe('暂未授权')
+-    expect(getScopeText({})).toBe('暂未授权')
+-  })
+-})
+-
+-describe('family-policy · 归一化与邀请码校验', () => {
+-  it('normalizeFamilyAuthPayload：空入参回落默认成员/scopes/规则，status active', () => {
+-    const result = normalizeFamilyAuthPayload()
+-    expect(result.member).toEqual(getDefaultFamilyMember())
+-    expect(result.memberName).toBe('家属')
+-    expect(result.inviteCode).toBe('')
+-    expect(result.scopes).toEqual(getDefaultFamilyScopes())
+-    expect(result.noticeRules).toEqual(getDefaultNoticeRules())
+-    expect(result.activities).toEqual([])
+-    expect(result.status).toBe('active')
+-  })
+-
+-  it('member 入参覆盖默认字段；非数组 scopes/规则回落默认；数组原样保留', () => {
+-    const result = normalizeFamilyAuthPayload({
+-      member: { name: '小李' },
+-      memberName: '显式名称',
+-      scopes: { not: 'array' },
+-      noticeRules: 'not-array',
+-      status: 'pending'
+-    })
+-    expect(result.member.name).toBe('小李')
+-    // 未覆盖字段保留默认
+-    expect(result.member.role).toBe('主要照护人')
+-    expect(result.memberName).toBe('显式名称')
+-    expect(result.scopes).toEqual(getDefaultFamilyScopes())
+-    expect(result.noticeRules).toEqual(getDefaultNoticeRules())
+-    expect(result.status).toBe('pending')
+-
+-    const customScopes = [{ key: 'report', title: '周报', enabled: false }]
+-    expect(normalizeFamilyAuthPayload({ scopes: customScopes }).scopes).toBe(customScopes)
+-  })
+-
+-  it('normalizeFamilyInvitePayload：空入参为女儿关系+默认 scopes+待加入成员', () => {
+-    const result = normalizeFamilyInvitePayload()
+-    expect(result.relation).toEqual({ key: 'daughter', label: '女儿', meta: '主要照护人' })
+-    expect(result.scopes).toEqual(getDefaultFamilyScopes())
+-    expect(result.member.name).toBe('女儿')
+-    expect(result.member.status).toBe('待加入')
+-  })
+-
+-  it('selectedRelation 切换关系；无效 scope 项被过滤', () => {
+-    const result = normalizeFamilyInvitePayload({
+-      selectedRelation: 'spouse',
+-      scopes: [
+-        { key: 'bloodPressure', title: '血压记录', enabled: true },
+-        { title: '缺键项', enabled: true },
+-        null
+-      ]
+-    })
+-    expect(result.relation.key).toBe('spouse')
+-    expect(result.scopes).toEqual([{ key: 'bloodPressure', title: '血压记录', enabled: true }])
+-  })
+-
+-  it('全部 scopes 关闭时抛错：至少选择一个授权范围', () => {
+-    expect(() => normalizeFamilyInvitePayload({
+-      scopes: [{ key: 'bloodPressure', enabled: false }]
+-    })).toThrow('请至少选择一个授权范围')
+-  })
+-
+-  it('validateInviteCodePayload：接受 inviteCode 与 inviteId 别名；对象/必填校验', () => {
+-    expect(validateInviteCodePayload({ inviteCode: 'KXJ001' })).toBe('KXJ001')
+-    expect(validateInviteCodePayload({ inviteId: 'KXJ002' })).toBe('KXJ002')
+-    expect(() => validateInviteCodePayload({})).toThrow('邀请码不能为空')
+-    expect(() => validateInviteCodePayload('KXJ001')).toThrow('家庭邀请参数不能为空')
+-  })
+-})
+-
+-describe('payload-validation · 用药计划与确认校验', () => {
++describe('payload-validation · 用药计划与确认校验（B3 既有，行为未变）', () => {
+   it('用药计划：合法入参归一化（times 去重、subscribe 布尔、startDate 默认今天）', () => {
+     const result = validateMedicationPlanPayload({
+       name: ' 降压药 ',
+@@ -376,6 +240,100 @@ describe('payload-validation · 用药计划与确认校验', () => {
+   })
+ })
+ 
++describe('family-policy · 关系目录与默认成员（新契约）', () => {
++  it('默认成员五字段', () => {
++    expect(getDefaultFamilyMember()).toEqual({
++      name: '家属',
++      relation: '家属',
++      role: '主要照护人',
++      status: '已授权',
++      desc: '可协助查看记录、用药确认和周报。权限变更后立即生效。'
++    })
++  })
++
++  it('关系目录恰好 8 项，键序固定', () => {
++    expect(FAMILY_RELATIONS_V2.map(r => r.key)).toEqual([
++      'daughter', 'son', 'spouse', 'granddaughter',
++      'grandson', 'sibling', 'caregiver', 'other'
++    ])
++  })
++
++  it('getFamilyRelationV2 命中返回；未知返回 null', () => {
++    expect(getFamilyRelationV2('caregiver')).toEqual({ key: 'caregiver', label: '护工', meta: '协助管理' })
++    expect(getFamilyRelationV2('nope')).toBeNull()
++  })
++
++  it('邀请默认 scopes：四块 read/remind 开、write 关', () => {
++    expect(getDefaultInviteScopesV2().map(s => [s.read, s.write, s.remind]))
++      .toEqual([[true, false, true], [true, false, true], [true, false, true], [true, false, true]])
++  })
++
++  it('邀请默认 noticeRules：漏服开、连续未记录关、周报开', () => {
++    expect(getDefaultInviteNoticeRulesV2()).toEqual({ missedMedicine: true, missingRecord: false, weeklyReport: true })
++  })
++})
++
++describe('family-policy · 三级权限归一化与动作判断（新契约）', () => {
++  it('normalizeFamilyScopesV2：缺字段默认 false；旧 enabled 忽略', () => {
++    const result = normalizeFamilyScopesV2([
++      { key: 'bloodPressure', enabled: true },
++      { key: 'bloodGlucose' },
++      { key: 'medicine' },
++      { key: 'report' }
++    ])
++    expect(result.every(s => s.read === false && s.write === false && s.remind === false)).toBe(true)
++  })
++
++  it('非布尔、未知/重复 key、report.write 被拒绝', () => {
++    expect(() => normalizeFamilyScopesV2([{ key: 'bloodPressure', read: 'true' }])).toThrow('布尔')
++    expect(() => normalizeFamilyScopesV2([{ key: 'unknown' }])).toThrow('未知')
++    expect(() => normalizeFamilyScopesV2([
++      { key: 'medicine', read: true }, { key: 'medicine', read: false }
++    ])).toThrow('重复')
++    expect(() => normalizeFamilyScopesV2([{ key: 'report', write: true }])).toThrow('周报')
++  })
++
++  it('normalizeNoticeRulesV2：缺失 false；数组（旧页面形态）拒绝', () => {
++    expect(normalizeNoticeRulesV2()).toEqual({ missedMedicine: false, missingRecord: false, weeklyReport: false })
++    expect(() => normalizeNoticeRulesV2([])).toThrow('格式')
++  })
++
++  it('canViewScope / canShowPhoneReminder：read 看数据、remind 出按钮', () => {
++    const scopes = normalizeFamilyScopesV2([
++      { key: 'medicine', read: false, remind: true }
++    ])
++    expect(canViewScope(scopes, 'medicine')).toBe(false)
++    expect(canShowPhoneReminder(scopes, 'medicine')).toBe(true)
++  })
++
++  it('getScopeTextV2：按 read 标题连接', () => {
++    const scopes = normalizeFamilyScopesV2([
++      { key: 'bloodPressure', read: true },
++      { key: 'bloodGlucose', read: false }
++    ])
++    expect(getScopeTextV2(scopes)).toBe('血压记录')
++    expect(getScopeTextV2(normalizeFamilyScopesV2([{ key: 'report' }]))).toBe('暂未授权')
++  })
++
++  it('normalizeFamilyInvitePayloadV2：缺省女儿+默认 scopes；未知关系拒绝', () => {
++    const invite = normalizeFamilyInvitePayloadV2()
++    expect(invite.relation.key).toBe('daughter')
++    expect(invite.member.status).toBe('待加入')
++    expect(() => normalizeFamilyInvitePayloadV2({ selectedRelation: 'nope' })).toThrow('关系')
++  })
++
++  it('normalizeFamilyAuthPayloadV2：缺省全最小授权；noticeRules 对象', () => {
++    const data = normalizeFamilyAuthPayloadV2()
++    expect(data.scopes.every(s => !s.read && !s.write)).toBe(true)
++    expect(data.noticeRules).toEqual({ missedMedicine: false, missingRecord: false, weeklyReport: false })
++  })
++
++  it('validateInviteCodePayload：对象+必填', () => {
++    expect(validateInviteCodePayload({ inviteCode: 'KXJ1' })).toBe('KXJ1')
++    expect(() => validateInviteCodePayload({})).toThrow('邀请码不能为空')
++  })
++})
++
+ describe('db 工厂 · 归属校验（本人/非本人/不存在/空ID）', () => {
+   it('文档属于本人：返回文档', async () => {
+     const db = createMockDb({ [COLLECTIONS.records]: [
+@@ -405,7 +363,7 @@ describe('db 工厂 · 归属校验（本人/非本人/不存在/空ID）', () =
+   })
+ })
+ 
+-describe('db 工厂 · 名称查询与访问上下文', () => {
++describe('db 工厂 · 名称查询与访问上下文（新契约）', () => {
+   it('createProfileDisplayName：命中返回 name；无档案回落家人', async () => {
+     const withProfile = createMockDb({ [COLLECTIONS.profiles]: [{ _openid: 'o-1', name: '王阿姨' }] })
+     const empty = createMockDb({ [COLLECTIONS.profiles]: [] })
+@@ -415,21 +373,18 @@ describe('db 工厂 · 名称查询与访问上下文', () => {
+       .resolves.toBe('家人')
+   })
+ 
+-  it('有效成员关系：返回 member 模式与 ownerOpenId', async () => {
++  it('有效成员关系：member 模式', async () => {
+     const db = createMockDb({
+       [COLLECTIONS.familyMembers]: [
+         { _id: 'rel-1', ownerOpenId: 'owner-1', memberOpenId: 'm-1', status: 'active' }
+       ]
+     })
+     const context = await createFamilyAccessContext({ db, collections: COLLECTIONS })('m-1')
+-    expect(context).toEqual({
+-      mode: 'member',
+-      ownerOpenId: 'owner-1',
+-      relation: { _id: 'rel-1', ownerOpenId: 'owner-1', memberOpenId: 'm-1', status: 'active' }
+-    })
++    expect(context.mode).toBe('member')
++    expect(context.ownerOpenId).toBe('owner-1')
+   })
+ 
+-  it('无 active 关系但有本人有效 family_auth：返回 ownerPreview', async () => {
++  it('ownerPreview：无关系但有本人有效 family_auth，scopes 与 noticeRules 归一化', async () => {
+     const db = createMockDb({
+       [COLLECTIONS.familyMembers]: [],
+       [COLLECTIONS.familyAuth]: [{
+@@ -437,37 +392,24 @@ describe('db 工厂 · 名称查询与访问上下文', () => {
+         _openid: 'owner-1',
+         member: { name: '女儿' },
+         memberName: '女儿',
+-        memberOpenId: 'm-1',
+-        scopes: [{ key: 'bloodPressure', enabled: true }],
+-        noticeRules: [{ key: 'missedMedicine', enabled: true }],
++        scopes: [{ key: 'bloodPressure', read: true, remind: true }],
++        noticeRules: { missedMedicine: true },
+         status: 'active'
+       }]
+     })
+     const context = await createFamilyAccessContext({ db, collections: COLLECTIONS })('owner-1')
+     expect(context.mode).toBe('ownerPreview')
+-    expect(context.ownerOpenId).toBe('owner-1')
+-    expect(context.relation.member).toEqual({ name: '女儿' })
+-    expect(context.relation.memberName).toBe('女儿')
+-    expect(context.relation.memberOpenId).toBe('m-1')
+-    expect(context.relation.scopes).toEqual([{ key: 'bloodPressure', enabled: true }])
+-    expect(context.relation.status).toBe('active')
++    expect(context.relation.scopes[0]).toMatchObject({ key: 'bloodPressure', read: true })
++    expect(context.relation.noticeRules).toEqual({ missedMedicine: true, missingRecord: false, weeklyReport: false })
+   })
+ 
+-  it('无关系且无授权：返回 null', async () => {
+-    const db = createMockDb({
+-      [COLLECTIONS.familyMembers]: [],
+-      [COLLECTIONS.familyAuth]: []
+-    })
+-    await expect(createFamilyAccessContext({ db, collections: COLLECTIONS })('anyone'))
+-      .resolves.toBeNull()
+-  })
+-
+-  it('无关系且授权已撤销：返回 null', async () => {
+-    const db = createMockDb({
++  it('无关系无授权、或授权已撤销：null', async () => {
++    const empty = createMockDb({ [COLLECTIONS.familyMembers]: [], [COLLECTIONS.familyAuth]: [] })
++    await expect(createFamilyAccessContext({ db: empty, collections: COLLECTIONS })('x')).resolves.toBeNull()
++    const revoked = createMockDb({
+       [COLLECTIONS.familyMembers]: [],
+-      [COLLECTIONS.familyAuth]: [{ _id: 'auth-1', _openid: 'owner-1', status: 'revoked' }]
++      [COLLECTIONS.familyAuth]: [{ _openid: 'owner-1', status: 'revoked' }]
+     })
+-    await expect(createFamilyAccessContext({ db, collections: COLLECTIONS })('owner-1'))
+-      .resolves.toBeNull()
++    await expect(createFamilyAccessContext({ db: revoked, collections: COLLECTIONS })('owner-1')).resolves.toBeNull()
+   })
+ })

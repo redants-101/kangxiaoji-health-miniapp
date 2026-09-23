@@ -1,0 +1,11 @@
+== S8a insert synthetic a6 docs ==
+      "$numberInt": "1"
+    "ok": {
+      "$numberInt": "1"
+    "ok": {
+== S8b homeFamily (remind=false → 无号码) ==
+Return result：{"member":{"name":"烟测主人A6","scopeText":"血压记录、血糖记录、用药确认"},"todayAlert":{"title":"暂无新的家庭记录","meta":"授权范围内暂未产生新记录。"},"latestMetrics":[],"medicineLogs":[],"reportSummary":"暂未授权查看周报。","writePermissions":{"bloodPressure":false,"bloodGlucose":false,"medicine":false,"report":false},"readPermissions":{"bloodPressure":true,"bloodGlucose":true,"medicine":true,"report":false},"phoneReminder":{"remindAllowed":false,"configured":false,"canCall":false,"masked":""}}
+PHONE-IN-RESPONSE: 0 (必须为0)
+== S8c familyGetReminderPhone (remindDenied) ==
+Return result：{"phoneDenied":{"allowed":false,"reason":"remindDenied"}}
+PHONE-IN-RESPONSE: 0 (必须为0)

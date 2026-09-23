@@ -1,0 +1,412 @@
+diff --git a/pages/family-sub/family-invite/index.js b/pages/family-sub/family-invite/index.js
+index 8eb7bc2..b14e616 100644
+--- a/pages/family-sub/family-invite/index.js
++++ b/pages/family-sub/family-invite/index.js
+@@ -9,12 +9,20 @@ const { createFamilyInvite, getFamilyInviteData } = require('../../../utils/api'
+ 
+ /**
+  * 邀请家属页。
+- * 职责：选择家属身份、授权范围，生成分享文案和一次性邀请入口。
++ * 职责：选择家属身份、授权范围（草稿），显式点击"生成邀请"后才提交云端。
++ * A2 收尾：打开/刷新/编辑均不生成邀请码；脏草稿禁止复制/分享旧码组合。
+  */
+ Page({
+   data: {
+     isLoading: true,
+-    loadError: ''
++    loadError: '',
++    inviteCode: '',
++    inviteId: '',
++    sharePath: '',
++    submitting: false,
++    generatedConfig: null,
++    draftDirty: false,
++    generateError: ''
+   },
+ 
+   async loadData() {
+@@ -28,18 +36,25 @@ Page({
+     bindAdaptiveResize(this)
+     const data = await this.loadData()
+     if (!data) return
++    // 打开页面只读取与渲染草稿，不生成邀请码
+     this.updateInvitePreview()
+-    await this.createInvite()
+   },
+ 
+   async reloadPage() {
+     const data = await this.loadData()
+     if (!data) return
+     this.updateInvitePreview()
+-    await this.createInvite()
+   },
+ 
+   onShareAppMessage() {
++    // 未生成或草稿与已生成配置不一致时，不得携带旧码分享新文案
++    if (!this.data.inviteCode || this.data.draftDirty) {
++      return {
++        title: '配置已修改或尚未生成邀请，请重新生成后分享',
++        path: '/pages/family-sub/family-invite/index',
++        imageUrl: ''
++      }
++    }
+     return {
+       title: this.data.invitePreview.title,
+       path: this.data.sharePath || `/pages/family-sub/family-join/index?inviteCode=${this.data.inviteCode || ''}`,
+@@ -51,8 +66,8 @@ Page({
+     this.setData({
+       selectedRelation: event.currentTarget.dataset.key
+     })
++    // 仅更新草稿与预览文案，不写云端
+     this.updateInvitePreview()
+-    this.createInvite()
+   },
+ 
+   toggleScope(event) {
+@@ -64,7 +79,6 @@ Page({
+     })
+     this.setData({ scopes })
+     this.updateInvitePreview()
+-    this.createInvite()
+   },
+ 
+   selectAllScopes() {
+@@ -72,7 +86,6 @@ Page({
+     const scopes = this.data.scopes.map(item => ({ ...item, read: true, remind: true }))
+     this.setData({ scopes })
+     this.updateInvitePreview()
+-    this.createInvite()
+   },
+ 
+   updateInvitePreview() {
+@@ -83,11 +96,41 @@ Page({
+         title: `妈妈邀请${relation ? relation.label : '家属'}查看健康记录`,
+         meta: readScopes.length ? `可查看：${readScopes.join('、')}` : '暂未选择可查看内容',
+         expire: '24 小时'
+-      }
++      },
++      draftDirty: this.isDraftDirty()
+     })
+   },
+ 
+-  async createInvite() {
++  isDraftDirty() {
++    if (!this.data.generatedConfig) {
++      // 从未生成：有旧码（理论上本页不再出现）也视为不一致，禁止当作新配置分享
++      return !!this.data.inviteCode
++    }
++    const draft = JSON.stringify({ selectedRelation: this.data.selectedRelation, scopes: this.data.scopes })
++    return draft !== JSON.stringify(this.data.generatedConfig)
++  },
++
++  /**
++   * 显式生成邀请：用户点击才提交；已有码时先确认"旧码立即失效"。
++   * 请求期间 submitting 防重复提交；失败保留旧码但维持脏标记，不冒充新配置生效。
++   * @returns {Promise<void>}
++   */
++  async generateInvite() {
++    if (this.data.submitting) return
++    if (this.data.inviteCode) {
++      const confirmed = await new Promise((resolve) => {
++        wx.showModal({
++          title: '重新生成邀请',
++          content: '重新生成后，旧邀请码立即失效，已分享出去的旧码将无法使用。是否继续？',
++          confirmText: '重新生成',
++          confirmColor: '#C8463A',
++          success: (result) => resolve(!!result.confirm),
++          fail: () => resolve(false)
++        })
++      })
++      if (!confirmed) return
++    }
++    this.setData({ submitting: true, generateError: '' })
+     try {
+       const result = await createFamilyInvite({
+         selectedRelation: this.data.selectedRelation,
+@@ -97,14 +140,30 @@ Page({
+         inviteCode: result.inviteCode,
+         inviteId: result.inviteId,
+         sharePath: result.sharePath,
+-        invitePreview: { ...this.data.invitePreview, ...(result.invitePreview || {}) }
++        invitePreview: { ...this.data.invitePreview, ...(result.invitePreview || {}) },
++        generatedConfig: {
++          selectedRelation: this.data.selectedRelation,
++          scopes: this.data.scopes
++        },
++        draftDirty: false,
++        submitting: false
+       })
+     } catch (err) {
+-      wx.showToast({ title: err.message || '邀请生成失败', icon: 'none' })
++      this.setData({
++        submitting: false,
++        generateError: err && err.message ? err.message : '邀请生成失败，请稍后重试',
++        draftDirty: true
++      })
++      wx.showToast({ title: err && err.message ? err.message : '邀请生成失败', icon: 'none' })
+     }
+   },
+ 
+   copyInvite() {
++    // 脏草稿或未生成：禁止"新文案+旧码"组合
++    if (!this.data.inviteCode || this.data.draftDirty) {
++      wx.showToast({ title: '配置已修改或尚未生成，请重新生成邀请', icon: 'none' })
++      return
++    }
+     wx.setClipboardData({
+       data: `${this.data.invitePreview.title}，${this.data.invitePreview.meta}。邀请码：${this.data.inviteCode || ''}`,
+       success() {
+@@ -121,4 +180,4 @@ Page({
+     unbindAdaptiveResize(this)
+     if (this.route) clearPageLoadState(this.route)
+   },
+-})
+\ No newline at end of file
++})
+diff --git a/pages/family-sub/family-invite/index.wxml b/pages/family-sub/family-invite/index.wxml
+index 413a4eb..72f94c2 100644
+--- a/pages/family-sub/family-invite/index.wxml
++++ b/pages/family-sub/family-invite/index.wxml
+@@ -76,8 +76,16 @@
+     <notice-bar text="邀请链接 24 小时内有效，仅可绑定 1 位家属。授权范围可在家庭页随时修改或撤销。" />
+   </view>
+ 
++  <view class="section">
++    <button class="primary-button {{submitting ? 'is-loading' : ''}}" disabled="{{submitting}}" loading="{{submitting}}" bindtap="generateInvite" aria-label="生成邀请">生成邀请</button>
++    <view wx:if="{{generateError}}" class="scope-meta">{{generateError}}</view>
++    <view wx:elif="{{inviteCode && draftDirty}}" class="scope-meta">配置已修改，当前展示的是旧邀请码；请重新生成后再复制或分享。</view>
++    <view wx:elif="{{inviteCode}}" class="scope-meta">邀请码：{{inviteCode}}（24 小时内有效）。重新生成将使旧码立即失效。</view>
++    <view wx:else class="scope-meta">尚未生成邀请；生成后才会产生邀请码与分享链接。</view>
++  </view>
++
+   <view class="share-actions">
+-    <button class="secondary-button" bindtap="copyInvite" aria-label="复制邀请说明">复制邀请说明</button>
+-    <button class="primary-button" open-type="share" aria-label="通过微信分享邀请">微信分享</button>
++    <button class="secondary-button" disabled="{{submitting || !inviteCode || draftDirty}}" bindtap="copyInvite" aria-label="复制邀请说明">复制邀请说明</button>
++    <button class="primary-button" disabled="{{submitting || !inviteCode || draftDirty}}" open-type="share" aria-label="通过微信分享邀请">微信分享</button>
+   </view>
+ </view>
+\ No newline at end of file
+diff --git a/tests/unit/a2-explicit-invite.test.js b/tests/unit/a2-explicit-invite.test.js
+new file mode 100644
+index 0000000..2930ff4
+--- /dev/null
++++ b/tests/unit/a2-explicit-invite.test.js
+@@ -0,0 +1,217 @@
++/**
++ * A2 页面收尾：family-invite 显式生成邀请。
++ * 页面级测试：mock utils/api 与 utils/page-factory，捕获 Page 配置后实例化，
++ * 断言打开/刷新/编辑零生成请求、显式点击才提交、防重、失败态、脏草稿禁分享。
++ */
++
++const mockApi = {
++  getFamilyInviteData: jest.fn(),
++  createFamilyInvite: jest.fn()
++}
++const mockFactory = {
++  bindAdaptiveResize: jest.fn(),
++  unbindAdaptiveResize: jest.fn(),
++  goRoute: jest.fn(),
++  clearPageLoadState: jest.fn(),
++  loadPageData: jest.fn()
++}
++jest.mock('../../utils/api', () => mockApi)
++jest.mock('../../utils/page-factory', () => mockFactory)
++
++let pageConfig = null
++global.Page = (cfg) => { pageConfig = cfg; return cfg }
++global.wx = {
++  setNavigationBarTitle: jest.fn(),
++  showToast: jest.fn(),
++  setClipboardData: jest.fn((opt) => opt.success && opt.success()),
++  showModal: jest.fn((opt) => opt.success && opt.success({ confirm: true }))
++}
++
++require('../../pages/family-sub/family-invite/index.js')
++
++const DEFAULT_SCOPES = [
++  { key: 'bloodPressure', title: '血压记录', meta: 'm', read: true, write: false, remind: true },
++  { key: 'bloodGlucose', title: '血糖记录', meta: 'm', read: true, write: false, remind: true },
++  { key: 'medicine', title: '用药确认', meta: 'm', read: true, write: false, remind: true },
++  { key: 'report', title: '健康记录周报', meta: 'm', read: true, write: false, remind: true }
++]
++
++function makePage() {
++  const page = Object.assign({}, pageConfig, {
++    data: JSON.parse(JSON.stringify(pageConfig.data)),
++    route: 'pages/family-sub/family-invite/index',
++    setData(patch) { Object.assign(this.data, patch) }
++  })
++  return page
++}
++
++beforeEach(() => {
++  jest.clearAllMocks()
++  mockApi.getFamilyInviteData.mockResolvedValue({
++    selectedRelation: 'daughter',
++    relations: [{ key: 'daughter', label: '女儿', meta: '主要照护人' }, { key: 'son', label: '儿子', meta: '紧急联系人' }],
++    scopes: JSON.parse(JSON.stringify(DEFAULT_SCOPES)),
++    invitePreview: { title: '邀请家属查看健康记录', meta: '可查看：血压记录、血糖记录、用药确认、健康记录周报', expire: '24 小时' }
++  })
++  mockFactory.loadPageData.mockImplementation(async (page, loader) => {
++    const data = await loader()
++    Object.assign(page.data, data)
++    return data
++  })
++  mockApi.createFamilyInvite.mockImplementation(async (payload) => {
++    const readTitles = (payload.scopes || []).filter(s => s.read).map(s => s.title)
++    const code = 'KXJGEN000001'
++    return {
++      inviteCode: code,
++      inviteId: code,
++      sharePath: `/pages/family-sub/family-join/index?inviteCode=${code}`,
++      invitePreview: { title: '王阿姨邀请女儿查看健康记录', meta: `可查看：${readTitles.join('、')}`, expire: '24 小时' }
++    }
++  })
++})
++
++describe('打开与刷新：只读不生成', () => {
++  it('onLoad 读取数据且零生成请求', async () => {
++    const page = makePage()
++    await page.onLoad()
++    expect(mockApi.getFamilyInviteData).toHaveBeenCalledTimes(1)
++    expect(mockApi.createFamilyInvite).toHaveBeenCalledTimes(0)
++  })
++
++  it('reloadPage 零生成请求', async () => {
++    const page = makePage()
++    await page.onLoad()
++    await page.reloadPage()
++    expect(mockApi.createFamilyInvite).toHaveBeenCalledTimes(0)
++  })
++})
++
++describe('编辑配置：只更新草稿不写云端', () => {
++  it('selectRelation / toggleScope / selectAllScopes 均零生成请求', async () => {
++    const page = makePage()
++    await page.onLoad()
++    page.selectRelation({ currentTarget: { dataset: { key: 'son' } } })
++    page.toggleScope({ currentTarget: { dataset: { key: 'report', field: 'read' } }, detail: { value: false } })
++    page.selectAllScopes()
++    expect(mockApi.createFamilyInvite).toHaveBeenCalledTimes(0)
++    expect(page.data.selectedRelation).toBe('son')
++  })
++})
++
++describe('显式生成：点击才提交', () => {
++  it('点击生成一次：提交草稿并落状态', async () => {
++    const page = makePage()
++    await page.onLoad()
++    await page.generateInvite()
++    expect(mockApi.createFamilyInvite).toHaveBeenCalledTimes(1)
++    expect(page.data.inviteCode).toBe('KXJGEN000001')
++    expect(page.data.draftDirty).toBe(false)
++    expect(page.data.sharePath).toContain('KXJGEN000001')
++  })
++
++  it('请求在途时重复点击：仅提交一次', async () => {
++    const page = makePage()
++    await page.onLoad()
++    const p1 = page.generateInvite()
++    const p2 = page.generateInvite()
++    await Promise.all([p1, p2])
++    expect(mockApi.createFamilyInvite).toHaveBeenCalledTimes(1)
++    expect(page.data.submitting).toBe(false)
++  })
++
++  it('已有码时重新生成需确认（说明旧码失效）', async () => {
++    const page = makePage()
++    await page.onLoad()
++    await page.generateInvite()
++    global.wx.showModal.mockClear()
++    await page.generateInvite()
++    expect(global.wx.showModal).toHaveBeenCalledTimes(1)
++    const content = global.wx.showModal.mock.calls[0][0].content
++    expect(content).toContain('失效')
++    expect(mockApi.createFamilyInvite).toHaveBeenCalledTimes(2)
++  })
++})
++
++describe('失败态：旧码不得冒充新配置生效', () => {
++  it('生成失败：submitting 复位、错误提示、无码时不展示生效态', async () => {
++    mockApi.createFamilyInvite.mockRejectedValue(new Error('网络异常'))
++    const page = makePage()
++    await page.onLoad()
++    await page.generateInvite()
++    expect(page.data.submitting).toBe(false)
++    expect(page.data.generateError).toBeTruthy()
++    expect(page.data.inviteCode).toBe('')
++    expect(page.data.draftDirty).toBe(true)
++  })
++
++  it('已有旧码时生成失败：旧码保留但标记脏草稿，禁止复制分享', async () => {
++    const page = makePage()
++    await page.onLoad()
++    await page.generateInvite()
++    page.toggleScope({ currentTarget: { dataset: { key: 'report', field: 'read' } }, detail: { value: false } })
++    mockApi.createFamilyInvite.mockRejectedValue(new Error('网络异常'))
++    await page.generateInvite()
++    expect(page.data.inviteCode).toBe('KXJGEN000001') // 旧码仍在
++    expect(page.data.draftDirty).toBe(true) // 但草稿≠已生成配置
++    global.wx.setClipboardData.mockClear()
++    page.copyInvite()
++    expect(global.wx.setClipboardData).toHaveBeenCalledTimes(0)
++    expect(global.wx.showToast).toHaveBeenCalled()
++  })
++})
++
++describe('脏草稿：禁止“新文案+旧码”组合', () => {
++  it('编辑后复制被拦截并提示重新生成', async () => {
++    const page = makePage()
++    await page.onLoad()
++    await page.generateInvite()
++    page.selectRelation({ currentTarget: { dataset: { key: 'son' } } })
++    expect(page.data.draftDirty).toBe(true)
++    global.wx.setClipboardData.mockClear()
++    page.copyInvite()
++    expect(global.wx.setClipboardData).toHaveBeenCalledTimes(0)
++  })
++
++  it('编辑后分享回退为无码路径（不携带旧码）', async () => {
++    const page = makePage()
++    await page.onLoad()
++    await page.generateInvite()
++    page.selectRelation({ currentTarget: { dataset: { key: 'son' } } })
++    const share = page.onShareAppMessage()
++    expect(share.path).not.toContain('KXJGEN000001')
++  })
++
++  it('未生成时分享回退为无码路径', async () => {
++    const page = makePage()
++    await page.onLoad()
++    const share = page.onShareAppMessage()
++    expect(share.path).not.toContain('inviteCode=')
++  })
++})
++
++describe('重新生成成功后：文案、权限与分享链接一致', () => {
++  it('改草稿后重新生成：preview/sharePath/code 均对应新配置', async () => {
++    const page = makePage()
++    await page.onLoad()
++    await page.generateInvite()
++    page.toggleScope({ currentTarget: { dataset: { key: 'report', field: 'read' } }, detail: { value: false } })
++    mockApi.createFamilyInvite.mockImplementation(async (payload) => {
++      const readTitles = (payload.scopes || []).filter(s => s.read).map(s => s.title)
++      return {
++        inviteCode: 'KXJGEN000002',
++        inviteId: 'KXJGEN000002',
++        sharePath: '/pages/family-sub/family-join/index?inviteCode=KXJGEN000002',
++        invitePreview: { title: '王阿姨邀请女儿查看健康记录', meta: `可查看：${readTitles.join('、')}`, expire: '24 小时' }
++      }
++    })
++    await page.generateInvite()
++    expect(page.data.inviteCode).toBe('KXJGEN000002')
++    expect(page.data.sharePath).toContain('KXJGEN000002')
++    expect(page.data.invitePreview.meta).not.toContain('健康记录周报')
++    expect(page.data.draftDirty).toBe(false)
++    // 一致后复制放行
++    global.wx.setClipboardData.mockClear()
++    page.copyInvite()
++    expect(global.wx.setClipboardData).toHaveBeenCalledTimes(1)
++  })
++})

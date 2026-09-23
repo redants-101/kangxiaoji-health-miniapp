@@ -1,0 +1,49 @@
+FAIL tests/unit/a4-family-write.test.js
+  A4 · 身份与关系
+    √ B 为 A 的 active 家属且 bp read+write：代录成功并带审计字段 (4 ms)
+    √ 无关系 / revoked / 跨 owner 伪造：拒绝且零写入 (2 ms)
+    √ payload 伪造审计字段被忽略
+    √ owner 自己不走家属代录路由（行为不变由 owner 路由承担） (1 ms)
+    √ owner 查询能看到代录记录（按 ownerOpenId 归属） (1 ms)
+    √ revoked 后新写入立即拒绝 (1 ms)
+  A4 · 权限矩阵
+    √ bp read+write 允许；read-only / write-only / remind-only 拒绝 (1 ms)
+    √ bg read+write 允许血糖代录
+    √ medicine read+write 允许已服/跳过代确认 (1 ms)
+    √ read-only / write-only medicine 拒绝代确认 (1 ms)
+    √ report write、计划管理、记录删除：无家属写路由
+  A4 · 代确认撤销
+    √ B 可撤销自己本次代确认 (1 ms)
+    √ B 不能撤销 owner 创建的确认
+    √ B 不能撤销其他 member 的确认
+    √ 重复撤销：第二次明确拒绝且不异常
+  A4 · homeFamily 写权限下发
+    √ homeFamily 响应携带 writePermissions（read+write 才为 true） (1 ms)
+  A4 · 页面家属态写入口
+    √ med-list 家属态：medicine write 时显示代确认入口；计划增删改入口仍隐藏 (1 ms)
+    √ med-list 家属态 medicine 只读：代确认入口不开放
+    √ record-bp 家属态：提交走家属代录路由；云端拒绝不本地假成功 (1 ms)
+    × record-bg 家属态：提交走家属代录路由；云端拒绝不本地假成功 (2 ms)
+
+  ● A4 · 页面家属态写入口 › record-bg 家属态：提交走家属代录路由；云端拒绝不本地假成功
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: undefined
+
+    [0m [90m 462 |[39m     [36mconst[39m page [33m=[39m makePage(pageConfigs[[35m2[39m])
+     [90m 463 |[39m     [36mawait[39m page[33m.[39monLoad({ familyView[33m:[39m [32m'1'[39m })
+    [31m[1m>[22m[39m[90m 464 |[39m     expect(page[33m.[39mdata[33m.[39misFamilyView)[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 465 |[39m     page[33m.[39msetData({ form[33m:[39m { glucose[33m:[39m [32m'6.4'[39m[33m,[39m note[33m:[39m [32m''[39m }[33m,[39m selectedMealTag[33m:[39m [32m'空腹'[39m[33m,[39m measuredAt[33m:[39m [32m'08:00'[39m })
+     [90m 466 |[39m     [36mawait[39m page[33m.[39mhandleSave()
+     [90m 467 |[39m     expect(mockApi[33m.[39mfamilyRecordBloodGlucose)[33m.[39mtoHaveBeenCalled()[0m
+
+      at Object.toBe (tests/unit/a4-family-write.test.js:464:36)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 19 passed, 20 total
+Snapshots:   0 total
+Time:        0.619 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a4-family-write.test.js/i.

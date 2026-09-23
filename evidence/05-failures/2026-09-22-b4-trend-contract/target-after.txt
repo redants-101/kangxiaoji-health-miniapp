@@ -1,0 +1,19 @@
+
+> test
+> jest --verbose --runInBand tests/unit/page-data-consistency.test.js
+
+PASS tests/unit/page-data-consistency.test.js
+  DEFAULT_PAGE_DATA 一致性验证（合并后）
+    √ 不包含 report 键 (4 ms)
+    √ trend 键包含合并后的完整字段 (2 ms)
+    √ trend.metricOptions 包含血压血糖复合指标和用药指标 (1 ms)
+    √ trend.rangeOptions 包含三档时间
+    √ trend 默认值为 7天+血压血糖
+    √ reminder 任务使用 trend 路由
+    √ reminder 任务标题已更新 (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        2.07 s, estimated 3 s
+Ran all test suites matching /tests\\unit\\page-data-consistency.test.js/i.

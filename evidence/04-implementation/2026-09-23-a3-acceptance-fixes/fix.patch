@@ -1,0 +1,121 @@
+diff --git a/pages/family-sub/home-family/index.js b/pages/family-sub/home-family/index.js
+index f99fb14..51e1a39 100644
+--- a/pages/family-sub/home-family/index.js
++++ b/pages/family-sub/home-family/index.js
+@@ -36,6 +36,9 @@ Page({
+       title: '家人健康'
+     })
+     bindAdaptiveResize(this)
++    // A3：本页即家属视图，置全局标记供 tabBar 页（trend）识别家属上下文
++    const app = getApp()
++    if (app && app.globalData) app.globalData.familyView = true
+     await this.loadData()
+   },
+ 
+@@ -46,6 +49,8 @@ Page({
+    */
+   onShow() {
+     autoPreCheck(this)
++    const app = getApp()
++    if (app && app.globalData) app.globalData.familyView = true
+     if (this.data._loaded) {
+       markClean('homeFamily')
+       this.loadData()
+diff --git a/pages/family-sub/home-family/index.wxml b/pages/family-sub/home-family/index.wxml
+index 639f63b..4cdaca8 100644
+--- a/pages/family-sub/home-family/index.wxml
++++ b/pages/family-sub/home-family/index.wxml
+@@ -35,7 +35,6 @@
+     <view class="quick-grid">
+       <quick-action icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
+       <quick-action icon="用药" icon-src="/assets/icons/icon-medication.png" title="用药" route="medList" bindactiontap="handleQuickAction" />
+-      <quick-action icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
+     </view>
+   </view>
+ 
+diff --git a/pages/trend/index.js b/pages/trend/index.js
+index d29d283..c30caef 100644
+--- a/pages/trend/index.js
++++ b/pages/trend/index.js
+@@ -164,6 +164,12 @@ Page({
+    */
+   onShow() {
+     autoPreCheck(this)
++    // A3：tabBar 切换不触发 onLoad，需在 onShow 重判家属上下文（全局标记）
++    const app = getApp()
++    const gv = !!(app && app.globalData && app.globalData.familyView === true)
++    if (gv !== !!this.data.isFamilyView) {
++      this.setData({ isFamilyView: gv, familyDenied: false })
++    }
+     if (this.data._loaded) {
+       markClean('trend')
+       this.loadData()
+diff --git a/tests/unit/a3-family-readonly.test.js b/tests/unit/a3-family-readonly.test.js
+index cc6a7f1..7cd3560 100644
+--- a/tests/unit/a3-family-readonly.test.js
++++ b/tests/unit/a3-family-readonly.test.js
+@@ -279,6 +279,7 @@ describe('A3 · record-service allowedTypes 服务端过滤', () => {
+ // ─── 页面守卫（familyView 下写入口禁用） ───
+ const mockApi = {
+   getMedListData: jest.fn(),
++  getTrendData: jest.fn(),
+   deleteMedicationPlan: jest.fn(),
+   toggleMedicationPlanStatus: jest.fn(),
+   revokeMedicationConfirmation: jest.fn(),
+@@ -287,6 +288,7 @@ const mockApi = {
+   deleteRecord: jest.fn()
+ }
+ const mockFactory = {
++  autoPreCheck: jest.fn(),
+   bindAdaptiveResize: jest.fn(),
+   unbindAdaptiveResize: jest.fn(),
+   goRoute: jest.fn(),
+@@ -297,7 +299,7 @@ const mockFactory = {
+ jest.mock('../../utils/api', () => mockApi)
+ jest.mock('../../utils/page-factory', () => mockFactory)
+ jest.mock('../../services/snooze', () => ({ removeSnoozeReminderByLogId: jest.fn() }))
+-jest.mock('../../utils/subscribe-prompt', () => ({ promptSubscribeAfterAction: jest.fn() }))
++jest.mock('../../utils/subscribe-prompt', () => ({ promptSubscribeAfterAction: jest.fn(() => Promise.resolve({ ok: false })) }))
+ 
+ global.Page = (cfg) => { pageConfigs.push(cfg); return cfg }
+ global.wx = {
+@@ -307,9 +309,11 @@ global.wx = {
+   setClipboardData: jest.fn(),
+   showActionSheet: jest.fn()
+ }
++global.getApp = () => ({ globalData: {} })
+ const pageConfigs = []
+ require('../../pages/medication/med-list/index.js')
+ require('../../pages/record/record-detail/index.js')
++require('../../pages/trend/index.js')
+ 
+ function makePage(cfg) {
+   return Object.assign({}, cfg, {
+@@ -325,6 +329,7 @@ describe('A3 · 页面只读守卫', () => {
+     mockFactory.loadPageData.mockImplementation(async (page, loader) => {
+       const d = await loader()
+       Object.assign(page.data, d)
++      page.data._loaded = true
+       return d
+     })
+     mockApi.getMedListData.mockResolvedValue({ plans: [], confirmations: [], familyView: { allowed: true, readOnly: true } })
+@@ -361,3 +366,19 @@ describe('A3 · 页面只读守卫', () => {
+     expect(mockApi.deleteRecord).not.toHaveBeenCalled()
+   })
+ })
++
++describe('A3 · trend tabBar 切换重判家属上下文', () => {
++  it('onShow 检测到全局家属标记后以 familyView 重载', async () => {
++    const page = makePage(pageConfigs[2])
++    mockApi.getTrendData.mockResolvedValue({ records: [], familyView: { allowed: true, readOnly: true } })
++    await page.onLoad({})
++    expect(page.data.isFamilyView).toBe(false)
++    global.getApp = () => ({ globalData: { familyView: true } })
++    page.onShow()
++    expect(page.data.isFamilyView).toBe(true)
++    const calls = mockApi.getTrendData.mock.calls
++    expect(calls.length).toBeGreaterThan(0)
++    expect(calls[calls.length - 1][2]).toBeTruthy()
++    global.getApp = () => ({ globalData: {} })
++  })
++})

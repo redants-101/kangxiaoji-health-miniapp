@@ -1,0 +1,54 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a0-permission-policy.test.js
+
+PASS tests/unit/a0-permission-policy.test.js
+  A0 · 八种家属关系
+    √ 恰好 8 项，键名与顺序固定 (2 ms)
+    √ 名称与用途按确认文案字面匹配 (1 ms)
+    √ getFamilyRelationV2：命中返回；未知 key 返回 null（不静默回退） (1 ms)
+  A0 · normalizeFamilyScopesV2 · 合法输入
+    √ 完整授权归一化为规范四 scope（固定顺序、固定标题与用途）
+    √ 每项只给 key：read/write/remind 全部缺失默认 false (1 ms)
+    √ 显式 false 被保留为 false
+  A0 · normalizeFamilyScopesV2 · 拒绝非法输入
+    √ 非数组（undefined/null/对象）抛错 (16 ms)
+    √ 未知 scope key 抛错，不落库 (1 ms)
+    √ 非对象元素、缺 key 元素抛错 (1 ms)
+    √ 重复 scope key 抛错
+    √ read 为非布尔值 "false" 抛错，不做强制转换
+    √ write 为非布尔值 "true" 抛错，不做强制转换 (1 ms)
+    √ remind 为非布尔值 1 抛错，不做强制转换
+    √ read 为非布尔值 0 抛错，不做强制转换 (1 ms)
+    √ write 为非布尔值 "yes" 抛错，不做强制转换
+    √ remind 为非布尔值 "TRUE" 抛错，不做强制转换 (1 ms)
+    √ 旧字段 enabled=true 不映射任何新权限
+    √ report 不接受 write=true（周报无代录能力）
+  A0 · 纯函数性质
+    √ 不修改输入对象（输入保持原样） (1 ms)
+    √ 重复调用结果不串扰
+  A0 · canPerformScopeAction · 允许与禁止
+    √ 血压代录：read+write 同时具备才允许；只 read 或只 write 拒绝
+    √ 血糖代录：read+write 同时具备才允许 (1 ms)
+    √ 用药代确认与撤销本次代确认：medicine read+write
+    √ 用药计划管理：即使所有 write=true 也拒绝
+    √ 健康记录删除：write=true 也不放行 (1 ms)
+    √ 未知动作一律拒绝（不因任何授权放行）
+    √ 未归一化/缺项输入：拒绝而非抛错
+  A0 · canViewScope / 电话提醒按钮
+    √ canViewScope：仅 read=true 可见
+    √ read=false、remind=true：电话按钮可显示，但 scope 数据不可见 (1 ms)
+  A0 · noticeRules 归一化
+    √ 无入参：三项均默认 false
+    √ 逐项布尔归一化；非布尔抛错；多余键不进入结果 (1 ms)
+  A0 · canViewReminderInfo · 合取双开关 + read
+    √ 漏服提醒：medicine read+remind 且 missedMedicine，三者齐备可见
+    √ 连续未记录：血压或血糖块 read+remind，且 missingRecord
+    √ 周报提醒：report read+remind 且 weeklyReport (5 ms)
+    √ read=false、remind=true：只能出电话按钮，提醒明细不可见 (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       35 passed, 35 total
+Snapshots:   0 total
+Time:        0.486 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a0-permission-policy.test.js/i.

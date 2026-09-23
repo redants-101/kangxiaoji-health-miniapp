@@ -1,0 +1,752 @@
+diff --git a/app.json b/app.json
+index aa6cecf..3a6c35e 100644
+--- a/app.json
++++ b/app.json
+@@ -49,7 +49,6 @@
+       "root": "pages/family-sub/",
+       "name": "family-sub",
+       "pages": [
+-        "index",
+         "family-invite/index",
+         "family-join/index",
+         "family-join-hint/index",
+diff --git a/cloudfunctions/healthApi/index.js b/cloudfunctions/healthApi/index.js
+index e3ae92d..2fe511c 100644
+--- a/cloudfunctions/healthApi/index.js
++++ b/cloudfunctions/healthApi/index.js
+@@ -71,7 +71,12 @@ const COLLECTIONS = {
+   feedbacks: 'feedbacks',              // 反馈建议
+   dailyStats: 'health_daily_stats',     // 健康记录按天预聚合
+   recordStats: 'health_record_stats',   // 健康记录用户总量预聚合
+-  profiles: 'profiles'                 // 用户档案
++  profiles: 'profiles',                // 用户档案
++  // A7：应用级运行时配置（单文档 _id='app_config'）。
++  // 控制台待办：启用远程开关需创建集合并写入 { familyTabEnabled: boolean }，
++  // 安全规则与其他集合一致（仅云函数读写）。集合不存在时 getAppConfigData
++  // 走 catch 回退 familyTabEnabled:null，端侧按 envVersion 默认值执行，不影响运行。
++  appConfigs: 'app_configs'
+ }
+ 
+ // 归属校验：云端真实 db；签名 (collection, openId, documentId, label)。
+@@ -701,6 +706,25 @@ async function getMeData(openId) {
+   }
+ }
+ 
++/**
++ * A7：应用级运行时配置（家庭 Tab 回滚开关等）。
++ * 读取 app_configs 集合 _id='app_config' 单文档；集合缺失/无权限/文档不存在
++ * 一律回退 familyTabEnabled:null，由端侧按 envVersion 默认值执行（正式版关、体验/开发版开）。
++ * 开关只控制 Tab 展示；数据授权一律走 family-policy 服务端闸口，与本配置无关。
++ * @returns {Promise<Object>} { familyTabEnabled: boolean|null }
++ */
++async function getAppConfigData() {
++  try {
++    const res = await db.collection(COLLECTIONS.appConfigs).doc('app_config').get()
++    const cfg = res && res.data ? res.data : null
++    return {
++      familyTabEnabled: cfg && typeof cfg.familyTabEnabled === 'boolean' ? cfg.familyTabEnabled : null
++    }
++  } catch (e) {
++    return { familyTabEnabled: null }
++  }
++}
++
+ // ============ 数据保存操作 ============
+ 
+ /**
+@@ -915,6 +939,7 @@ const finishRoute = (result, ok = true) => {
+         'reminder': () => getSettingsDataService().getReminderData(openId),
+         'reminderSettings': () => getSettingsDataService().getReminderSettingsData(openId),
+         'me': () => getMeData(openId),
++        'appConfig': () => getAppConfigData(),
+         'privacySettings': () => getSettingsDataService().getPrivacySettingsData(openId),
+         'dataManagement': () => getSettingsDataService().getDataManagementData(openId),
+         'help': () => getSettingsDataService().getHelpData(),
+diff --git a/pages/family/index.js b/pages/family/index.js
+index 6e8e45b..bdbd0bf 100644
+--- a/pages/family/index.js
++++ b/pages/family/index.js
+@@ -9,17 +9,53 @@ const {
+ } = require('../../utils/page-factory')
+ const { runButtonAction } = require('../../utils/button-state')
+ const { markClean } = require('../../services/core')
+-const { getFamilyData, revokeFamilyMember } = require('../../utils/api')
++const { getFamilyData, revokeFamilyMember, getAppConfig } = require('../../utils/api')
++const { getFamilyTabEnabled } = require('../../utils/feature-flags')
+ 
+ /**
+  * 家庭页。
+  * 职责：展示家属成员、授权范围和邀请入口，是家庭协同链路的主入口。
++ * A7：开放/回滚由运行时开关控制——远程配置 appConfig.familyTabEnabled 优先，
++ * 无远程值按 envVersion 默认（正式版关、体验/开发版开）；开关只控展示，不构成数据授权。
+  */
+ Page({
+   data: {
+     isLoading: true,
+     loadError: '',
+-    pendingMemberId: ''
++    pendingMemberId: '',
++    familyTabEnabled: getFamilyTabEnabled(null)
++  },
++
++  /**
++   * 应用当前开关状态（同步：远程配置已缓存于 globalData 则参与判定）。
++   * @returns {boolean} 开关是否打开。
++   */
++  applyFamilyTabFlag() {
++    const app = getApp()
++    const cfg = app && app.globalData ? app.globalData.appConfig : null
++    const enabled = getFamilyTabEnabled(cfg)
++    this.setData({ familyTabEnabled: enabled })
++    return enabled
++  },
++
++  /**
++   * 拉取一次远程开关配置并应用（回滚开关的运行时判断，非注释性承诺）。
++   * 获取失败回退端侧默认；开关由关变开时补加载家庭数据。
++   * @returns {Promise<boolean>} 最终开关状态。
++   */
++  async refreshFamilyTabFlag() {
++    const app = getApp()
++    try {
++      const cfg = await getAppConfig()
++      if (app && app.globalData) app.globalData.appConfig = cfg && typeof cfg === 'object' ? cfg : null
++    } catch (e) {
++      if (app && app.globalData && app.globalData.appConfig === undefined) app.globalData.appConfig = null
++    }
++    const enabled = this.applyFamilyTabFlag()
++    if (enabled && !this.data._loaded && !this.data.isLoading) {
++      await this.loadData()
++    }
++    return enabled
+   },
+ 
+   /**
+@@ -32,23 +68,34 @@ Page({
+ 
+   /**
+    * 页面加载生命周期。
+-   * @returns {Promise<void>} 设置标题并加载家庭数据。
++   * @returns {Promise<void>} 设置标题；开关打开才加载家庭数据，并异步应用远程开关。
+    */
+   async onLoad() {
+     wx.setNavigationBarTitle({
+       title: '家庭'
+     })
+     bindAdaptiveResize(this)
+-    await this.loadData()
++    const enabled = this.applyFamilyTabFlag()
++    if (enabled) {
++      await this.loadData()
++    } else {
++      // 占位态：不请求家庭数据，复位加载标记
++      this.setData({ isLoading: false })
++    }
++    // 远程配置到达后重估开关（回滚/放开均运行时生效）
++    this.refreshFamilyTabFlag()
+   },
+ 
+   /**
+    * 页面显示时执行预检查并刷新数据。
+    * tabBar 页面切回时重新拉取数据，确保授权变更后成员列表更新。
++   * A7：开关关闭时保持占位态，不加载数据。
+    * @returns {void}
+    */
+   onShow() {
+     autoPreCheck(this)
++    const enabled = this.applyFamilyTabFlag()
++    if (!enabled) return
+     if (this.data._loaded) {
+       markClean('family')
+       this.loadData()
+diff --git a/pages/family/index.wxml b/pages/family/index.wxml
+index af03e51..6b2eb9b 100644
+--- a/pages/family/index.wxml
++++ b/pages/family/index.wxml
+@@ -11,7 +11,16 @@
+     <button class="state-button" bindtap="reloadPage">重新加载</button>
+   </view>
+ </view>
+-<!-- 本地测试期开放家庭页真实内容（2026-09-22）；正式开放（含回滚开关与合规文案复核）属 A7，上传体验版/正式版前须复核 -->
++<!-- A7 运行时回滚开关：familyTabEnabled=false 时回到占位态。
++     开关判定 = 远程配置 appConfig.familyTabEnabled（布尔）优先，缺省按 envVersion：
++     正式发布=关，体验版/开发版=开（utils/feature-flags.js）。开关只控展示，不构成数据授权。 -->
++<view wx:elif="{{!familyTabEnabled}}" class="page-state {{adaptive.scaleClass}}">
++  <view class="state-panel">
++    <view class="state-icon">👨‍👩‍👧‍👦</view>
++    <view class="state-title">家庭协同开发中</view>
++    <view class="state-meta">上线后你将能邀请家属查看健康记录和用药状态，方便日常陪伴。共享内容仅限你授权的范围，不代表医疗诊断或处理建议，授权可随时撤回。</view>
++  </view>
++</view>
+ <view wx:else class="family-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+   <view class="page-head">
+     <view>
+@@ -63,7 +72,7 @@
+   </view>
+ 
+   <view class="section">
+-    <notice-bar text="你可以随时取消家属授权。家属看到的是记录和提醒状态，不代表医生诊断或治疗建议。" />
++    <notice-bar text="共享内容仅限你授权的范围，你可以随时修改或取消家属授权。家属看到的是记录和提醒状态，不代表医生诊断或治疗建议。" />
+   </view>
+ 
+   <fixed-action text="邀请家属" bindactiontap="inviteFamily" />
+diff --git a/pages/family/index.wxss b/pages/family/index.wxss
+index 4604c22..f61b6a8 100644
+--- a/pages/family/index.wxss
++++ b/pages/family/index.wxss
+@@ -242,3 +242,9 @@
+   height: 88rpx;
+   font-size: 34rpx;
+ }
++
++/* A7 占位态图标 */
++.state-icon {
++  font-size: 72rpx;
++  margin-bottom: 16rpx;
++}
+diff --git a/pages/family-sub/index.js b/pages/family-sub/index.js
+deleted file mode 100644
+index d2b7e74..0000000
+--- a/pages/family-sub/index.js
++++ /dev/null
+@@ -1,23 +0,0 @@
+-const { safeNavigateTo } = require('../../utils/route-guard')
+-
+-Page({
+-  data: {},
+-
+-  onLoad() {
+-    wx.setNavigationBarTitle({
+-      title: '家庭管理'
+-    })
+-  },
+-
+-  goToFamilyInvite() {
+-    safeNavigateTo('/pages/family-sub/family-invite/index')
+-  },
+-
+-  goToFamilyJoin() {
+-    safeNavigateTo('/pages/family-sub/family-join/index')
+-  },
+-
+-  goToFamilyAuth() {
+-    safeNavigateTo('/pages/family-sub/family-auth/index')
+-  }
+-})
+diff --git a/pages/family-sub/index.json b/pages/family-sub/index.json
+deleted file mode 100644
+index 7ee9675..0000000
+--- a/pages/family-sub/index.json
++++ /dev/null
+@@ -1,4 +0,0 @@
+-{
+-  "navigationBarTitleText": "家庭管理",
+-  "usingComponents": {}
+-}
+diff --git a/pages/family-sub/index.wxml b/pages/family-sub/index.wxml
+deleted file mode 100644
+index a244228..0000000
+--- a/pages/family-sub/index.wxml
++++ /dev/null
+@@ -1,41 +0,0 @@
+-<view class="entry-page">
+-  <view class="entry-header">
+-    <view class="entry-title">家庭管理</view>
+-    <view class="entry-subtitle">管理家庭成员和健康共享</view>
+-  </view>
+-
+-  <view class="entry-cards">
+-    <view class="entry-card" bindtap="goToFamilyInvite">
+-      <view class="card-icon invite-icon">
+-        <view class="icon-text">IN</view>
+-      </view>
+-      <view class="card-content">
+-        <view class="card-title">邀请成员</view>
+-        <view class="card-desc">邀请家人加入家庭健康共享</view>
+-      </view>
+-      <view class="card-arrow">›</view>
+-    </view>
+-
+-    <view class="entry-card" bindtap="goToFamilyJoin">
+-      <view class="card-icon join-icon">
+-        <view class="icon-text">JN</view>
+-      </view>
+-      <view class="card-content">
+-        <view class="card-title">加入家庭</view>
+-        <view class="card-desc">通过邀请码加入已有家庭</view>
+-      </view>
+-      <view class="card-arrow">›</view>
+-    </view>
+-
+-    <view class="entry-card" bindtap="goToFamilyAuth">
+-      <view class="card-icon auth-icon">
+-        <view class="icon-text">AU</view>
+-      </view>
+-      <view class="card-content">
+-        <view class="card-title">授权管理</view>
+-        <view class="card-desc">设置家庭成员查看权限</view>
+-      </view>
+-      <view class="card-arrow">›</view>
+-    </view>
+-  </view>
+-</view>
+diff --git a/pages/family-sub/index.wxss b/pages/family-sub/index.wxss
+deleted file mode 100644
+index 6fcdd24..0000000
+--- a/pages/family-sub/index.wxss
++++ /dev/null
+@@ -1,86 +0,0 @@
+-.entry-page {
+-  min-height: 100vh;
+-  background: #F2F5F2;
+-  padding: 32rpx;
+-}
+-
+-.entry-header {
+-  margin-bottom: 40rpx;
+-}
+-
+-.entry-title {
+-  font-size: 40rpx;
+-  font-weight: 600;
+-  color: #1A1A1A;
+-  margin-bottom: 12rpx;
+-}
+-
+-.entry-subtitle {
+-  font-size: 28rpx;
+-  color: #65756D;
+-}
+-
+-.entry-cards {
+-  display: flex;
+-  flex-direction: column;
+-  gap: 24rpx;
+-}
+-
+-.entry-card {
+-  background: #FFFFFF;
+-  border-radius: 16rpx;
+-  padding: 32rpx;
+-  display: flex;
+-  align-items: center;
+-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+-}
+-
+-.card-icon {
+-  width: 88rpx;
+-  height: 88rpx;
+-  border-radius: 20rpx;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  margin-right: 24rpx;
+-}
+-
+-.invite-icon {
+-  background: #E8F5E9;
+-}
+-
+-.join-icon {
+-  background: #E3F2FD;
+-}
+-
+-.auth-icon {
+-  background: #FFF3E0;
+-}
+-
+-.icon-text {
+-  font-size: 32rpx;
+-  font-weight: 600;
+-  color: #168957;
+-}
+-
+-.card-content {
+-  flex: 1;
+-}
+-
+-.card-title {
+-  font-size: 32rpx;
+-  font-weight: 500;
+-  color: #1A1A1A;
+-  margin-bottom: 8rpx;
+-}
+-
+-.card-desc {
+-  font-size: 26rpx;
+-  color: #65756D;
+-}
+-
+-.card-arrow {
+-  font-size: 48rpx;
+-  color: #C8C9CC;
+-  margin-left: 16rpx;
+-}
+diff --git a/tests/unit/a7-tab-release.test.js b/tests/unit/a7-tab-release.test.js
+new file mode 100644
+index 0000000..ec8bcee
+--- /dev/null
++++ b/tests/unit/a7-tab-release.test.js
+@@ -0,0 +1,274 @@
++/**
++ * A7 家庭 Tab 正式开放、死页删除与运行时回滚开关（先失败后实现）。
++ * 开关口径：远程配置（healthApi key 'appConfig' → familyTabEnabled 布尔）优先；
++ * 无远程值时按 envVersion 默认——正式发布(release)=关，体验版(trial)/开发版(develop)=开。
++ * 开关只控制 Tab 展示与家庭页数据加载，不构成任何数据授权（授权一律走服务端闸口）。
++ */
++
++const fs = require('fs')
++const path = require('path')
++
++const ROOT = path.join(__dirname, '../..')
++
++// ─── 1. feature-flags 纯单元 ───
++
++let envVersion = 'trial'
++global.wx = Object.assign(global.wx || {}, {
++  getAccountInfoSync: jest.fn(() => ({ miniProgram: { envVersion } })),
++  setNavigationBarTitle: jest.fn(),
++  showToast: jest.fn(),
++  showModal: jest.fn((opt) => opt && opt.success && opt.success({ confirm: true })),
++  setClipboardData: jest.fn(),
++  getStorageSync: jest.fn(() => ''),
++  setStorageSync: jest.fn(),
++  removeStorageSync: jest.fn()
++})
++
++const featureFlags = require('../../utils/feature-flags')
++
++describe('A7 · 运行时开关（utils/feature-flags）', () => {
++  it('端侧默认值：正式发布=关；体验版/开发版=开（明确区分）', () => {
++    envVersion = 'release'
++    expect(featureFlags.getFamilyTabEnabled(null)).toBe(false)
++    envVersion = 'trial'
++    expect(featureFlags.getFamilyTabEnabled(null)).toBe(true)
++    envVersion = 'develop'
++    expect(featureFlags.getFamilyTabEnabled(null)).toBe(true)
++  })
++
++  it('远程配置布尔值覆盖端侧默认；非布尔忽略', () => {
++    envVersion = 'trial'
++    expect(featureFlags.getFamilyTabEnabled({ familyTabEnabled: false })).toBe(false)
++    envVersion = 'release'
++    expect(featureFlags.getFamilyTabEnabled({ familyTabEnabled: true })).toBe(true)
++    expect(featureFlags.getFamilyTabEnabled({ familyTabEnabled: 'yes' })).toBe(false)
++    expect(featureFlags.getFamilyTabEnabled({})).toBe(false)
++    expect(featureFlags.getFamilyTabEnabled(undefined)).toBe(false)
++  })
++
++  it('envVersion 获取异常按 release 处理（保守关闭）', () => {
++    global.wx.getAccountInfoSync.mockImplementationOnce(() => { throw new Error('api unavailable') })
++    expect(featureFlags.getFamilyTabEnabled(null)).toBe(false)
++  })
++})
++
++// ─── 2. 家庭页（开关渲染与数据加载） ───
++
++const mockApi = {
++  getFamilyData: jest.fn(),
++  revokeFamilyMember: jest.fn(),
++  getAppConfig: jest.fn()
++}
++const mockFactory = {
++  autoPreCheck: jest.fn(),
++  bindAdaptiveResize: jest.fn(),
++  unbindAdaptiveResize: jest.fn(),
++  goRoute: jest.fn(),
++  clearPageLoadState: jest.fn(),
++  safeNavigateBack: jest.fn(),
++  safeNavigateTo: jest.fn(),
++  safeSwitchTab: jest.fn(),
++  safeRedirectTo: jest.fn(),
++  safeNavigateWithPageCheck: jest.fn(),
++  safeRedirectWithPageCheck: jest.fn(),
++  loadPageData: jest.fn(),
++  redirectRoute: jest.fn(),
++  showModal: jest.fn(),
++  hasPendingLoad: jest.fn()
++}
++jest.mock('../../utils/api', () => mockApi)
++jest.mock('../../utils/page-factory', () => mockFactory)
++
++const globalData = {}
++global.getApp = () => ({ globalData })
++const pageConfigs = []
++global.Page = (cfg) => { pageConfigs.push(cfg); return cfg }
++require('../../pages/family/index.js') // pageConfigs[0]
++
++function makePage(cfg) {
++  return Object.assign({}, cfg, {
++    data: JSON.parse(JSON.stringify(cfg.data)),
++    route: 'pages/family/index',
++    setData(patch) { Object.assign(this.data, patch) }
++  })
++}
++const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
++
++describe('A7 · 家庭页开关行为', () => {
++  beforeEach(() => {
++    jest.clearAllMocks()
++    envVersion = 'trial'
++    global.wx.getAccountInfoSync.mockImplementation(() => ({ miniProgram: { envVersion } }))
++    Object.keys(globalData).forEach(k => delete globalData[k])
++    mockApi.getAppConfig.mockResolvedValue(null)
++    mockFactory.loadPageData.mockImplementation(async (page, loader) => {
++      try {
++        const d = await loader()
++        Object.assign(page.data, d)
++        page.data._loaded = true
++        page.data.isLoading = false
++        page.data.loadError = ''
++        return d
++      } catch (err) {
++        page.setData({ isLoading: false, loadError: err.message })
++        return null
++      }
++    })
++  })
++
++  it('开关打开（体验版默认）：显示真实家庭页并加载成员数据', async () => {
++    mockApi.getFamilyData.mockResolvedValue({ members: [{ id: 'M1', name: '女儿', status: '已授权' }], familyCount: 1, authStatus: 'active' })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    await flush()
++    expect(page.data.familyTabEnabled).toBe(true)
++    expect(mockApi.getFamilyData).toHaveBeenCalled()
++    expect(page.data.members.length).toBe(1)
++  })
++
++  it('开关关闭（正式版默认）：占位态、不加载家庭数据、isLoading 复位', async () => {
++    envVersion = 'release'
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    await flush()
++    expect(page.data.familyTabEnabled).toBe(false)
++    expect(mockApi.getFamilyData).not.toHaveBeenCalled()
++    expect(page.data.isLoading).toBe(false)
++  })
++
++  it('远程配置覆盖：正式版远程开 → 打开并加载；体验版远程关 → 回到占位', async () => {
++    envVersion = 'release'
++    mockApi.getAppConfig.mockResolvedValue({ familyTabEnabled: true })
++    mockApi.getFamilyData.mockResolvedValue({ members: [], familyCount: 0 })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    await flush(); await flush()
++    expect(page.data.familyTabEnabled).toBe(true)
++    expect(mockApi.getFamilyData).toHaveBeenCalled()
++
++    envVersion = 'trial'
++    mockApi.getAppConfig.mockResolvedValue({ familyTabEnabled: false })
++    const page2 = makePage(pageConfigs[0])
++    await page2.onLoad()
++    await flush(); await flush()
++    expect(page2.data.familyTabEnabled).toBe(false)
++  })
++
++  it('远程配置获取失败：回退端侧默认，不阻塞页面', async () => {
++    mockApi.getAppConfig.mockRejectedValue(new Error('network'))
++    mockApi.getFamilyData.mockResolvedValue({ members: [], familyCount: 0 })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    await flush(); await flush()
++    expect(page.data.familyTabEnabled).toBe(true) // trial 默认
++    expect(page.data.loadError).toBeFalsy()
++  })
++
++  it('加载失败展示错误并可重载', async () => {
++    mockApi.getFamilyData.mockRejectedValueOnce(new Error('云端繁忙'))
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    expect(page.data.loadError).toBe('云端繁忙')
++    mockApi.getFamilyData.mockResolvedValue({ members: [], familyCount: 0 })
++    await page.reloadPage()
++    expect(page.data.loadError).toBe('')
++    expect(page.data._loaded).toBe(true)
++  })
++
++  it('空成员 / pending / active / revoked 状态数据渲染', async () => {
++    mockApi.getFamilyData.mockResolvedValue({ members: [], familyCount: 0, authStatus: 'pending' })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    expect(page.data.members).toEqual([])
++
++    mockApi.getFamilyData.mockResolvedValue({
++      members: [
++        { id: '', bound: false, name: '女儿', status: '待加入' },
++        { id: 'M2', bound: true, name: '儿子', status: '已授权' },
++        { id: 'M3', bound: true, name: '护工', status: '已解除' }
++      ],
++      familyCount: 3
++    })
++    await page.reloadPage()
++    expect(page.data.members.map(m => m.status)).toEqual(['待加入', '已授权', '已解除'])
++  })
++
++  it('邀请/管理/撤销入口行为（含 A1 预览卡守卫）', async () => {
++    mockApi.getFamilyData.mockResolvedValue({ members: [{ id: 'M1', name: '女儿', status: '已授权' }], familyCount: 1 })
++    mockApi.revokeFamilyMember.mockResolvedValue({ memberId: 'M1', revoked: true })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++
++    page.inviteFamily()
++    expect(mockFactory.goRoute).toHaveBeenCalledWith('familyInvite')
++
++    page.manageMember({ currentTarget: { dataset: { id: 'M1' } } })
++    expect(mockFactory.safeNavigateTo).toHaveBeenCalledWith('/pages/family-sub/family-auth/index?id=M1')
++
++    // 邀请预览卡（无 id）不可撤销
++    page.revokeMember({ currentTarget: { dataset: { id: '' } } })
++    expect(global.wx.showToast).toHaveBeenCalled()
++    expect(global.wx.showModal).not.toHaveBeenCalled()
++
++    global.wx.showToast.mockClear()
++    page.revokeMember({ currentTarget: { dataset: { id: 'M1' } } })
++    await flush(); await flush()
++    expect(mockApi.revokeFamilyMember).toHaveBeenCalledWith({ memberId: 'M1' })
++  })
++
++  it('owner 与 member 页面不混淆：家庭页不置 familyView 全局标记、不调家属接口', async () => {
++    mockApi.getFamilyData.mockResolvedValue({ members: [], familyCount: 0 })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    await flush()
++    expect(globalData.familyView).toBeUndefined()
++    expect(mockApi.getFamilyData).toHaveBeenCalled()
++  })
++})
++
++// ─── 3. 死页删除与路由一致性（文件系统契约） ───
++
++describe('A7 · 死页删除与路由一致性', () => {
++  it('pages/family-sub/index 四文件已删除，app.json 不再注册', () => {
++    const dead = ['index.js', 'index.json', 'index.wxml', 'index.wxss']
++    dead.forEach((f) => {
++      expect(fs.existsSync(path.join(ROOT, 'pages/family-sub', f))).toBe(false)
++    })
++    const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'))
++    const sub = (appJson.subPackages || appJson.subpackages).find(s => s.root === 'pages/family-sub/')
++    expect(sub.pages).not.toContain('index')
++    // 其余家属路由注册保持完整（死页删除不影响 invite/join/auth/home-family）
++    expect(sub.pages).toEqual(expect.arrayContaining([
++      'family-invite/index', 'family-join/index', 'family-join-hint/index', 'family-auth/index', 'home-family/index'
++    ]))
++  })
++
++  it('全仓无 pages/family-sub/index 入口引用；routes 键完整', () => {
++    const routesSrc = fs.readFileSync(path.join(ROOT, 'utils/routes.js'), 'utf8')
++    expect(routesSrc).not.toContain('family-sub/index')
++    const routes = require('../../utils/routes')
++    ;['family', 'familyInvite', 'familyJoin', 'familyJoinHint', 'familyAuth', 'homeFamily'].forEach((k) => {
++      expect(typeof routes[k]).toBe('string')
++      expect(routes[k].length).toBeGreaterThan(0)
++    })
++    // tabBar 家庭页注册保持
++    const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'))
++    expect(appJson.pages).toContain('pages/family/index')
++    expect(appJson.tabBar.list.some(t => t.pagePath === 'pages/family/index')).toBe(true)
++  })
++
++  it('回滚开关只作用于家庭 Tab：其他页面不引用 feature-flags', () => {
++    const scanDirs = ['pages/home', 'pages/trend', 'pages/me', 'pages/record', 'pages/medication', 'pages/reminder', 'pages/family-sub']
++    scanDirs.forEach((dir) => {
++      const abs = path.join(ROOT, dir)
++      if (!fs.existsSync(abs)) return
++      fs.readdirSync(abs, { recursive: true }).forEach((f) => {
++        if (!String(f).endsWith('.js')) return
++        const src = fs.readFileSync(path.join(abs, String(f)), 'utf8')
++        expect(src).not.toContain('feature-flags')
++      })
++    })
++    const familySrc = fs.readFileSync(path.join(ROOT, 'pages/family/index.js'), 'utf8')
++    expect(familySrc).toContain('feature-flags')
++  })
++})
+diff --git a/utils/api.js b/utils/api.js
+index 3429303..b84c611 100644
+--- a/utils/api.js
++++ b/utils/api.js
+@@ -261,6 +261,16 @@ function getHomeFamilyData() {
+     .then(medication.mergeHomeFamilyMedicationStatus)
+ }
+ 
++/**
++ * A7：应用级运行时配置（家庭 Tab 回滚开关等）。
++ * 失败/未部署一律返回 null，由端侧 feature-flags 按 envVersion 默认值兜底；
++ * 该结果只影响 Tab 展示，不构成任何数据授权。
++ * @returns {Promise<Object|null>}
++ */
++function getAppConfig() {
++  return resolveMockData('appConfig').catch(() => null)
++}
++
+ /** @returns {Promise<Object>} 提醒中心数据，已应用用药状态和提醒开关。 */
+ function getReminderData() {
+   return settings.getReminderData()
+@@ -323,6 +333,7 @@ module.exports = {
+   getProfileData: profile.getProfileData,
+   getHomeData,
+   getHomeFamilyData,
++  getAppConfig,
+   getRecordBpData: records.getRecordBpData,
+   getRecordBgData: records.getRecordBgData,
+   getRecordDetailData: records.getRecordDetailData,
+diff --git a/utils/feature-flags.js b/utils/feature-flags.js
+new file mode 100644
+index 0000000..89e6c35
+--- /dev/null
++++ b/utils/feature-flags.js
+@@ -0,0 +1,53 @@
++/**
++ * A7 运行时功能开关（家庭 Tab 开放/回滚）。
++ *
++ * 判定优先级：
++ * 1. 远程配置：healthApi key 'appConfig' 返回的 familyTabEnabled（严格布尔才生效）；
++ * 2. 端侧默认：正式发布(release)=关；体验版(trial)/开发版(develop)=开。
++ *
++ * 边界：
++ * - 开关只控制家庭 Tab 页面展示与家庭页数据加载，不构成任何数据授权
++ *   （家属数据授权一律走服务端 family-policy 闸口）；
++ * - envVersion 获取异常按 release 处理（保守关闭）；
++ * - 远程配置未部署/获取失败 → 回退端侧默认，不阻塞页面。
++ */
++
++/**
++ * 读取当前小程序运行环境版本。
++ * @returns {string} develop / trial / release；异常时按 release（保守）。
++ */
++function getEnvVersion() {
++  try {
++    const info = wx.getAccountInfoSync()
++    return (info && info.miniProgram && info.miniProgram.envVersion) || 'release'
++  } catch (e) {
++    return 'release'
++  }
++}
++
++/**
++ * 端侧默认值：正式发布默认关，测试（体验/开发）版默认开——两类默认明确区分。
++ * @param {string} envVersion 环境版本。
++ * @returns {boolean}
++ */
++function defaultFamilyTabEnabled(envVersion) {
++  return envVersion !== 'release'
++}
++
++/**
++ * 解析家庭 Tab 开关。
++ * @param {Object|null} [remoteConfig] 远程配置对象（{ familyTabEnabled?: boolean }）。
++ * @returns {boolean} 开关状态。
++ */
++function getFamilyTabEnabled(remoteConfig) {
++  if (remoteConfig && typeof remoteConfig.familyTabEnabled === 'boolean') {
++    return remoteConfig.familyTabEnabled
++  }
++  return defaultFamilyTabEnabled(getEnvVersion())
++}
++
++module.exports = {
++  getEnvVersion,
++  defaultFamilyTabEnabled,
++  getFamilyTabEnabled
++}

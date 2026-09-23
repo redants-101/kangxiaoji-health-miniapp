@@ -1,0 +1,245 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a0-contract-integration.test.js
+
+FAIL tests/unit/a0-contract-integration.test.js
+  A0-2 集成 · 创建邀请（默认契约）
+    × 空入参生成 pending 邀请：8 关系默认女儿、scopes 读取/提醒默认开、write 默认关 (2 ms)
+    × 未知关系在入口被拒绝，不写入 (16 ms)
+    × report write=true、非布尔、未知/重复 scope 在创建入口被拒绝 (8 ms)
+    × 8 种关系可往返，提交的关系名称写入邀请成员 (1 ms)
+  A0-2 集成 · 加入家庭
+    × 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active (1 ms)
+  A0-2 集成 · 家属首页按 read 输出受控明细
+    × 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏） (3 ms)
+    × 全块 read：血压血糖均输出，用药与周报可见 (1 ms)
+    × 血糖块开、血压块关：只输出血糖 (1 ms)
+  A0-2 集成 · 授权保存/回显
+    × updateFamilyAuth：新 scopes 同步到 family_auth 与 family_members
+    × updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key (4 ms)
+    × getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules (1 ms)
+  A0-2 集成 · owner 本人功能不被误伤
+    × getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成
+
+  ● A0-2 集成 · 创建邀请（默认契约） › 空入参生成 pending 邀请：8 关系默认女儿、scopes 读取/提醒默认开、write 默认关
+
+    TypeError: normalizeFamilyInvitePayload is not a function
+
+    [0m [90m 519 |[39m
+     [90m 520 |[39m   [36masync[39m [36mfunction[39m createFamilyInvite(openId[33m,[39m payload) {
+    [31m[1m>[22m[39m[90m 521 |[39m     [36mconst[39m invite [33m=[39m normalizeFamilyInvitePayload(payload)
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 522 |[39m     [36mconst[39m [ownerName[33m,[39m { data[33m:[39m existing [33m=[39m [] }] [33m=[39m [36mawait[39m [33mPromise[39m[33m.[39mall([
+     [90m 523 |[39m       withPerfLog({
+     [90m 524 |[39m         routeType[33m:[39m [32m'action'[39m[33m,[39m[0m
+
+      at Object.normalizeFamilyInvitePayload [as createFamilyInvite] (cloudfunctions/healthApi/family-service.js:521:20)
+      at Object.createFamilyInvite (tests/unit/a0-contract-integration.test.js:141:34)
+
+  ● A0-2 集成 · 创建邀请（默认契约） › 未知关系在入口被拒绝，不写入
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "关系"
+    Received message:   "normalizeFamilyInvitePayload is not a function"
+
+        [0m [90m 519 |[39m
+         [90m 520 |[39m   [36masync[39m [36mfunction[39m createFamilyInvite(openId[33m,[39m payload) {
+        [31m[1m>[22m[39m[90m 521 |[39m     [36mconst[39m invite [33m=[39m normalizeFamilyInvitePayload(payload)
+         [90m     |[39m                    [31m[1m^[22m[39m
+         [90m 522 |[39m     [36mconst[39m [ownerName[33m,[39m { data[33m:[39m existing [33m=[39m [] }] [33m=[39m [36mawait[39m [33mPromise[39m[33m.[39mall([
+         [90m 523 |[39m       withPerfLog({
+         [90m 524 |[39m         routeType[33m:[39m [32m'action'[39m[33m,[39m[0m
+
+      at Object.normalizeFamilyInvitePayload [as createFamilyInvite] (cloudfunctions/healthApi/family-service.js:521:20)
+      at Object.createFamilyInvite (tests/unit/a0-contract-integration.test.js:163:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/a0-contract-integration.test.js:166:17)
+
+  ● A0-2 集成 · 创建邀请（默认契约） › report write=true、非布尔、未知/重复 scope 在创建入口被拒绝
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "周报"
+    Received message:   "normalizeFamilyInvitePayload is not a function"
+
+        [0m [90m 519 |[39m
+         [90m 520 |[39m   [36masync[39m [36mfunction[39m createFamilyInvite(openId[33m,[39m payload) {
+        [31m[1m>[22m[39m[90m 521 |[39m     [36mconst[39m invite [33m=[39m normalizeFamilyInvitePayload(payload)
+         [90m     |[39m                    [31m[1m^[22m[39m
+         [90m 522 |[39m     [36mconst[39m [ownerName[33m,[39m { data[33m:[39m existing [33m=[39m [] }] [33m=[39m [36mawait[39m [33mPromise[39m[33m.[39mall([
+         [90m 523 |[39m       withPerfLog({
+         [90m 524 |[39m         routeType[33m:[39m [32m'action'[39m[33m,[39m[0m
+
+      at Object.normalizeFamilyInvitePayload [as createFamilyInvite] (cloudfunctions/healthApi/family-service.js:521:20)
+      at Object.createFamilyInvite (tests/unit/a0-contract-integration.test.js:173:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/a0-contract-integration.test.js:175:17)
+
+  ● A0-2 集成 · 创建邀请（默认契约） › 8 种关系可往返，提交的关系名称写入邀请成员
+
+    TypeError: normalizeFamilyInvitePayload is not a function
+
+    [0m [90m 519 |[39m
+     [90m 520 |[39m   [36masync[39m [36mfunction[39m createFamilyInvite(openId[33m,[39m payload) {
+    [31m[1m>[22m[39m[90m 521 |[39m     [36mconst[39m invite [33m=[39m normalizeFamilyInvitePayload(payload)
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 522 |[39m     [36mconst[39m [ownerName[33m,[39m { data[33m:[39m existing [33m=[39m [] }] [33m=[39m [36mawait[39m [33mPromise[39m[33m.[39mall([
+     [90m 523 |[39m       withPerfLog({
+     [90m 524 |[39m         routeType[33m:[39m [32m'action'[39m[33m,[39m[0m
+
+      at Object.normalizeFamilyInvitePayload [as createFamilyInvite] (cloudfunctions/healthApi/family-service.js:521:20)
+      at Object.createFamilyInvite (tests/unit/a0-contract-integration.test.js:191:21)
+
+  ● A0-2 集成 · 加入家庭 › 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active
+
+    TypeError: normalizeFamilyInvitePayload is not a function
+
+    [0m [90m 519 |[39m
+     [90m 520 |[39m   [36masync[39m [36mfunction[39m createFamilyInvite(openId[33m,[39m payload) {
+    [31m[1m>[22m[39m[90m 521 |[39m     [36mconst[39m invite [33m=[39m normalizeFamilyInvitePayload(payload)
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 522 |[39m     [36mconst[39m [ownerName[33m,[39m { data[33m:[39m existing [33m=[39m [] }] [33m=[39m [36mawait[39m [33mPromise[39m[33m.[39mall([
+     [90m 523 |[39m       withPerfLog({
+     [90m 524 |[39m         routeType[33m:[39m [32m'action'[39m[33m,[39m[0m
+
+      at Object.normalizeFamilyInvitePayload [as createFamilyInvite] (cloudfunctions/healthApi/family-service.js:521:20)
+      at Object.createFamilyInvite (tests/unit/a0-contract-integration.test.js:205:34)
+
+  ● A0-2 集成 · 家属首页按 read 输出受控明细 › 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏）
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "血压",
+    - ]
+    + Array []
+
+    [0m [90m 257 |[39m     [36mconst[39m home [33m=[39m [36mawait[39m service[33m.[39mgetHomeFamilyData([32m'member-1'[39m)
+     [90m 258 |[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(home[33m.[39mlatestMetrics[33m.[39mmap(m [33m=>[39m m[33m.[39mlabel))[33m.[39mtoEqual([[32m'血压'[39m])
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(home[33m.[39mmedicineLogs)[33m.[39mtoEqual([])
+     [90m 261 |[39m     expect(home[33m.[39mreportSummary)[33m.[39mtoBe([32m'暂未授权查看周报。'[39m)
+     [90m 262 |[39m     expect(home[33m.[39mmember[33m.[39mscopeText)[33m.[39mtoBe([32m'血压记录'[39m)[0m
+
+      at Object.toEqual (tests/unit/a0-contract-integration.test.js:259:50)
+
+  ● A0-2 集成 · 家属首页按 read 输出受控明细 › 全块 read：血压血糖均输出，用药与周报可见
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "血压",
+    -   "血糖",
+    - ]
+    + Array []
+
+    [0m [90m 267 |[39m     [36mconst[39m home [33m=[39m [36mawait[39m service[33m.[39mgetHomeFamilyData([32m'member-1'[39m)
+     [90m 268 |[39m
+    [31m[1m>[22m[39m[90m 269 |[39m     expect(home[33m.[39mlatestMetrics[33m.[39mmap(m [33m=>[39m m[33m.[39mlabel)[33m.[39msort())[33m.[39mtoEqual([[32m'血压'[39m[33m,[39m [32m'血糖'[39m])
+     [90m     |[39m                                                         [31m[1m^[22m[39m
+     [90m 270 |[39m     expect(home[33m.[39mmedicineLogs[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)
+     [90m 271 |[39m     expect(home[33m.[39mreportSummary)[33m.[39mnot[33m.[39mtoBe([32m'暂未授权查看周报。'[39m)
+     [90m 272 |[39m   })[0m
+
+      at Object.toEqual (tests/unit/a0-contract-integration.test.js:269:57)
+
+  ● A0-2 集成 · 家属首页按 read 输出受控明细 › 血糖块开、血压块关：只输出血糖
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "血糖",
+    - ]
+    + Array []
+
+    [0m [90m 280 |[39m     ])
+     [90m 281 |[39m     [36mconst[39m home [33m=[39m [36mawait[39m service[33m.[39mgetHomeFamilyData([32m'member-1'[39m)
+    [31m[1m>[22m[39m[90m 282 |[39m     expect(home[33m.[39mlatestMetrics[33m.[39mmap(m [33m=>[39m m[33m.[39mlabel))[33m.[39mtoEqual([[32m'血糖'[39m])
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 283 |[39m   })
+     [90m 284 |[39m })
+     [90m 285 |[39m[0m
+
+      at Object.toEqual (tests/unit/a0-contract-integration.test.js:282:50)
+
+  ● A0-2 集成 · 授权保存/回显 › updateFamilyAuth：新 scopes 同步到 family_auth 与 family_members
+
+    TypeError: normalizeFamilyAuthPayload is not a function
+
+    [0m [90m 446 |[39m     [36mconst[39m memberId [33m=[39m payload [33m&&[39m payload[33m.[39mmemberId
+     [90m 447 |[39m     [36mconst[39m authData [33m=[39m {
+    [31m[1m>[22m[39m[90m 448 |[39m       [33m...[39mnormalizeFamilyAuthPayload(payload)[33m,[39m
+     [90m     |[39m          [31m[1m^[22m[39m
+     [90m 449 |[39m       updatedAt[33m:[39m db[33m.[39mserverDate()
+     [90m 450 |[39m     }
+     [90m 451 |[39m[0m
+
+      at Object.normalizeFamilyAuthPayload [as updateFamilyAuth] (cloudfunctions/healthApi/family-service.js:448:10)
+      at Object.updateFamilyAuth (tests/unit/a0-contract-integration.test.js:293:19)
+
+  ● A0-2 集成 · 授权保存/回显 › updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "周报"
+    Received message:   "normalizeFamilyAuthPayload is not a function"
+
+        [0m [90m 446 |[39m     [36mconst[39m memberId [33m=[39m payload [33m&&[39m payload[33m.[39mmemberId
+         [90m 447 |[39m     [36mconst[39m authData [33m=[39m {
+        [31m[1m>[22m[39m[90m 448 |[39m       [33m...[39mnormalizeFamilyAuthPayload(payload)[33m,[39m
+         [90m     |[39m          [31m[1m^[22m[39m
+         [90m 449 |[39m       updatedAt[33m:[39m db[33m.[39mserverDate()
+         [90m 450 |[39m     }
+         [90m 451 |[39m[0m
+
+      at Object.normalizeFamilyAuthPayload [as updateFamilyAuth] (cloudfunctions/healthApi/family-service.js:448:10)
+      at Object.updateFamilyAuth (tests/unit/a0-contract-integration.test.js:321:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/a0-contract-integration.test.js:323:17)
+
+  ● A0-2 集成 · 授权保存/回显 › getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules
+
+    TypeError: getDefaultFamilyScopes is not a function
+
+    [0m [90m 436 |[39m       memberId[33m:[39m auth[33m.[39m_id [33m||[39m [32m''[39m[33m,[39m
+     [90m 437 |[39m       member[33m:[39m auth[33m.[39mmember [33m||[39m getDefaultFamilyMember()[33m,[39m
+    [31m[1m>[22m[39m[90m 438 |[39m       scopes[33m:[39m auth[33m.[39mscopes [33m||[39m getDefaultFamilyScopes()[33m,[39m
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 439 |[39m       noticeRules[33m:[39m auth[33m.[39mnoticeRules [33m||[39m getDefaultNoticeRules()[33m,[39m
+     [90m 440 |[39m       activities[33m:[39m auth[33m.[39mactivities [33m||[39m [][33m,[39m
+     [90m 441 |[39m       memberName[33m:[39m auth[33m.[39mmemberName [33m||[39m [32m''[39m[0m
+
+      at Object.getDefaultFamilyScopes [as getFamilyAuthData] (cloudfunctions/healthApi/family-service.js:438:30)
+      at Object.<anonymous> (tests/unit/a0-contract-integration.test.js:346:18)
+
+  ● A0-2 集成 · owner 本人功能不被误伤 › getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成
+
+    TypeError: getScopeText is not a function
+
+    [0m [90m 232 |[39m
+     [90m 233 |[39m     [36mconst[39m auth [33m=[39m authList[[35m0[39m] [33m||[39m {}
+    [31m[1m>[22m[39m[90m 234 |[39m     [36mconst[39m scope [33m=[39m getScopeText(auth)
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 235 |[39m
+     [90m 236 |[39m     [36mif[39m ([33m![39mauth[33m.[39m_id [33m||[39m auth[33m.[39mstatus [33m===[39m [32m'revoked'[39m) {
+     [90m 237 |[39m       [36mreturn[39m {[0m
+
+      at Object.getScopeText [as getFamilyData] (cloudfunctions/healthApi/family-service.js:234:19)
+      at Object.<anonymous> (tests/unit/a0-contract-integration.test.js:368:18)
+
+Test Suites: 1 failed, 1 total
+Tests:       12 failed, 12 total
+Snapshots:   0 total
+Time:        0.72 s
+Ran all test suites matching /tests\\unit\\a0-contract-integration.test.js/i.

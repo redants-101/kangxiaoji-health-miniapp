@@ -1,0 +1,1430 @@
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index 71a6d5d..03e7927 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -35,7 +35,7 @@ function createFamilyService({
+   getLimitedString,
+   createInviteCode
+ }) {
+-  // ============ A2：邀请错误码、频控与失效分类 ============
++  // ============ A2：邀请错误码、原子频控与失效分类 ============
+ 
+   // 构造带稳定错误码的异常（errMsg 供 toast，code 供页面状态分支）
+   function inviteError(key) {
+@@ -45,56 +45,110 @@ function createFamilyService({
+     return error
+   }
+ 
+-  // 当日失败计数：openId + 北京自然日（云函数运行在 UTC，必须用北京日界，否则 0-8 点串日）
+-  async function countTodayInviteFailures(openId) {
+-    const { total } = await db.collection(collections.inviteAttempts)
+-      .where({ openId, day: getTodayDateValue() })
+-      .count()
+-    return total
++  // 计入失败额量的错误码（枚举类失败）；自绑/已绑定/频控本身不占额度
++  const COUNTED_FAILURE_CODES = new Set([
++    FAMILY_INVITE_ERRORS.notFound.code,
++    FAMILY_INVITE_ERRORS.invalid.code,
++    FAMILY_INVITE_ERRORS.expired.code,
++    FAMILY_INVITE_ERRORS.revoked.code,
++    FAMILY_INVITE_ERRORS.used.code
++  ])
++
++  // 频控计数文档：每 (openId, 北京自然日) 一条，_id 确定性生成。
++  // 日界正确性由 key 内嵌 day 保证；TTL 索引只负责物理清理。
++  function inviteFailureKey(openId) {
++    return `invite-fail-${openId}-${getTodayDateValue()}`
+   }
+ 
+-  // 失败记录：只存 openId/日期/错误码，不存邀请码明文（decisions #10）
+-  async function recordInviteFailure(openId, reasonCode) {
+-    await db.collection(collections.inviteAttempts).add({
+-      data: {
+-        openId,
+-        day: getTodayDateValue(),
+-        reason: reasonCode,
+-        createdAt: db.serverDate()
++  /**
++   * 原子预留一个失败额度（reserve）：
++   * 条件更新 where({_id, count < 20}).update(count+1) 依赖单文档写原子性
++   * （MongoDB 官方乐观锁模式，能力来源见 rate-limit-plan.md §2），
++   * 并发请求不可能全部先通过门限再各自探测邀请。
++   * 文档不存在时以确定性 _id 创建；add 撞唯一冲突则回到条件更新重试一次。
++   * @returns {Promise<{key: string}|null>} null 表示额度已满，应拒绝（RATE_LIMITED）。
++   */
++  async function reserveFailureSlot(openId) {
++    const key = inviteFailureKey(openId)
++    const day = getTodayDateValue()
++    for (let attempt = 0; attempt < 2; attempt += 1) {
++      const res = await db.collection(collections.inviteAttempts)
++        .where({ _id: key, count: _.lt(INVITE_FAILURE_LIMIT_PER_DAY) })
++        .update({ data: { count: _.inc(1), updatedAt: db.serverDate() } })
++      if (res && res.stats && res.stats.updated > 0) {
++        return { key }
+       }
+-    })
++      const { data } = await db.collection(collections.inviteAttempts)
++        .where({ _id: key })
++        .limit(1)
++        .get()
++      if (data.length) {
++        return null // 文档存在但条件更新未命中 → count 已达上限
++      }
++      try {
++        await db.collection(collections.inviteAttempts).add({
++          data: {
++            _id: key,
++            openId,
++            day,
++            count: 1,
++            createdAt: db.serverDate(),
++            updatedAt: db.serverDate()
++          }
++        })
++        return { key }
++      } catch (e) {
++        // 并发创建撞 _id 唯一性 → 下一轮条件更新
++      }
++    }
++    return null // 两轮仍未取得额度：保守拒绝（fail-closed）
+   }
+ 
+-  async function assertInviteRateLimit(openId) {
+-    const failures = await countTodayInviteFailures(openId)
+-    if (failures >= INVITE_FAILURE_LIMIT_PER_DAY) {
+-      throw inviteError('rateLimited')
++  /**
++   * 退还预留额度（成功/非枚举类业务拒绝/基础设施异常时调用）。
++   * 退还失败只会使额度偏紧（fail-closed），不放宽，不阻断主流程。
++   */
++  async function releaseFailureSlot(key) {
++    try {
++      await db.collection(collections.inviteAttempts)
++        .where({ _id: key, count: _.gt(0) })
++        .update({ data: { count: _.inc(-1), updatedAt: db.serverDate() } })
++    } catch (e) {
++      // 方向安全（只会更严），静默
+     }
+   }
+ 
+-  // 邀请文档失效分类（decisions #9/#15）：
+-  // 不存在 → notFound；expiresAt 缺失一律 invalid（不做兼容）；revoked/used/expired 依序判定。
++  // 邀请文档失效分类（decisions #9/#15 + 收尾修正）：
++  // 不存在 → notFound；expiresAt 缺失或不可解析一律 invalid（不做兼容）；
++  // revoked/used 依序判定；刚好到期（<=now）按 expired。
+   // self/bound 不在本分类内（需结合调用者身份，由 join 流程单独判定）。
+   function classifyInviteAuth(auth, openId) {
+     if (!auth) return 'notFound'
+     if (!auth.expiresAt) return 'invalid'
+     if (auth.status === 'revoked') return 'revoked'
+     if (auth.status === 'active' && auth.memberOpenId && auth.memberOpenId !== openId) return 'used'
+-    if (new Date(auth.expiresAt).getTime() < Date.now()) return 'expired'
++    const expiry = new Date(auth.expiresAt).getTime()
++    if (!Number.isFinite(expiry)) return 'invalid'
++    if (expiry <= Date.now()) return 'expired'
+     return null
+   }
+ 
+   // 邀请码唯一性前置检查（decisions #11 的代码侧部分）：
+-  // 生成后按码查重，他人持有则重生成（最多 3 次）；owner 单文档重邀命中自己旧码不算冲突。
+-  // 注意：这只是前置检查，并发唯一性的最终保障是云端 family_auth.inviteCode sparse 唯一索引（控制台部署条件）。
+-  async function generateUniqueInviteCode(openId) {
++  // 候选码与任何现存文档同码（含 owner 自己的当前码）都视为冲突并重新生成——
++  // 重邀必须发新码，否则旧码在重邀后仍有效，构成"重邀/加入交错"的攻击面。
++  // 并发唯一性的最终保障是云端 family_auth.inviteCode sparse 唯一索引（已建）。
++  async function generateUniqueInviteCode() {
+     for (let attempt = 0; attempt < 3; attempt += 1) {
+       const candidate = createInviteCode()
++      // 生成器异常输出按冲突处理，继续重试；3 次后统一抛错
++      if (typeof candidate !== 'string' || !INVITE_CODE_PATTERN.test(candidate)) {
++        continue
++      }
+       const { data: dup = [] } = await db.collection(collections.familyAuth)
+         .where({ inviteCode: candidate })
+         .limit(1)
+         .get()
+-      if (!dup.length || dup[0]._openid === openId) {
++      if (!dup.length) {
+         return candidate
+       }
+     }
+@@ -353,10 +407,30 @@ function createFamilyService({
+   }
+ 
+   async function getFamilyJoinData(openId, payload = {}) {
+-    const rawCode = (payload && (payload.inviteCode || payload.inviteId)) || ''
+-    const inviteCode = typeof rawCode === 'string' ? rawCode.trim() : ''
++    const rawCode = payload ? (payload.inviteCode !== undefined ? payload.inviteCode : payload.inviteId) : undefined
++
++    // 无邀请码说明态：仅 undefined/null/空串/纯空白串；不显示有效期与可查看范围，不计失败
++    const isAbsent = rawCode === undefined || rawCode === null ||
++      (typeof rawCode === 'string' && rawCode.trim() === '')
++    if (isAbsent) {
++      return {
++        noInvite: true,
++        inviteCode: '',
++        inviteTitle: '尚未获得邀请',
++        inviteSubtitle: '请通过家人分享的邀请链接或邀请码进入。',
++        remainHours: 0,
++        agreed: false,
++        identity: {
++          initial: '家',
++          title: '家属',
++          meta: '获得邀请后可查看授权范围'
++        },
++        scopes: []
++      }
++    }
++
+     const basePage = {
+-      inviteCode,
++      inviteCode: typeof rawCode === 'string' ? rawCode.trim() : '',
+       inviteTitle: '家庭健康记录邀请',
+       inviteSubtitle: '加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。',
+       remainHours: 24,
+@@ -369,9 +443,6 @@ function createFamilyService({
+       scopes: getDefaultInviteScopesV2().filter(scope => scope.read === true)
+     }
+ 
+-    // 未携带邀请码：默认说明页，不算失败、不计数
+-    if (!inviteCode) return basePage
+-
+     const failPage = (key) => ({
+       ...basePage,
+       scopes: [],
+@@ -379,50 +450,64 @@ function createFamilyService({
+       inviteError: { ...FAMILY_INVITE_ERRORS[key] }
+     })
+ 
+-    // 频控门限（decisions #10）：当日失败 ≥20 次拒绝继续查询；拒绝本身不计数
+-    const failures = await countTodayInviteFailures(openId)
+-    if (failures >= INVITE_FAILURE_LIMIT_PER_DAY) return failPage('rateLimited')
++    // 原子预留额度（查询与 join 共用；预留成功才允许探测邀请）
++    const slot = await reserveFailureSlot(openId)
++    if (!slot) return failPage('rateLimited')
+ 
+-    // 格式错误：不查库，记失败
+-    if (!INVITE_CODE_PATTERN.test(inviteCode)) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS.invalid.code)
++    // 非字符串真值属非法输入，不得冒充缺码：按 INVALID 处理并占用额度
++    if (typeof rawCode !== 'string') {
+       return failPage('invalid')
+     }
++    const inviteCode = rawCode.trim()
++
++    let auth = null
++    let failureKey = null
++    try {
++      if (!INVITE_CODE_PATTERN.test(inviteCode)) {
++        failureKey = 'invalid'
++      } else {
++        const { data: authList = [] } = await withPerfLog({
++          routeType: 'key',
++          route: 'familyJoin',
++          step: 'db.familyAuth.byInvite'
++        }, () => db.collection(collections.familyAuth)
++          .where({ inviteCode })
++          .field({
++            _id: true,
++            _openid: true,
++            ownerOpenId: true,
++            ownerName: true,
++            status: true,
++            member: true,
++            scopes: true,
++            expiresAt: true
++          })
++          .limit(1)
++          .get())
++        auth = authList[0]
++        failureKey = classifyInviteAuth(auth, openId)
++      }
++    } catch (err) {
++      // 基础设施异常：退还额度（不计为用户失败），原样上抛走页面网络失败态
++      await releaseFailureSlot(slot.key)
++      throw err
++    }
+ 
+-    const { data: authList = [] } = await withPerfLog({
+-      routeType: 'key',
+-      route: 'familyJoin',
+-      step: 'db.familyAuth.byInvite'
+-    }, () => db.collection(collections.familyAuth)
+-      .where({ inviteCode })
+-      .field({
+-        _id: true,
+-        _openid: true,
+-        ownerOpenId: true,
+-        ownerName: true,
+-        status: true,
+-        member: true,
+-        scopes: true,
+-        expiresAt: true
+-      })
+-      .limit(1)
+-      .get())
+-
+-    const auth = authList[0]
+-    const failureKey = classifyInviteAuth(auth, openId)
+     if (failureKey) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS[failureKey].code)
+-      return failPage(failureKey)
++      return failPage(failureKey) // 预留额度即失败计数，不退还
+     }
+ 
++    // 查询成功：退还额度
++    await releaseFailureSlot(slot.key)
++
+     const ownerOpenId = auth.ownerOpenId || auth._openid
+     const ownerName = auth.ownerName || await withPerfLog({
+       routeType: 'key',
+       route: 'familyJoin',
+       step: 'db.profiles.ownerName'
+     }, () => getProfileDisplayName(ownerOpenId))
+-    // classify 已保证 expiresAt 存在（decisions #15），此处无需兼容分支
+-    const remainHours = Math.max(0, Math.ceil((new Date(auth.expiresAt).getTime() - Date.now()) / (60 * 60 * 1000)))
++    // classify 已保证 expiresAt 存在、可解析且未到期，remainHours 必为有限正数
++    const remainHours = Math.max(1, Math.ceil((new Date(auth.expiresAt).getTime() - Date.now()) / (60 * 60 * 1000)))
+     const relation = auth.member || getDefaultFamilyMember()
+     return {
+       inviteCode,
+@@ -606,7 +691,7 @@ function createFamilyService({
+         .get())
+     ])
+ 
+-    const inviteCode = await generateUniqueInviteCode(openId)
++    const inviteCode = await generateUniqueInviteCode()
+     const inviteData = {
+       ownerOpenId: openId,
+       ownerName,
+@@ -699,11 +784,30 @@ function createFamilyService({
+   async function joinFamilyByInvite(openId, payload) {
+     const inviteCode = validateInviteCodePayload(payload)
+ 
+-    // A2 频控门限：join 与查询共用同一计数，防止绕过查询接口直接刷 join 枚举
+-    await assertInviteRateLimit(openId)
++    // 原子预留额度：join 与查询共用同一计数（防止绕过查询接口直接刷 join 枚举）。
++    // 预留成功才允许探测邀请；额度已满直接拒绝，不发生任何邀请查询。
++    const slot = await reserveFailureSlot(openId)
++    if (!slot) {
++      throw inviteError('rateLimited')
++    }
+ 
++    let result
++    try {
++      result = await executeFamilyJoin(openId, inviteCode)
++    } catch (err) {
++      // 枚举类失败（notFound/invalid/expired/revoked/used）保留额度即计数；
++      // 自绑/已绑定等非枚举业务拒绝与基础设施异常（无 code）退还额度后原样上抛。
++      if (!err || !COUNTED_FAILURE_CODES.has(err.code)) {
++        await releaseFailureSlot(slot.key)
++      }
++      throw err
++    }
++    await releaseFailureSlot(slot.key) // 成功（含幂等重复加入）退还额度
++    return result
++  }
++
++  async function executeFamilyJoin(openId, inviteCode) {
+     if (!INVITE_CODE_PATTERN.test(inviteCode)) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS.invalid.code)
+       throw inviteError('invalid')
+     }
+ 
+@@ -719,7 +823,6 @@ function createFamilyService({
+     const auth = authList[0]
+     const failureKey = classifyInviteAuth(auth, openId)
+     if (failureKey) {
+-      await recordInviteFailure(openId, FAMILY_INVITE_ERRORS[failureKey].code)
+       throw inviteError(failureKey)
+     }
+     const ownerOpenId = assertJoinableAuth(auth, openId)
+@@ -754,18 +857,16 @@ function createFamilyService({
+       }, () => getProfileDisplayName(ownerOpenId))
+ 
+     // 原子路径（云函数环境）：确定性锚点文档把同一成员的并发加入压到同一把事务锁；
+-    // 邀请文档在事务内重读复核，两名成员抢同一邀请码时后写事务触发冲突重试并被状态复核拒绝。
+-    // 事务为快照隔离：保障来自单文档写锁，而非查询快照（见 A1 data-flow-review §3）。
++    // 事务内重读邀请文档并复核 inviteCode 一致性——owner 重邀换码后，
++    // 持旧码的在途请求按 notFound 拒绝，不得消耗新邀请。
++    // doc.get 依赖 cloud.database({throwOnNotFound:false})：不存在返回 data:null（确认的不存在），
++    // 网络/权限/事务冲突等异常直接上抛，绝不吞掉后继续写入。
+     if (typeof db.runTransaction === 'function') {
+       return await db.runTransaction(async (transaction) => {
+         const anchorId = getMemberAnchorId(openId)
+         const anchorRef = transaction.collection(collections.familyMembers).doc(anchorId)
+-        let anchor = null
+-        try {
+-          anchor = await anchorRef.get()
+-        } catch (e) {
+-          anchor = null // 锚点不存在
+-        }
++        const anchorRes = await anchorRef.get()
++        const anchor = anchorRes && anchorRes.data ? anchorRes.data : null
+         if (anchor && anchor.status === 'active') {
+           if (anchor.ownerOpenId !== ownerOpenId) {
+             throw inviteError('bound')
+@@ -774,13 +875,17 @@ function createFamilyService({
+         }
+ 
+         const authRef = transaction.collection(collections.familyAuth).doc(auth._id)
+-        let latestAuth = null
+-        try {
+-          latestAuth = await authRef.get()
+-        } catch (e) {
+-          latestAuth = null
++        const authRes = await authRef.get()
++        const latestAuth = authRes && authRes.data ? authRes.data : null
++        // 重验提交码与最新邀请一致（重邀交错防线）
++        if (!latestAuth || latestAuth.inviteCode !== inviteCode) {
++          throw inviteError('notFound')
++        }
++        // 复核状态/有效期/自绑
++        const txOwnerOpenId = assertJoinableAuth(latestAuth, openId)
++        if (txOwnerOpenId !== ownerOpenId) {
++          throw inviteError('notFound')
+         }
+-        assertJoinableAuth(latestAuth, openId)
+ 
+         const relationData = buildJoinRelationData(latestAuth, ownerOpenId, ownerName, openId, inviteCode)
+         if (anchor) {
+diff --git a/cloudfunctions/healthApi/index.js b/cloudfunctions/healthApi/index.js
+index 801cd6b..cb8dba5 100644
+--- a/cloudfunctions/healthApi/index.js
++++ b/cloudfunctions/healthApi/index.js
+@@ -45,7 +45,11 @@ cloud.init({
+   env: cloud.DYNAMIC_CURRENT_ENV  // 自动使用当前云环境
+ })
+ 
+-const db = cloud.database()
++// throwOnNotFound:false —— 事务内 doc.get 对"确认不存在"返回 data:null，
++// 让 A1/A2 的事务分支能区分【不存在】与【网络/权限/冲突异常】，不再吞异常。
++// 副作用核查：全仓仅 daily-stats-service 两处 doc.get（未命中原本走 catch 回退空统计），
++// 改后走 data:null → getDocData 返回 null → 同样回退空统计，最终行为不变，仅日志分类更准确。
++const db = cloud.database({ throwOnNotFound: false })
+ const _ = db.command
+ const $ = db.command.aggregate
+ const { getResultCount, logPerf, withPerfLog } = createPerfLogger(console)
+diff --git a/pages/family-sub/family-join/index.js b/pages/family-sub/family-join/index.js
+index da8af82..844dd77 100644
+--- a/pages/family-sub/family-join/index.js
++++ b/pages/family-sub/family-join/index.js
+@@ -30,7 +30,8 @@ Page({
+     loadError: '',
+     inviteCodeFromRoute: '',
+     pendingAction: '',
+-    inviteErrorTitle: ''
++    inviteErrorTitle: '',
++    noInvite: false
+   },
+ 
+   /**
+@@ -89,6 +90,14 @@ Page({
+    * @returns {void} 未勾选边界说明时阻止加入；通过后进入家属首页。
+    */
+   async joinFamily() {
++    // A2：无邀请说明态禁止提交
++    if (this.data.noInvite) {
++      wx.showToast({
++        title: '请通过家人分享的邀请进入',
++        icon: 'none'
++      })
++      return
++    }
+     // A2：邀请处于错误态（无效/过期/撤销/已用/频控）时禁止提交
+     if (this.data.inviteError) {
+       wx.showToast({
+diff --git a/pages/family-sub/family-join/index.wxml b/pages/family-sub/family-join/index.wxml
+index ab1b322..d32da49 100644
+--- a/pages/family-sub/family-join/index.wxml
++++ b/pages/family-sub/family-join/index.wxml
+@@ -24,6 +24,18 @@
+     </view>
+   </view>
+ </block>
++<block wx:elif="{{noInvite}}">
++  <view class="join-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
++    <view class="invite-panel">
++      <view class="eyebrow">家庭邀请</view>
++      <view class="title">{{inviteTitle}}</view>
++      <view class="subtitle">{{inviteSubtitle}}</view>
++    </view>
++    <view class="section">
++      <notice-bar text="通过家人分享的邀请链接打开本页，或获得邀请码后进入，即可在这里查看授权范围并加入家庭。" />
++    </view>
++  </view>
++</block>
+ <block wx:else>
+   <view class="join-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+   <view class="invite-panel">
+diff --git a/scripts/health-api-regression.js b/scripts/health-api-regression.js
+index 2251a8a..920b6a1 100644
+--- a/scripts/health-api-regression.js
++++ b/scripts/health-api-regression.js
+@@ -100,7 +100,15 @@ class MockCollectionQuery {
+     const docs = this.docId
+       ? this.db.data[this.name].filter(item => item._id === this.docId)
+       : this.db.data[this.name].filter(item => this.db.matches(item, this.query))
+-    docs.forEach(doc => Object.assign(doc, clone(data)))
++    docs.forEach((doc) => {
++      Object.entries(data).forEach(([key, value]) => {
++        if (value && value.__op === 'inc') {
++          doc[key] = (typeof doc[key] === 'number' ? doc[key] : 0) + value.value
++        } else {
++          doc[key] = clone(value)
++        }
++      })
++    })
+     return Promise.resolve({ stats: { updated: docs.length } })
+   }
+ 
+@@ -178,6 +186,12 @@ class MockDb {
+       if (expected && expected.__op === 'in') {
+         return expected.values.includes(doc[key])
+       }
++      if (expected && expected.__op === 'lt') {
++        return typeof doc[key] === 'number' && doc[key] < expected.value
++      }
++      if (expected && expected.__op === 'gt') {
++        return typeof doc[key] === 'number' && doc[key] > expected.value
++      }
+       return doc[key] === expected
+     })
+   }
+@@ -320,7 +334,12 @@ async function testFamilyService() {
+ 
+   const service = createFamilyService({
+     db,
+-    _: { in: values => ({ __op: 'in', values }) },
++    _: {
++      in: values => ({ __op: 'in', values }),
++      lt: value => ({ __op: 'lt', value }),
++      gt: value => ({ __op: 'gt', value }),
++      inc: value => ({ __op: 'inc', value })
++    },
+     collections: COLLECTIONS,
+     withPerfLog,
+     getProfileDisplayName,
+diff --git a/services/family.js b/services/family.js
+index 4fdd252..b2b8f61 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -211,7 +211,7 @@ function createFamilyInviteLocal(payload, remoteResult) {
+ 
+ function joinFamilyByInviteLocal(payload, remoteResult) {
+   const storedAuth = getStoredFamilyAuth() || {}
+-  const inviteCode = (payload && payload.inviteCode) || storedAuth.inviteCode || ''
++  const inviteCode = (payload && payload.inviteCode) || ''
+ 
+   // A2（decisions #15）：本地模式镜像校验——码必须匹配且未过期，失败不假成功。
+   // 错误码与云端契约一致，页面可统一消费。
+@@ -220,6 +220,10 @@ function joinFamilyByInviteLocal(payload, remoteResult) {
+     error.code = code
+     throw error
+   }
++  // 无码（payload 与本地记录都没有）：尚未获得邀请，不得假成功
++  if (!inviteCode && !storedAuth.inviteCode) {
++    localInviteError('FAMILY_INVITE_NOT_FOUND', '邀请不存在或已失效')
++  }
+   if (storedAuth.inviteCode && inviteCode !== storedAuth.inviteCode) {
+     localInviteError('FAMILY_INVITE_NOT_FOUND', '邀请不存在或已失效')
+   }
+diff --git a/tests/unit/a0-contract-integration.test.js b/tests/unit/a0-contract-integration.test.js
+index 5c0bade..92cd701 100644
+--- a/tests/unit/a0-contract-integration.test.js
++++ b/tests/unit/a0-contract-integration.test.js
+@@ -41,6 +41,8 @@ class StoreQuery {
+       ? this.store.rows.filter(d => d._id === this.docId)
+       : this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
+         if (v && v.__op === 'in') return v.values.includes(d[k])
++        if (v && v.__op === 'lt') return typeof d[k] === 'number' && d[k] < v.value
++        if (v && v.__op === 'gt') return typeof d[k] === 'number' && d[k] > v.value
+         return d[k] === v
+       }))
+   }
+@@ -57,13 +59,23 @@ class StoreQuery {
+   }
+   async count() { return { total: this._targets().length } }
+   async add({ data }) {
+-    const _id = `doc-${this.store.seq++}`
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) {
++      const err = new Error('E11000 duplicate key error')
++      err.errCode = -502005
++      throw err
++    }
+     this.store.rows.push({ _id, ...clone(data) })
+     return { _id }
+   }
+   async update({ data }) {
+     const targets = this._targets()
+-    targets.forEach(d => Object.assign(d, clone(data)))
++    targets.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
+     return { stats: { updated: targets.length } }
+   }
+   async remove() {
+@@ -91,9 +103,14 @@ function createStoreDb(initial = {}) {
+ }
+ 
+ const commands = {
+-  in: values => ({ __op: 'in', values })
++  in: values => ({ __op: 'in', values }),
++  lt: value => ({ __op: 'lt', value }),
++  gt: value => ({ __op: 'gt', value }),
++  inc: value => ({ __op: 'inc', value })
+ }
+ 
++let inviteSeq = 0
++
+ // 全量装配：与 index.js 中 getFamilyService 使用同一套 family-policy 导出
+ const policy = require('../../cloudfunctions/healthApi/family-policy')
+ const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
+@@ -120,7 +137,8 @@ function createService(db) {
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+     validateInviteCodePayload: policy.validateInviteCodePayload,
+     getLimitedString: helpers.getLimitedString,
+-    createInviteCode: () => 'KXJTEST00001'
++    // 顺序桩：A2 收尾后重邀必发新码（候选命中自己旧码也算冲突），常量桩会触发冲突路径
++    createInviteCode: () => `KXJTEST${String(++inviteSeq).padStart(5, '0')}`
+   })
+ }
+ 
+diff --git a/tests/unit/a1-member-isolation.test.js b/tests/unit/a1-member-isolation.test.js
+index 1baafbb..bb84db7 100644
+--- a/tests/unit/a1-member-isolation.test.js
++++ b/tests/unit/a1-member-isolation.test.js
+@@ -50,6 +50,8 @@ class StoreQuery {
+     if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
+     return this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
+       if (v && v.__op === 'in') return v.values.includes(d[k])
++      if (v && v.__op === 'lt') return typeof d[k] === 'number' && d[k] < v.value
++      if (v && v.__op === 'gt') return typeof d[k] === 'number' && d[k] > v.value
+       return d[k] === v
+     }))
+   }
+@@ -66,13 +68,23 @@ class StoreQuery {
+   }
+   async count() { return { total: this._targets().length } }
+   async add({ data }) {
+-    const _id = `doc-${this.store.seq++}`
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) {
++      const err = new Error('E11000 duplicate key error')
++      err.errCode = -502005
++      throw err
++    }
+     this.store.rows.push({ _id, ...clone(data) })
+     return { _id }
+   }
+   async update({ data }) {
+     const targets = this._targets()
+-    targets.forEach(d => Object.assign(d, clone(data)))
++    targets.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
+     return { stats: { updated: targets.length } }
+   }
+   async remove() {
+@@ -99,7 +111,12 @@ function createStoreDb(initial = {}) {
+   }
+ }
+ 
+-const commands = { in: values => ({ __op: 'in', values }) }
++const commands = {
++  in: values => ({ __op: 'in', values }),
++  lt: value => ({ __op: 'lt', value }),
++  gt: value => ({ __op: 'gt', value }),
++  inc: value => ({ __op: 'inc', value })
++}
+ 
+ function createService(db, inviteSeq = { n: 0 }) {
+   return createFamilyService({
+diff --git a/tests/unit/a2-followup.test.js b/tests/unit/a2-followup.test.js
+new file mode 100644
+index 0000000..3821e85
+--- /dev/null
++++ b/tests/unit/a2-followup.test.js
+@@ -0,0 +1,524 @@
++/**
++ * A2 收尾：无邀请码状态、重邀/加入交错、有效期边界、原子频控。
++ * 存储替身模拟存储引擎语义（条件匹配 lt/gt、$inc、_id 唯一、事务 doc 级读写），
++ * 不复制任何业务判断；真实并发交错与云端锁行为属测试环境待验证（见 summary）。
++ */
++
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
++  profiles: 'profiles'
++}
++
++function clone(value) {
++  return JSON.parse(JSON.stringify(value))
++}
++
++const commands = {
++  in: values => ({ __op: 'in', values }),
++  lt: value => ({ __op: 'lt', value }),
++  gt: value => ({ __op: 'gt', value }),
++  inc: value => ({ __op: 'inc', value })
++}
++
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store
++    this.query = query
++    this.orderField = ''
++    this.orderDir = 'asc'
++    this.max = Infinity
++    this.docId = ''
++    this.hasDocId = false
++  }
++  where(cond) { return new StoreQuery(this.store, cond) }
++  orderBy(field, dir) { const q = new StoreQuery(this.store, this.query); q.orderField = field; q.orderDir = dir; return q }
++  limit(size) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = size; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  skip() { return this }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.hasDocId = true; q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; return q }
++  field() { return this }
++  _matches(doc) {
++    return Object.entries(this.query).every(([k, v]) => {
++      if (v && v.__op === 'in') return v.values.includes(doc[k])
++      if (v && v.__op === 'lt') return typeof doc[k] === 'number' && doc[k] < v.value
++      if (v && v.__op === 'gt') return typeof doc[k] === 'number' && doc[k] > v.value
++      return doc[k] === v
++    })
++  }
++  _targets() {
++    if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
++    return this.store.rows.filter(d => this._matches(d))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    return { data: this.max === Infinity ? rows : rows.slice(0, this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    // 存储引擎语义：_id 唯一，重复即拒绝（云端 E11000 的替身）
++    const id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === id)) {
++      const err = new Error('E11000 duplicate key error')
++      err.errCode = -502005
++      throw err
++    }
++    this.store.rows.push({ _id: id, ...clone(data) })
++    return { _id: id }
++  }
++  async update({ data }) {
++    const targets = this._targets()
++    targets.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
++    return { stats: { updated: targets.length } }
++  }
++  async remove() {
++    const ids = new Set(this._targets().map(d => d._id))
++    const before = this.store.rows.length
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}, options = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((alias) => {
++    const name = COLLECTIONS[alias]
++    stores[name] = { rows: Array.isArray(initial[alias]) ? clone(initial[alias]) : [], seq: 1 }
++  })
++  const db = {
++    collection(name) {
++      if (!stores[name]) stores[name] = { rows: [], seq: 1 }
++      return new StoreQuery(stores[name])
++    },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++  if (options.withTransaction) {
++    // 事务替身：仅提供 doc 级 get/set/update 的存储语义；无锁、无重试（并发性质属云端待验证）。
++    // onTxStart 钩子用于构造“外层已读旧码、事务开始前 owner 重邀”的可控交错。
++    db.runTransaction = async (fn) => {
++      if (options.onTxStart) await options.onTxStart(db)
++      return fn({
++        collection(name) {
++          return {
++            doc(id) {
++              return {
++                async get() {
++                  const rows = stores[name].rows.filter(d => d._id === id)
++                  return { data: rows.length ? clone(rows[0]) : null }
++                },
++                async set({ data }) {
++                  const rows = stores[name].rows
++                  const idx = rows.findIndex(d => d._id === id)
++                  const doc = { _id: id, ...clone(data) }
++                  if (idx >= 0) rows[idx] = doc
++                  else rows.push(doc)
++                  return { updated: idx >= 0 ? 1 : 0, created: idx >= 0 ? 0 : 1 }
++                },
++                async update({ data }) {
++                  const rows = stores[name].rows.filter(d => d._id === id)
++                  rows.forEach((d) => {
++                    Object.entries(data).forEach(([k, v]) => {
++                      if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++                      else d[k] = clone(v)
++                    })
++                  })
++                  return { stats: { updated: rows.length } }
++                }
++              }
++            }
++          }
++        }
++      })
++    }
++  }
++  if (options.getThrows) {
++    // 基础设施异常注入：事务内指定集合 doc.get 抛错
++    const originalCollection = db.collection.bind(db)
++    db.collection = function (name) {
++      const q = originalCollection(name)
++      return q
++    }
++    db._injectGetError = options.getThrows
++  }
++  return db
++}
++
++function createService(db, inviteCodes) {
++  const queue = Array.isArray(inviteCodes) ? [...inviteCodes] : null
++  let n = 0
++  return createFamilyService({
++    db,
++    _: commands,
++    collections: COLLECTIONS,
++    withPerfLog: (meta, fn) => fn(),
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: helpers.getLimitedString,
++    createInviteCode: queue ? () => queue.shift() : () => `KXJGEN${String(++n).padStart(6, '0')}`
++  })
++}
++
++const VALID_CODE = 'KXJABCDEFGHI'
++
++function pendingAuth(overrides = {}) {
++  return {
++    _id: 'auth-1',
++    _openid: 'owner-1',
++    ownerOpenId: 'owner-1',
++    ownerName: '王阿姨',
++    inviteCode: VALID_CODE,
++    status: 'pending',
++    member: { name: '女儿', relation: '女儿', role: '主要照护人', status: '待加入' },
++    memberName: '女儿',
++    scopes: [
++      { key: 'bloodPressure', title: '血压记录', meta: 'm', read: true, write: false, remind: true },
++      { key: 'bloodGlucose', title: '血糖记录', meta: 'm', read: false, write: false, remind: false },
++      { key: 'medicine', title: '用药确认', meta: 'm', read: true, write: false, remind: false },
++      { key: 'report', title: '健康记录周报', meta: 'm', read: true, write: false, remind: true }
++    ],
++    noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: true },
++    memberOpenId: '',
++    expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
++    ...overrides
++  }
++}
++
++function counterRows(db) { return db._stores[COLLECTIONS.inviteAttempts].rows }
++function counterValue(db, openId, day) {
++  const key = `invite-fail-${openId}-${day || helpers.getTodayDateValue()}`
++  const doc = counterRows(db).find(d => d._id === key)
++  return doc ? doc.count : 0
++}
++function memberRows(db) { return db._stores[COLLECTIONS.familyMembers].rows }
++function authRows(db) { return db._stores[COLLECTIONS.familyAuth].rows }
++
++function seedCounter(db, openId, count, day) {
++  const d = day || helpers.getTodayDateValue()
++  counterRows(db).push({
++    _id: `invite-fail-${openId}-${d}`,
++    openId,
++    day: d,
++    count,
++    createdAt: 'SERVER_DATE',
++    updatedAt: 'SERVER_DATE'
++  })
++}
++
++describe('A2 收尾 · 无邀请码说明态', () => {
++  it('缺码：noInvite 说明态——无有效期、无可查看范围、无有效标志、不计数', async () => {
++    const db = createStoreDb()
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', {})
++    expect(data.noInvite).toBe(true)
++    expect(data.inviteError).toBeUndefined()
++    expect(data.remainHours).toBe(0)
++    expect(data.scopes).toEqual([])
++    expect(data.inviteTitle).toBe('尚未获得邀请')
++    expect(counterRows(db)).toHaveLength(0)
++  })
++
++  it('空串与纯空白串同缺码处理，不计数', async () => {
++    const db = createStoreDb()
++    const service = createService(db)
++    for (const code of ['', '   ']) {
++      const data = await service.getFamilyJoinData('caller-1', { inviteCode: code })
++      expect(data.noInvite).toBe(true)
++    }
++    expect(counterRows(db)).toHaveLength(0)
++  })
++
++  it.each([
++    ['数字', 123],
++    ['对象', { inviteCode: 'x' }],
++    ['布尔', true],
++    ['数组', ['KXJABCDEFGHI']]
++  ])('非字符串输入（%s）按 INVALID 计数，不冒充缺码', async (_label, code) => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: code })
++    expect(data.noInvite).toBeUndefined()
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_INVALID')
++    expect(counterValue(db, 'caller-1')).toBe(1)
++  })
++
++  it('本地镜像：无邀请码加入不假成功', () => {
++    const { joinFamilyByInviteLocal } = require('../../services/family')
++    const { STORAGE_KEYS, writeStorage } = require('../../services/core')
++    writeStorage(STORAGE_KEYS.familyAuth, { members: [], status: 'pending' })
++    expect(() => joinFamilyByInviteLocal({ inviteCode: '' }, null))
++      .toThrow(expect.objectContaining({ code: 'FAMILY_INVITE_NOT_FOUND' }))
++    writeStorage(STORAGE_KEYS.familyAuth, null)
++  })
++})
++
++describe('A2 收尾 · 有效期边界', () => {
++  it('expiresAt 不可解析：查询与加入均按 INVALID 拒绝，不产生 NaN 剩余时间', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ expiresAt: 'not-a-date' })] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError.code).toBe('FAMILY_INVITE_INVALID')
++    expect(Number.isNaN(data.remainHours)).toBe(false)
++    await expect(service.joinFamilyByInvite('caller-2', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_INVITE_INVALID' })
++    expect(memberRows(db)).toHaveLength(0)
++  })
++
++  it('刚好到期（expiresAt == now）：按已过期拒绝', () => {
++    jest.useFakeTimers()
++    jest.setSystemTime(new Date('2026-09-22T06:00:00.000Z'))
++    return (async () => {
++      const db = createStoreDb({
++        familyAuth: [pendingAuth({ expiresAt: new Date('2026-09-22T06:00:00.000Z').toISOString() })]
++      })
++      const service = createService(db)
++      const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++      expect(data.inviteError.code).toBe('FAMILY_INVITE_EXPIRED')
++      jest.useRealTimers()
++    })()
++  })
++
++  it('未来有效期：正常预览，remainHours 为有限正数', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth({ expiresAt: new Date(Date.now() + 90 * 60 * 1000).toISOString() })] })
++    const service = createService(db)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError).toBeUndefined()
++    expect(Number.isFinite(data.remainHours)).toBe(true)
++    expect(data.remainHours).toBe(2) // 90 分钟 → ceil 2 小时
++  })
++})
++
++describe('A2 收尾 · 重邀/加入交错（事务分支控制流）', () => {
++  it('事务路径 happy path：锚点文档创建、邀请转 active', async () => {
++    const db = createStoreDb({
++      profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }],
++      familyAuth: [pendingAuth()]
++    }, { withTransaction: true })
++    const service = createService(db)
++    const result = await service.joinFamilyByInvite('member-1', { inviteCode: VALID_CODE })
++    expect(result.status).toBe('active')
++    const anchor = memberRows(db).find(r => r._id === 'active-member-1')
++    expect(anchor).toBeTruthy()
++    expect(anchor.ownerOpenId).toBe('owner-1')
++    expect(authRows(db)[0].status).toBe('active')
++    expect(authRows(db)[0].memberOpenId).toBe('member-1')
++  })
++
++  it('交错：外层读到旧码 A，事务开始前 owner 重邀换码 B——旧码请求被拒，新邀请不被消耗', async () => {
++    const NEW_CODE = 'KXJNEWCODE01'
++    const db = createStoreDb({
++      profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }],
++      familyAuth: [pendingAuth()]
++    }, {
++      withTransaction: true,
++      // 可控交错：事务开始前，owner 用新码 B 覆盖了同一 family_auth 文档
++      onTxStart: async (d) => {
++        const auth = d._stores[COLLECTIONS.familyAuth].rows[0]
++        auth.inviteCode = NEW_CODE
++        auth.status = 'pending'
++        auth.memberOpenId = ''
++        auth.scopes = [{ key: 'bloodPressure', title: '血压记录', meta: 'm', read: true, write: false, remind: false }]
++      }
++    })
++    const service = createService(db)
++    await expect(service.joinFamilyByInvite('member-1', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_INVITE_NOT_FOUND' })
++    // 不创建成员、不消耗新邀请
++    expect(memberRows(db)).toHaveLength(0)
++    const auth = authRows(db)[0]
++    expect(auth.inviteCode).toBe(NEW_CODE)
++    expect(auth.status).toBe('pending')
++    expect(auth.memberOpenId).toBe('')
++    // 旧码失败计入频控额度
++    expect(counterValue(db, 'member-1')).toBe(1)
++  })
++
++  it('事务内锚点读取发生基础设施异常：原样上抛，零写入（不吞异常继续写）', async () => {
++    const db = createStoreDb({
++      profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }],
++      familyAuth: [pendingAuth()]
++    }, { withTransaction: true })
++    // 注入：事务内 familyMembers doc.get 抛网络异常
++    const originalCollection = db.collection.bind(db)
++    db.collection = function (name) {
++      const q = originalCollection(name)
++      return q
++    }
++    db.runTransaction = async (fn) => fn({
++      collection(name) {
++        return {
++          doc() {
++            return {
++              async get() {
++                if (name === COLLECTIONS.familyMembers) throw new Error('network unavailable')
++                return { data: null }
++              },
++              async set() { throw new Error('不应写入') },
++              async update() { throw new Error('不应写入') }
++            }
++          }
++        }
++      }
++    })
++    const service = createService(db)
++    await expect(service.joinFamilyByInvite('member-1', { inviteCode: VALID_CODE }))
++      .rejects.toThrow('network unavailable')
++    expect(memberRows(db)).toHaveLength(0)
++    expect(authRows(db)[0].status).toBe('pending')
++    // 基础设施异常不计入失败额度
++    expect(counterValue(db, 'member-1')).toBe(0)
++  })
++})
++
++describe('A2 收尾 · 原子频控（预留-核销-退还）', () => {
++  it('失败累计到计数文档：第 20 次失败后额度用尽，第 21 次拒绝且不再探测', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    const service = createService(db)
++    seedCounter(db, 'caller-1', 19)
++    const twentieth = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(twentieth.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
++    expect(counterValue(db, 'caller-1')).toBe(20)
++
++    const twentyFirst = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(twentyFirst.inviteError.code).toBe('FAMILY_INVITE_RATE_LIMITED')
++    expect(counterValue(db, 'caller-1')).toBe(20) // 拒绝不计数
++  })
++
++  it('计数文档为每 (openId, 北京日) 单文档，含 day 键，不含邀请码明文', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    const service = createService(db)
++    await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    const rows = counterRows(db)
++    expect(rows).toHaveLength(1)
++    expect(rows[0]._id).toBe(`invite-fail-caller-1-${helpers.getTodayDateValue()}`)
++    expect(rows[0]).toMatchObject({ openId: 'caller-1', day: helpers.getTodayDateValue(), count: 2 })
++    expect(JSON.stringify(rows)).not.toContain(VALID_CODE)
++  })
++
++  it('成功查询退还额度：失败 19 次后一次成功，计数回到 19', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    const service = createService(db)
++    seedCounter(db, 'caller-1', 19)
++    const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++    expect(data.inviteError).toBeUndefined()
++    expect(counterValue(db, 'caller-1')).toBe(19)
++  })
++
++  it('自绑/已绑定他人属业务拒绝但非枚举失败：退还额度', async () => {
++    const db = createStoreDb({
++      profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }],
++      familyAuth: [pendingAuth()],
++      familyMembers: [{ _id: 'rel-x', ownerOpenId: 'owner-9', memberOpenId: 'member-1', status: 'active' }]
++    })
++    const service = createService(db)
++    await expect(service.joinFamilyByInvite('owner-1', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_INVITE_SELF' })
++    expect(counterValue(db, 'owner-1')).toBe(0)
++    await expect(service.joinFamilyByInvite('member-1', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_MEMBER_BOUND' })
++    expect(counterValue(db, 'member-1')).toBe(0)
++  })
++
++  it('join 与查询共用额度：查询失败 20 次后 join 直接被拒', async () => {
++    const db = createStoreDb({ familyAuth: [pendingAuth()] })
++    const service = createService(db)
++    seedCounter(db, 'caller-1', 20)
++    await expect(service.joinFamilyByInvite('caller-1', { inviteCode: VALID_CODE }))
++      .rejects.toMatchObject({ code: 'FAMILY_INVITE_RATE_LIMITED' })
++    expect(memberRows(db)).toHaveLength(0)
++    expect(authRows(db)[0].status).toBe('pending')
++  })
++
++  it('自然日切换：昨日计数满额不影响今日（key 内嵌北京日）', () => {
++    jest.useFakeTimers()
++    jest.setSystemTime(new Date('2026-09-22T04:00:00.000Z')) // 北京 12:00
++    return (async () => {
++      const db = createStoreDb({ familyAuth: [pendingAuth()] })
++      seedCounter(db, 'caller-1', 20, '2026-09-21')
++      const service = createService(db)
++      const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++      expect(data.inviteError).toBeUndefined()
++      jest.useRealTimers()
++    })()
++  })
++
++  it('并发建计数文档冲突（add 撞 _id）：重试条件更新后正常计 1', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    // 注入：第一次 add 前先把文档“被并发请求”建出来
++    const store = db._stores[COLLECTIONS.inviteAttempts]
++    const originalAdd = StoreQuery.prototype.add
++    let injected = false
++    StoreQuery.prototype.add = async function (arg) {
++      if (!injected && this.store === store) {
++        injected = true
++        store.rows.push({
++          _id: arg.data._id, openId: arg.data.openId, day: arg.data.day,
++          count: 0, createdAt: 'SERVER_DATE', updatedAt: 'SERVER_DATE'
++        })
++      }
++      return originalAdd.call(this, arg)
++    }
++    try {
++      const service = createService(db)
++      const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
++      expect(data.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
++      expect(counterValue(db, 'caller-1')).toBe(1)
++    } finally {
++      StoreQuery.prototype.add = originalAdd
++    }
++  })
++})
++
++describe('A2 收尾 · 重邀必须发新码', () => {
++  it('候选码与 owner 自己当前码相同：不复用，重新生成', async () => {
++    const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db, ['KXJSAME00001', 'KXJSAME00001', 'KXJFRESH0001'])
++    const first = await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
++    const second = await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
++    expect(first.inviteCode).toBe('KXJSAME00001')
++    expect(second.inviteCode).toBe('KXJFRESH0001')
++    expect(second.inviteCode).not.toBe(first.inviteCode)
++  })
++
++  it('连续 3 次候选码均被占用（含自己旧码）：抛冲突且零写入', async () => {
++    const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db, ['KXJSAME00001', 'KXJSAME00001', 'KXJSAME00001'])
++    await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
++    await expect(service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] }))
++      .rejects.toThrow('冲突')
++    expect(authRows(db)).toHaveLength(1)
++    expect(authRows(db)[0].inviteCode).toBe('KXJSAME00001') // 旧邀请未被破坏
++  })
++})
+diff --git a/tests/unit/a2-invite-security.test.js b/tests/unit/a2-invite-security.test.js
+index 8677349..5a3da3d 100644
+--- a/tests/unit/a2-invite-security.test.js
++++ b/tests/unit/a2-invite-security.test.js
+@@ -43,6 +43,8 @@ class StoreQuery {
+     if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
+     return this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
+       if (v && v.__op === 'in') return v.values.includes(d[k])
++      if (v && v.__op === 'lt') return typeof d[k] === 'number' && d[k] < v.value
++      if (v && v.__op === 'gt') return typeof d[k] === 'number' && d[k] > v.value
+       return d[k] === v
+     }))
+   }
+@@ -59,13 +61,24 @@ class StoreQuery {
+   }
+   async count() { return { total: this._targets().length } }
+   async add({ data }) {
+-    const _id = `doc-${this.store.seq++}`
+-    this.store.rows.push({ _id, ...clone(data) })
+-    return { _id }
++    // 存储引擎语义：自定义 _id 允许，重复即拒绝（云端 E11000 的替身）
++    const id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === id)) {
++      const err = new Error('E11000 duplicate key error')
++      err.errCode = -502005
++      throw err
++    }
++    this.store.rows.push({ _id: id, ...clone(data) })
++    return { _id: id }
+   }
+   async update({ data }) {
+     const targets = this._targets()
+-    targets.forEach(d => Object.assign(d, clone(data)))
++    targets.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
+     return { stats: { updated: targets.length } }
+   }
+   async remove() {
+@@ -97,7 +110,12 @@ function createService(db, codes) {
+   let n = 0
+   return createFamilyService({
+     db,
+-    _: { in: values => ({ __op: 'in', values }) },
++    _: {
++      in: values => ({ __op: 'in', values }),
++      lt: value => ({ __op: 'lt', value }),
++      gt: value => ({ __op: 'gt', value }),
++      inc: value => ({ __op: 'inc', value })
++    },
+     collections: COLLECTIONS,
+     withPerfLog: (meta, fn) => fn(),
+     getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
+@@ -148,38 +166,52 @@ function memberRows(db) { return db._stores[COLLECTIONS.familyMembers].rows }
+ function authRows(db) { return db._stores[COLLECTIONS.familyAuth].rows }
+ function today() { return helpers.getTodayDateValue() }
+ 
++// A2 收尾后频控为“每 (openId, 北京日) 单计数文档”口径
++function counterValue(db, openId, day) {
++  const key = `invite-fail-${openId}-${day || today()}`
++  const doc = attemptRows(db).find(d => d._id === key)
++  return doc ? doc.count : 0
++}
++
+ function seedAttempts(db, count, day) {
+-  const rows = db._stores[COLLECTIONS.inviteAttempts].rows
+-  for (let i = 0; i < count; i += 1) {
+-    rows.push({ _id: `att-${i}`, openId: 'caller-1', day: day || today(), reason: 'FAMILY_INVITE_NOT_FOUND', createdAt: 'SERVER_DATE' })
+-  }
++  const d = day || today()
++  attemptRows(db).push({
++    _id: `invite-fail-caller-1-${d}`,
++    openId: 'caller-1',
++    day: d,
++    count,
++    createdAt: 'SERVER_DATE',
++    updatedAt: 'SERVER_DATE'
++  })
+ }
+ 
+ describe('A2 · getFamilyJoinData 错误态与错误码', () => {
+-  it('缺失 inviteCode：返回默认说明页，无 inviteError、不计数', async () => {
++  it('缺失 inviteCode：noInvite 说明态，无 inviteError、不计失败', async () => {
+     const db = createStoreDb()
+     const service = createService(db)
+     const data = await service.getFamilyJoinData('caller-1', {})
++    expect(data.noInvite).toBe(true)
+     expect(data.inviteError).toBeUndefined()
+-    expect(data.inviteTitle).toBeTruthy()
+-    expect(attemptRows(db)).toHaveLength(0)
++    expect(data.remainHours).toBe(0)
++    expect(data.scopes).toEqual([])
++    expect(counterValue(db, 'caller-1')).toBe(0)
+   })
+ 
+-  it('格式错误：FAMILY_INVITE_INVALID，记录 1 次失败，零成员写入', async () => {
++  it('格式错误：FAMILY_INVITE_INVALID，失败额度计 1，零成员写入', async () => {
+     const db = createStoreDb({ familyAuth: [pendingAuth()] })
+     const service = createService(db)
+     const data = await service.getFamilyJoinData('caller-1', { inviteCode: 'abc' })
+     expect(data.inviteError).toEqual({ code: 'FAMILY_INVITE_INVALID', message: '邀请码无效，请核对后重试' })
+-    expect(attemptRows(db)).toHaveLength(1)
++    expect(counterValue(db, 'caller-1')).toBe(1)
+     expect(memberRows(db)).toHaveLength(0)
+   })
+ 
+-  it('不存在：FAMILY_INVITE_NOT_FOUND，计数 1', async () => {
++  it('不存在：FAMILY_INVITE_NOT_FOUND，额度计 1', async () => {
+     const db = createStoreDb({ familyAuth: [] })
+     const service = createService(db)
+     const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+     expect(data.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
+-    expect(attemptRows(db)).toHaveLength(1)
++    expect(counterValue(db, 'caller-1')).toBe(1)
+   })
+ 
+   it('expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容', async () => {
+@@ -189,7 +221,7 @@ describe('A2 · getFamilyJoinData 错误态与错误码', () => {
+     const service = createService(db)
+     const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+     expect(data.inviteError.code).toBe('FAMILY_INVITE_INVALID')
+-    expect(attemptRows(db)).toHaveLength(1)
++    expect(counterValue(db, 'caller-1')).toBe(1)
+   })
+ 
+   it('已过期：FAMILY_INVITE_EXPIRED', async () => {
+@@ -213,14 +245,14 @@ describe('A2 · getFamilyJoinData 错误态与错误码', () => {
+     expect(data.inviteError.code).toBe('FAMILY_INVITE_USED')
+   })
+ 
+-  it('正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，不计数', async () => {
++  it('正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，额度退还为 0', async () => {
+     const db = createStoreDb({ familyAuth: [pendingAuth()] })
+     const service = createService(db)
+     const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+     expect(data.inviteError).toBeUndefined()
+     expect(data.remainHours).toBeGreaterThan(0)
+     expect(data.scopes.map(s => s.key)).toEqual(['bloodPressure', 'medicine', 'report'])
+-    expect(attemptRows(db)).toHaveLength(0)
++    expect(counterValue(db, 'caller-1')).toBe(0)
+   })
+ 
+   it('任何失败路径：family_members 零写入、family_auth 不被改为 active', async () => {
+@@ -234,27 +266,29 @@ describe('A2 · getFamilyJoinData 错误态与错误码', () => {
+   })
+ })
+ 
+-describe('A2 · 频控（openId + 北京自然日，门限 20）', () => {
+-  it('第 1 次与第 20 次失败允许并记录；第 21 次查询被拒且不新增记录', async () => {
++describe('A2 · 频控（openId + 北京自然日，额度 20，原子预留）', () => {
++  it('第 1 次失败额度计 1；累计到 20 后第 21 次查询被拒且额度不再增长', async () => {
+     const db = createStoreDb({ familyAuth: [] })
+     const service = createService(db)
+     const first = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+     expect(first.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
+-    expect(attemptRows(db)).toHaveLength(1)
++    expect(counterValue(db, 'caller-1')).toBe(1)
+ 
+-    seedAttempts(db, 18) // 合计 19 条今日失败
++    seedAttempts(db, 19) // 预置计数文档为 19（模拟此前累计失败）
++    attemptRows(db)[0].count = 19 // 首查已建同 key 文档，直接归一为单文档 19
++    attemptRows(db).splice(1) // 移除重复 key 的预置文档，保持“每 (openId, 日) 单文档”不变式
+     const twentieth = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+     expect(twentieth.inviteError.code).toBe('FAMILY_INVITE_NOT_FOUND')
+-    expect(attemptRows(db)).toHaveLength(20)
++    expect(counterValue(db, 'caller-1')).toBe(20)
+ 
+     const twentyFirst = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+     expect(twentyFirst.inviteError).toEqual({ code: 'FAMILY_INVITE_RATE_LIMITED', message: '今日尝试次数过多，请明天再试' })
+-    expect(attemptRows(db)).toHaveLength(20) // 拒绝本身不计数
++    expect(counterValue(db, 'caller-1')).toBe(20) // 拒绝不占额度
+     await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+-    expect(attemptRows(db)).toHaveLength(20)
++    expect(counterValue(db, 'caller-1')).toBe(20)
+   })
+ 
+-  it('自然日切换：昨日 20 条不影响今日查询（北京日界）', () => {
++  it('自然日切换：昨日额度用尽不影响今日查询（key 内嵌北京日）', () => {
+     jest.useFakeTimers()
+     jest.setSystemTime(new Date('2026-09-22T04:00:00.000Z')) // 北京 12:00
+     const yesterday = '2026-09-21'
+@@ -264,12 +298,13 @@ describe('A2 · 频控（openId + 北京自然日，门限 20）', () => {
+       const service = createService(db)
+       const data = await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+       expect(data.inviteError).toBeUndefined()
+-      expect(attemptRows(db)).toHaveLength(20) // 成功不新增
++      expect(counterValue(db, 'caller-1', yesterday)).toBe(20) // 昨日文档不动
++      expect(counterValue(db, 'caller-1')).toBe(0) // 今日成功后额度退还
+       jest.useRealTimers()
+     })()
+   })
+ 
+-  it('频控记录不含邀请码明文', async () => {
++  it('频控计数文档不含邀请码明文，字段为 openId/day/count', async () => {
+     const db = createStoreDb({ familyAuth: [] })
+     const service = createService(db)
+     await service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE })
+@@ -277,11 +312,12 @@ describe('A2 · 频控（openId + 北京自然日，门限 20）', () => {
+     expect(rows).toHaveLength(1)
+     expect(JSON.stringify(rows)).not.toContain(VALID_CODE)
+     expect(rows[0]).toEqual({
+-      _id: rows[0]._id,
++      _id: `invite-fail-caller-1-${today()}`,
+       openId: 'caller-1',
+       day: today(),
+-      reason: 'FAMILY_INVITE_NOT_FOUND',
+-      createdAt: 'SERVER_DATE'
++      count: 1,
++      createdAt: 'SERVER_DATE',
++      updatedAt: 'SERVER_DATE'
+     })
+   })
+ 
+@@ -334,12 +370,12 @@ describe('A2 · joinFamilyByInvite 错误码与频控防绕过', () => {
+     await expectJoinCode(db, VALID_CODE, 'FAMILY_INVITE_INVALID')
+   })
+ 
+-  it('自绑 → FAMILY_INVITE_SELF（既有语义补码，不计数）', async () => {
++  it('自绑 → FAMILY_INVITE_SELF（既有语义补码，不占失败额度）', async () => {
+     const db = createStoreDb({ familyAuth: [pendingAuth()] })
+     const service = createService(db)
+     await expect(service.joinFamilyByInvite('owner-1', { inviteCode: VALID_CODE }))
+       .rejects.toMatchObject({ code: 'FAMILY_INVITE_SELF' })
+-    expect(attemptRows(db)).toHaveLength(0)
++    expect(counterValue(db, 'owner-1')).toBe(0)
+   })
+ 
+   it('已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码）', async () => {
+@@ -385,14 +421,16 @@ describe('A2 · createFamilyInvite 唯一性前置检查', () => {
+     expect(authRows(db)).toHaveLength(1) // 只有 owner-2 的文档
+   })
+ 
+-  it('重邀命中自己旧文档的同码不算冲突（owner 单文档更新）', async () => {
++  it('重邀必须发新码：候选码命中自己旧文档同样视为冲突（A2 收尾修订）', async () => {
+     const db = createStoreDb({ profiles: [{ _id: 'p-1', _openid: 'owner-1', name: '王阿姨' }] })
+-    const service = createService(db, ['KXJSAME00001', 'KXJSAME00001'])
++    const service = createService(db, ['KXJSAME00001', 'KXJSAME00001', 'KXJFRESH0001'])
+     const first = await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
+     const second = await service.createFamilyInvite('owner-1', { scopes: [{ key: 'bloodPressure', read: true }] })
+     expect(first.inviteCode).toBe('KXJSAME00001')
+-    expect(second.inviteCode).toBe('KXJSAME00001')
++    // 旧码不得因属同一 owner 而复用，否则重邀后旧码仍有效（交错攻击面）
++    expect(second.inviteCode).toBe('KXJFRESH0001')
+     expect(authRows(db)).toHaveLength(1)
++    expect(authRows(db)[0].inviteCode).toBe('KXJFRESH0001')
+   })
+ })
+ 

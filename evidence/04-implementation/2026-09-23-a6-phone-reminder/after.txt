@@ -1,0 +1,6 @@
+
+Test Suites: 1 passed, 1 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        0.485 s, estimated 2 s
+Ran all test suites matching /tests\\unit\\a6-phone-reminder.test.js/i.

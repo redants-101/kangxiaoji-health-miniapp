@@ -1,0 +1,50 @@
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index 03e7927..d0ef55b 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -98,7 +98,14 @@ function createFamilyService({
+         })
+         return { key }
+       } catch (e) {
+-        // 并发创建撞 _id 唯一性 → 下一轮条件更新
++        // 仅"已确认的重复键冲突"（并发创建撞 _id）回到条件更新重试；
++        // 网络/权限等基础设施异常原样上抛，不得伪装成频控拒绝。
++        // 重复键签名 E11000/duplicate key 为 Mongo 标准报文透传（本地 SDK 无专属错误码，
++        // 真实云端签名属测试环境待验证项；若签名不匹配则按基础设施异常上抛，方向 fail-closed）。
++        const msg = String((e && (e.errMsg || e.message)) || e)
++        if (!/E11000|duplicate key/i.test(msg)) {
++          throw e
++        }
+       }
+     }
+     return null // 两轮仍未取得额度：保守拒绝（fail-closed）
+diff --git a/tests/unit/a2-followup.test.js b/tests/unit/a2-followup.test.js
+index 3821e85..c62b55a 100644
+--- a/tests/unit/a2-followup.test.js
++++ b/tests/unit/a2-followup.test.js
+@@ -499,6 +499,25 @@ describe('A2 收尾 · 原子频控（预留-核销-退还）', () => {
+       StoreQuery.prototype.add = originalAdd
+     }
+   })
++
++  it('add 发生非重复键的基础设施异常：原样上抛，不得伪装成频控拒绝', async () => {
++    const db = createStoreDb({ familyAuth: [] })
++    const store = db._stores[COLLECTIONS.inviteAttempts]
++    const originalAdd = StoreQuery.prototype.add
++    StoreQuery.prototype.add = async function (arg) {
++      if (this.store === store) {
++        throw new Error('network timeout') // 非重复键的基础设施异常
++      }
++      return originalAdd.call(this, arg)
++    }
++    try {
++      const service = createService(db)
++      await expect(service.getFamilyJoinData('caller-1', { inviteCode: VALID_CODE }))
++        .rejects.toThrow('network timeout')
++    } finally {
++      StoreQuery.prototype.add = originalAdd
++    }
++  })
+ })
+ 
+ describe('A2 收尾 · 重邀必须发新码', () => {

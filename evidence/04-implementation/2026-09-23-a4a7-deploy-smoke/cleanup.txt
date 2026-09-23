@@ -1,0 +1,13 @@
+== C2 删除 4 个合成文档（按 _id 精确） ==
+    "n": {
+      "$numberInt": "1"
+    "n": {
+      "$numberInt": "1"
+    "n": {
+      "$numberInt": "1"
+    "n": {
+      "$numberInt": "1"
+== C3 复核清零 ==
+      "$numberInt": "0"
+      "$numberInt": "0"
+      "$numberInt": "0"

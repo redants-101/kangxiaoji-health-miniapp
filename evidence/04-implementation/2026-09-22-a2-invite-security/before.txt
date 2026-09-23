@@ -1,0 +1,489 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a2-invite-security.test.js
+
+FAIL tests/unit/a2-invite-security.test.js
+  A2 · getFamilyJoinData 错误态与错误码
+    √ 缺失 inviteCode：返回默认说明页，无 inviteError、不计数 (2 ms)
+    × 格式错误：FAMILY_INVITE_INVALID，记录 1 次失败，零成员写入 (3 ms)
+    × 不存在：FAMILY_INVITE_NOT_FOUND，计数 1 (1 ms)
+    × expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容
+    × 已过期：FAMILY_INVITE_EXPIRED
+    × 已撤销：FAMILY_INVITE_REVOKED
+    × 已被其他成员使用：FAMILY_INVITE_USED
+    × 正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，不计数 (2 ms)
+    √ 任何失败路径：family_members 零写入、family_auth 不被改为 active
+  A2 · 频控（openId + 北京自然日，门限 20）
+    × 第 1 次与第 20 次失败允许并记录；第 21 次查询被拒且不新增记录 (1 ms)
+    √ 自然日切换：昨日 20 条不影响今日查询（北京日界） (1 ms)
+    × 频控记录不含邀请码明文 (1 ms)
+    √ 频控按调用者隔离：caller-2 不受 caller-1 的失败影响
+  A2 · joinFamilyByInvite 错误码与频控防绕过
+    × 不存在 → FAMILY_INVITE_NOT_FOUND 且计数 (1 ms)
+    × 已过期 → FAMILY_INVITE_EXPIRED (1 ms)
+    × 已撤销 → FAMILY_INVITE_REVOKED
+    × 已被他人使用 → FAMILY_INVITE_USED
+    × expiresAt 缺失 → FAMILY_INVITE_INVALID（不做兼容） (1 ms)
+    × 自绑 → FAMILY_INVITE_SELF（既有语义补码，不计数） (9 ms)
+    × 已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码） (1 ms)
+    × 频控拒绝直接刷 join 接口：RATE_LIMITED，零写入
+  A2 · createFamilyInvite 唯一性前置检查
+    × 候选码与他人文档冲突时重新生成，落库用新码 (1 ms)
+    × 连续冲突 3 次：抛错且不写入新邀请 (1 ms)
+    √ 重邀命中自己旧文档的同码不算冲突（owner 单文档更新）
+  A2 · 本地镜像过期校验（decisions #15）
+    × 本地邀请已过期：拒绝且不假成功 (14 ms)
+    × 本地邀请缺失 expiresAt：一律无效 (9 ms)
+    × 邀请码与本地记录不一致：按不存在处理 (5 ms)
+    × 有效本地邀请：正常镜像 joined 状态
+    × createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验）
+  A2 · 页面消费契约
+    × normalizeFamilyJoinData 透传 inviteError（页面据 code 渲染状态）
+
+  ● A2 · getFamilyJoinData 错误态与错误码 › 格式错误：FAMILY_INVITE_INVALID，记录 1 次失败，零成员写入
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: {"code": "FAMILY_INVITE_INVALID", "message": "邀请码无效，请核对后重试"}
+    Received: undefined
+
+    [0m [90m 170 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 171 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [32m'abc'[39m })
+    [31m[1m>[22m[39m[90m 172 |[39m     expect(data[33m.[39minviteError)[33m.[39mtoEqual({ code[33m:[39m [32m'FAMILY_INVITE_INVALID'[39m[33m,[39m message[33m:[39m [32m'邀请码无效，请核对后重试'[39m })
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 173 |[39m     expect(attemptRows(db))[33m.[39mtoHaveLength([35m1[39m)
+     [90m 174 |[39m     expect(memberRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 175 |[39m   })[0m
+
+      at Object.toEqual (tests/unit/a2-invite-security.test.js:172:30)
+
+  ● A2 · getFamilyJoinData 错误态与错误码 › 不存在：FAMILY_INVITE_NOT_FOUND，计数 1
+
+    TypeError: Cannot read properties of undefined (reading 'code')
+
+    [0m [90m 179 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 180 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+    [31m[1m>[22m[39m[90m 181 |[39m     expect(data[33m.[39minviteError[33m.[39mcode)[33m.[39mtoBe([32m'FAMILY_INVITE_NOT_FOUND'[39m)
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 182 |[39m     expect(attemptRows(db))[33m.[39mtoHaveLength([35m1[39m)
+     [90m 183 |[39m   })
+     [90m 184 |[39m[0m
+
+      at Object.code (tests/unit/a2-invite-security.test.js:181:29)
+
+  ● A2 · getFamilyJoinData 错误态与错误码 › expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容
+
+    TypeError: Cannot read properties of undefined (reading 'code')
+
+    [0m [90m 189 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 190 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+    [31m[1m>[22m[39m[90m 191 |[39m     expect(data[33m.[39minviteError[33m.[39mcode)[33m.[39mtoBe([32m'FAMILY_INVITE_INVALID'[39m)
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 192 |[39m     expect(attemptRows(db))[33m.[39mtoHaveLength([35m1[39m)
+     [90m 193 |[39m   })
+     [90m 194 |[39m[0m
+
+      at Object.code (tests/unit/a2-invite-security.test.js:191:29)
+
+  ● A2 · getFamilyJoinData 错误态与错误码 › 已过期：FAMILY_INVITE_EXPIRED
+
+    TypeError: Cannot read properties of undefined (reading 'code')
+
+    [0m [90m 197 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 198 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+    [31m[1m>[22m[39m[90m 199 |[39m     expect(data[33m.[39minviteError[33m.[39mcode)[33m.[39mtoBe([32m'FAMILY_INVITE_EXPIRED'[39m)
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 200 |[39m   })
+     [90m 201 |[39m
+     [90m 202 |[39m   it([32m'已撤销：FAMILY_INVITE_REVOKED'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.code (tests/unit/a2-invite-security.test.js:199:29)
+
+  ● A2 · getFamilyJoinData 错误态与错误码 › 已撤销：FAMILY_INVITE_REVOKED
+
+    TypeError: Cannot read properties of undefined (reading 'code')
+
+    [0m [90m 204 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 205 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+    [31m[1m>[22m[39m[90m 206 |[39m     expect(data[33m.[39minviteError[33m.[39mcode)[33m.[39mtoBe([32m'FAMILY_INVITE_REVOKED'[39m)
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 207 |[39m   })
+     [90m 208 |[39m
+     [90m 209 |[39m   it([32m'已被其他成员使用：FAMILY_INVITE_USED'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.code (tests/unit/a2-invite-security.test.js:206:29)
+
+  ● A2 · getFamilyJoinData 错误态与错误码 › 已被其他成员使用：FAMILY_INVITE_USED
+
+    TypeError: Cannot read properties of undefined (reading 'code')
+
+    [0m [90m 211 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 212 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+    [31m[1m>[22m[39m[90m 213 |[39m     expect(data[33m.[39minviteError[33m.[39mcode)[33m.[39mtoBe([32m'FAMILY_INVITE_USED'[39m)
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 214 |[39m   })
+     [90m 215 |[39m
+     [90m 216 |[39m   it([32m'正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，不计数'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.code (tests/unit/a2-invite-security.test.js:213:29)
+
+  ● A2 · getFamilyJoinData 错误态与错误码 › 正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，不计数
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+      Array [
+        "bloodPressure",
+    +   "bloodGlucose",
+        "medicine",
+        "report",
+      ]
+
+    [0m [90m 220 |[39m     expect(data[33m.[39minviteError)[33m.[39mtoBeUndefined()
+     [90m 221 |[39m     expect(data[33m.[39mremainHours)[33m.[39mtoBeGreaterThan([35m0[39m)
+    [31m[1m>[22m[39m[90m 222 |[39m     expect(data[33m.[39mscopes[33m.[39mmap(s [33m=>[39m s[33m.[39mkey))[33m.[39mtoEqual([[32m'bloodPressure'[39m[33m,[39m [32m'medicine'[39m[33m,[39m [32m'report'[39m])
+     [90m     |[39m                                         [31m[1m^[22m[39m
+     [90m 223 |[39m     expect(attemptRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 224 |[39m   })
+     [90m 225 |[39m[0m
+
+      at Object.toEqual (tests/unit/a2-invite-security.test.js:222:41)
+
+  ● A2 · 频控（openId + 北京自然日，门限 20） › 第 1 次与第 20 次失败允许并记录；第 21 次查询被拒且不新增记录
+
+    TypeError: Cannot read properties of undefined (reading 'code')
+
+    [0m [90m 240 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 241 |[39m     [36mconst[39m first [33m=[39m [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+    [31m[1m>[22m[39m[90m 242 |[39m     expect(first[33m.[39minviteError[33m.[39mcode)[33m.[39mtoBe([32m'FAMILY_INVITE_NOT_FOUND'[39m)
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 243 |[39m     expect(attemptRows(db))[33m.[39mtoHaveLength([35m1[39m)
+     [90m 244 |[39m
+     [90m 245 |[39m     seedAttempts(db[33m,[39m [35m18[39m) [90m// 合计 19 条今日失败[39m[0m
+
+      at Object.code (tests/unit/a2-invite-security.test.js:242:30)
+
+  ● A2 · 频控（openId + 北京自然日，门限 20） › 频控记录不含邀请码明文
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 275 |[39m     [36mawait[39m service[33m.[39mgetFamilyJoinData([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+     [90m 276 |[39m     [36mconst[39m rows [33m=[39m attemptRows(db)
+    [31m[1m>[22m[39m[90m 277 |[39m     expect(rows)[33m.[39mtoHaveLength([35m1[39m)
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 278 |[39m     expect([33mJSON[39m[33m.[39mstringify(rows))[33m.[39mnot[33m.[39mtoContain([33mVALID_CODE[39m)
+     [90m 279 |[39m     expect(rows[[35m0[39m])[33m.[39mtoEqual({
+     [90m 280 |[39m       _id[33m:[39m rows[[35m0[39m][33m.[39m_id[33m,[39m[0m
+
+      at Object.toHaveLength (tests/unit/a2-invite-security.test.js:277:18)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › 不存在 → FAMILY_INVITE_NOT_FOUND 且计数
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "FAMILY_INVITE_NOT_FOUND"
+    Received: undefined
+
+    [0m [90m 303 |[39m     } [36mcatch[39m (e) { caught [33m=[39m e }
+     [90m 304 |[39m     expect(caught)[33m.[39mtoBeTruthy()
+    [31m[1m>[22m[39m[90m 305 |[39m     expect(caught[33m.[39mcode)[33m.[39mtoBe(expectedCode)
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 306 |[39m     expect(memberRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 307 |[39m   }
+     [90m 308 |[39m[0m
+
+      at toBe (tests/unit/a2-invite-security.test.js:305:25)
+      at Object.<anonymous> (tests/unit/a2-invite-security.test.js:311:5)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › 已过期 → FAMILY_INVITE_EXPIRED
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "FAMILY_INVITE_EXPIRED"
+    Received: undefined
+
+    [0m [90m 303 |[39m     } [36mcatch[39m (e) { caught [33m=[39m e }
+     [90m 304 |[39m     expect(caught)[33m.[39mtoBeTruthy()
+    [31m[1m>[22m[39m[90m 305 |[39m     expect(caught[33m.[39mcode)[33m.[39mtoBe(expectedCode)
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 306 |[39m     expect(memberRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 307 |[39m   }
+     [90m 308 |[39m[0m
+
+      at toBe (tests/unit/a2-invite-security.test.js:305:25)
+      at Object.<anonymous> (tests/unit/a2-invite-security.test.js:317:5)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › 已撤销 → FAMILY_INVITE_REVOKED
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "FAMILY_INVITE_REVOKED"
+    Received: undefined
+
+    [0m [90m 303 |[39m     } [36mcatch[39m (e) { caught [33m=[39m e }
+     [90m 304 |[39m     expect(caught)[33m.[39mtoBeTruthy()
+    [31m[1m>[22m[39m[90m 305 |[39m     expect(caught[33m.[39mcode)[33m.[39mtoBe(expectedCode)
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 306 |[39m     expect(memberRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 307 |[39m   }
+     [90m 308 |[39m[0m
+
+      at toBe (tests/unit/a2-invite-security.test.js:305:25)
+      at Object.<anonymous> (tests/unit/a2-invite-security.test.js:322:5)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › 已被他人使用 → FAMILY_INVITE_USED
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "FAMILY_INVITE_USED"
+    Received: undefined
+
+    [0m [90m 303 |[39m     } [36mcatch[39m (e) { caught [33m=[39m e }
+     [90m 304 |[39m     expect(caught)[33m.[39mtoBeTruthy()
+    [31m[1m>[22m[39m[90m 305 |[39m     expect(caught[33m.[39mcode)[33m.[39mtoBe(expectedCode)
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 306 |[39m     expect(memberRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 307 |[39m   }
+     [90m 308 |[39m[0m
+
+      at toBe (tests/unit/a2-invite-security.test.js:305:25)
+      at Object.<anonymous> (tests/unit/a2-invite-security.test.js:327:5)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › expiresAt 缺失 → FAMILY_INVITE_INVALID（不做兼容）
+
+    expect(received).toBeTruthy()
+
+    Received: null
+
+    [0m [90m 302 |[39m       [36mawait[39m service[33m.[39mjoinFamilyByInvite([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m code })
+     [90m 303 |[39m     } [36mcatch[39m (e) { caught [33m=[39m e }
+    [31m[1m>[22m[39m[90m 304 |[39m     expect(caught)[33m.[39mtoBeTruthy()
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 305 |[39m     expect(caught[33m.[39mcode)[33m.[39mtoBe(expectedCode)
+     [90m 306 |[39m     expect(memberRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 307 |[39m   }[0m
+
+      at toBeTruthy (tests/unit/a2-invite-security.test.js:304:20)
+      at Object.<anonymous> (tests/unit/a2-invite-security.test.js:334:5)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › 自绑 → FAMILY_INVITE_SELF（既有语义补码，不计数）
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "code": "FAMILY_INVITE_SELF",
+    - }
+    + [Error: 不能加入自己创建的家庭邀请]
+
+    [0m [90m 339 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 340 |[39m     [36mawait[39m expect(service[33m.[39mjoinFamilyByInvite([32m'owner-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m }))
+    [31m[1m>[22m[39m[90m 341 |[39m       [33m.[39mrejects[33m.[39mtoMatchObject({ code[33m:[39m [32m'FAMILY_INVITE_SELF'[39m })
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 342 |[39m     expect(attemptRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 343 |[39m   })
+     [90m 344 |[39m[0m
+
+      at Object.toMatchObject (node_modules/expect/build/index.js:218:22)
+      at Object.toMatchObject (tests/unit/a2-invite-security.test.js:341:16)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › 已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码）
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Object {
+    -   "code": "FAMILY_MEMBER_BOUND",
+    - }
+    + [Error: 你已绑定一位家人，请先解除原绑定]
+
+    [0m [90m 350 |[39m     [36mconst[39m service [33m=[39m createService(db)
+     [90m 351 |[39m     [36mawait[39m expect(service[33m.[39mjoinFamilyByInvite([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m }))
+    [31m[1m>[22m[39m[90m 352 |[39m       [33m.[39mrejects[33m.[39mtoMatchObject({ code[33m:[39m [32m'FAMILY_MEMBER_BOUND'[39m })
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 353 |[39m   })
+     [90m 354 |[39m
+     [90m 355 |[39m   it([32m'频控拒绝直接刷 join 接口：RATE_LIMITED，零写入'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toMatchObject (node_modules/expect/build/index.js:218:22)
+      at Object.toMatchObject (tests/unit/a2-invite-security.test.js:352:16)
+
+  ● A2 · joinFamilyByInvite 错误码与频控防绕过 › 频控拒绝直接刷 join 接口：RATE_LIMITED，零写入
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"_id": "doc-1", "memberOpenId": "caller-1", "ownerOpenId": "owner-1", "status": "active"}
+
+    [0m [90m 357 |[39m     seedAttempts(db[33m,[39m [35m20[39m)
+     [90m 358 |[39m     [36mconst[39m service [33m=[39m createService(db)
+    [31m[1m>[22m[39m[90m 359 |[39m     [36mawait[39m expect(service[33m.[39mjoinFamilyByInvite([32m'caller-1'[39m[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m }))
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 360 |[39m       [33m.[39mrejects[33m.[39mtoMatchObject({ code[33m:[39m [32m'FAMILY_INVITE_RATE_LIMITED'[39m })
+     [90m 361 |[39m     expect(memberRows(db))[33m.[39mtoHaveLength([35m0[39m)
+     [90m 362 |[39m     expect(authRows(db)[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.expect (tests/unit/a2-invite-security.test.js:359:11)
+
+  ● A2 · createFamilyInvite 唯一性前置检查 › 候选码与他人文档冲突时重新生成，落库用新码
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "KXJNEW00002"
+    Received: "KXJDUP00001"
+
+    [0m [90m 372 |[39m     [36mconst[39m service [33m=[39m createService(db[33m,[39m [[32m'KXJDUP00001'[39m[33m,[39m [32m'KXJNEW00002'[39m])
+     [90m 373 |[39m     [36mconst[39m invite [33m=[39m [36mawait[39m service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes[33m:[39m [{ key[33m:[39m [32m'bloodPressure'[39m[33m,[39m read[33m:[39m [36mtrue[39m }] })
+    [31m[1m>[22m[39m[90m 374 |[39m     expect(invite[33m.[39minviteCode)[33m.[39mtoBe([32m'KXJNEW00002'[39m)
+     [90m     |[39m                               [31m[1m^[22m[39m
+     [90m 375 |[39m   })
+     [90m 376 |[39m
+     [90m 377 |[39m   it([32m'连续冲突 3 次：抛错且不写入新邀请'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toBe (tests/unit/a2-invite-security.test.js:374:31)
+
+  ● A2 · createFamilyInvite 唯一性前置检查 › 连续冲突 3 次：抛错且不写入新邀请
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"inviteCode": "KXJDUP00001", "inviteId": "KXJDUP00001", "invitePreview": {"expire": "24 小时", "meta": "可查看：血压记录", "title": "王阿姨邀请女儿查看健康记录"}, "sharePath": "/pages/family-sub/family-join/index?inviteCode=KXJDUP00001"}
+
+    [0m [90m 381 |[39m     })
+     [90m 382 |[39m     [36mconst[39m service [33m=[39m createService(db[33m,[39m [[32m'KXJDUP00001'[39m[33m,[39m [32m'KXJDUP00001'[39m[33m,[39m [32m'KXJDUP00001'[39m])
+    [31m[1m>[22m[39m[90m 383 |[39m     [36mawait[39m expect(service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes[33m:[39m [{ key[33m:[39m [32m'bloodPressure'[39m[33m,[39m read[33m:[39m [36mtrue[39m }] }))
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 384 |[39m       [33m.[39mrejects[33m.[39mtoThrow([32m'冲突'[39m)
+     [90m 385 |[39m     expect(authRows(db))[33m.[39mtoHaveLength([35m1[39m) [90m// 只有 owner-2 的文档[39m
+     [90m 386 |[39m   })[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.expect (tests/unit/a2-invite-security.test.js:383:11)
+
+  ● A2 · 本地镜像过期校验（decisions #15） › 本地邀请已过期：拒绝且不假成功
+
+    expect(received).toThrow(expected)
+
+    Expected asymmetric matcher: ObjectContaining {"code": "FAMILY_INVITE_EXPIRED"}
+
+    Received name:    "TypeError"
+    Received message: "joinFamilyByInviteLocal is not a function"
+
+        [0m [90m 417 |[39m   it([32m'本地邀请已过期：拒绝且不假成功'[39m[33m,[39m () [33m=>[39m {
+         [90m 418 |[39m     storeInvite({ expiresAt[33m:[39m [36mnew[39m [33mDate[39m([33mDate[39m[33m.[39mnow() [33m-[39m [35m1000[39m)[33m.[39mtoISOString() })
+        [31m[1m>[22m[39m[90m 419 |[39m     expect(() [33m=>[39m joinFamilyByInviteLocal({ inviteCode[33m:[39m [33mVALID_CODE[39m }[33m,[39m [36mnull[39m))
+         [90m     |[39m                  [31m[1m^[22m[39m
+         [90m 420 |[39m       [33m.[39mtoThrow(expect[33m.[39mobjectContaining({ code[33m:[39m [32m'FAMILY_INVITE_EXPIRED'[39m }))
+         [90m 421 |[39m   })
+         [90m 422 |[39m[0m
+
+      at joinFamilyByInviteLocal (tests/unit/a2-invite-security.test.js:419:18)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/a2-invite-security.test.js:420:8)
+      at Object.toThrow (tests/unit/a2-invite-security.test.js:420:8)
+
+  ● A2 · 本地镜像过期校验（decisions #15） › 本地邀请缺失 expiresAt：一律无效
+
+    expect(received).toThrow(expected)
+
+    Expected asymmetric matcher: ObjectContaining {"code": "FAMILY_INVITE_INVALID"}
+
+    Received name:    "TypeError"
+    Received message: "joinFamilyByInviteLocal is not a function"
+
+        [0m [90m 423 |[39m   it([32m'本地邀请缺失 expiresAt：一律无效'[39m[33m,[39m () [33m=>[39m {
+         [90m 424 |[39m     storeInvite({ expiresAt[33m:[39m undefined })
+        [31m[1m>[22m[39m[90m 425 |[39m     expect(() [33m=>[39m joinFamilyByInviteLocal({ inviteCode[33m:[39m [33mVALID_CODE[39m }[33m,[39m [36mnull[39m))
+         [90m     |[39m                  [31m[1m^[22m[39m
+         [90m 426 |[39m       [33m.[39mtoThrow(expect[33m.[39mobjectContaining({ code[33m:[39m [32m'FAMILY_INVITE_INVALID'[39m }))
+         [90m 427 |[39m   })
+         [90m 428 |[39m[0m
+
+      at joinFamilyByInviteLocal (tests/unit/a2-invite-security.test.js:425:18)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/a2-invite-security.test.js:426:8)
+      at Object.toThrow (tests/unit/a2-invite-security.test.js:426:8)
+
+  ● A2 · 本地镜像过期校验（decisions #15） › 邀请码与本地记录不一致：按不存在处理
+
+    expect(received).toThrow(expected)
+
+    Expected asymmetric matcher: ObjectContaining {"code": "FAMILY_INVITE_NOT_FOUND"}
+
+    Received name:    "TypeError"
+    Received message: "joinFamilyByInviteLocal is not a function"
+
+        [0m [90m 429 |[39m   it([32m'邀请码与本地记录不一致：按不存在处理'[39m[33m,[39m () [33m=>[39m {
+         [90m 430 |[39m     storeInvite()
+        [31m[1m>[22m[39m[90m 431 |[39m     expect(() [33m=>[39m joinFamilyByInviteLocal({ inviteCode[33m:[39m [32m'KXJOTHER0001'[39m }[33m,[39m [36mnull[39m))
+         [90m     |[39m                  [31m[1m^[22m[39m
+         [90m 432 |[39m       [33m.[39mtoThrow(expect[33m.[39mobjectContaining({ code[33m:[39m [32m'FAMILY_INVITE_NOT_FOUND'[39m }))
+         [90m 433 |[39m   })
+         [90m 434 |[39m[0m
+
+      at joinFamilyByInviteLocal (tests/unit/a2-invite-security.test.js:431:18)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/a2-invite-security.test.js:432:8)
+      at Object.toThrow (tests/unit/a2-invite-security.test.js:432:8)
+
+  ● A2 · 本地镜像过期校验（decisions #15） › 有效本地邀请：正常镜像 joined 状态
+
+    TypeError: joinFamilyByInviteLocal is not a function
+
+    [0m [90m 435 |[39m   it([32m'有效本地邀请：正常镜像 joined 状态'[39m[33m,[39m () [33m=>[39m {
+     [90m 436 |[39m     storeInvite()
+    [31m[1m>[22m[39m[90m 437 |[39m     [36mconst[39m result [33m=[39m joinFamilyByInviteLocal({ inviteCode[33m:[39m [33mVALID_CODE[39m }[33m,[39m [36mnull[39m)
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 438 |[39m     expect(result[33m.[39mstatus)[33m.[39mtoBe([32m'active'[39m)
+     [90m 439 |[39m   })
+     [90m 440 |[39m[0m
+
+      at Object.joinFamilyByInviteLocal (tests/unit/a2-invite-security.test.js:437:20)
+
+  ● A2 · 本地镜像过期校验（decisions #15） › createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验）
+
+    TypeError: createFamilyInviteLocal is not a function
+
+    [0m [90m 440 |[39m
+     [90m 441 |[39m   it([32m'createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验）'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 442 |[39m     createFamilyInviteLocal({ selectedRelation[33m:[39m [32m'daughter'[39m[33m,[39m scopes[33m:[39m [] }[33m,[39m { inviteCode[33m:[39m [33mVALID_CODE[39m })
+     [90m     |[39m     [31m[1m^[22m[39m
+     [90m 443 |[39m     [36mconst[39m stored [33m=[39m require([32m'../../services/family'[39m)[33m.[39mgetStoredFamilyAuth()
+     [90m 444 |[39m     expect(stored[33m.[39mexpiresAt)[33m.[39mtoBeTruthy()
+     [90m 445 |[39m     expect([36mnew[39m [33mDate[39m(stored[33m.[39mexpiresAt)[33m.[39mgetTime())[33m.[39mtoBeGreaterThan([33mDate[39m[33m.[39mnow())[0m
+
+      at Object.createFamilyInviteLocal (tests/unit/a2-invite-security.test.js:442:5)
+
+  ● A2 · 页面消费契约 › normalizeFamilyJoinData 透传 inviteError（页面据 code 渲染状态）
+
+    TypeError: normalizeFamilyJoinData is not a function
+
+    [0m [90m 454 |[39m       inviteError[33m:[39m { code[33m:[39m [32m'FAMILY_INVITE_EXPIRED'[39m[33m,[39m message[33m:[39m [32m'邀请已过期，请让家人重新发起'[39m }
+     [90m 455 |[39m     }
+    [31m[1m>[22m[39m[90m 456 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m normalizeFamilyJoinData(remote)
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 457 |[39m     expect(data[33m.[39minviteError[33m.[39mcode)[33m.[39mtoBe([32m'FAMILY_INVITE_EXPIRED'[39m)
+     [90m 458 |[39m   })
+     [90m 459 |[39m })[0m
+
+      at Object.normalizeFamilyJoinData (tests/unit/a2-invite-security.test.js:456:24)
+
+Test Suites: 1 failed, 1 total
+Tests:       25 failed, 5 passed, 30 total
+Snapshots:   0 total
+Time:        0.83 s
+Ran all test suites matching /tests\\unit\\a2-invite-security.test.js/i.

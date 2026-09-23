@@ -1,0 +1,7 @@
+
+> regression
+> node scripts/health-api-regression.js
+
+TypeError: Cannot read properties of undefined (reading '0')
+    at testMedicationService (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\scripts\health-api-regression.js:295:36)
+    at async main (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\scripts\health-api-regression.js:523:3)

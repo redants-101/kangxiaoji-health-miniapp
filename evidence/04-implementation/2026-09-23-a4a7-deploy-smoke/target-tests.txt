@@ -1,0 +1,6 @@
+Test Suites: 6 passed, 6 total
+Tests:       93 passed, 93 total
+Snapshots:   0 total
+Time:        4.97 s
+Ran all test suites matching /tests\\unit\\a3-family-readonly.test.js|tests\\unit\\a4-family-write.test.js|tests\\unit\\a5-cache-revocation.test.js|tests\\unit\\a5-page-staleness.test.js|tests\\unit\\a6-phone-reminder.test.js|tests\\unit\\a7-tab-release.test.js/i.
+target-exit=0

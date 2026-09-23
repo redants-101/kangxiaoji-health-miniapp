@@ -1,0 +1,6 @@
+
+> regression
+> node scripts/health-api-regression.js
+
+health-api-regression: ok
+regression-exit=0

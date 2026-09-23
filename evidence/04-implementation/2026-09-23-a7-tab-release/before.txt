@@ -1,0 +1,32 @@
+FAIL tests/unit/a7-tab-release.test.js
+  ● Test suite failed to run
+
+    Configuration error:
+
+    Could not locate module ../../utils/feature-flags mapped as:
+    $1.
+
+    Please check your configuration for these entries:
+    {
+      "moduleNameMapper": {
+        "/^(\.{1,2}\/.*)$/": "$1"
+      },
+      "resolver": undefined
+    }
+
+    [0m [90m 25 |[39m })
+     [90m 26 |[39m
+    [31m[1m>[22m[39m[90m 27 |[39m [36mconst[39m featureFlags [33m=[39m require([32m'../../utils/feature-flags'[39m)
+     [90m    |[39m                      [31m[1m^[22m[39m
+     [90m 28 |[39m
+     [90m 29 |[39m describe([32m'A7 · 运行时开关（utils/feature-flags）'[39m[33m,[39m () [33m=>[39m {
+     [90m 30 |[39m   it([32m'端侧默认值：正式发布=关；体验版/开发版=开（明确区分）'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at createNoMappedModuleFoundError (node_modules/jest-resolve/build/resolver.js:759:17)
+      at Object.require (tests/unit/a7-tab-release.test.js:27:22)
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        0.723 s
+Ran all test suites matching /tests\\unit\\a7-tab-release.test.js/i.

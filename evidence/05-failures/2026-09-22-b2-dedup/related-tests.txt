@@ -1,0 +1,117 @@
+
+> test
+> jest --verbose --runInBand tests/unit/page-data-consistency.test.js tests/unit/family.test.js tests/unit/medication.test.js tests/unit/page-data.test.js
+
+PASS tests/unit/family.test.js
+  services/family
+    normalizeMemberStatus
+      √ active/已授权 映射为 已授权 (2 ms)
+      √ pending/待加入 映射为 待加入
+      √ revoked/已解除 映射为 已解除 (1 ms)
+      √ 未知状态原样返回
+    getRelationInitial
+      √ 返回关系首字
+      √ 空关系返回 家
+    getRelationMeta
+      √ 女儿 → 主要照护人
+      √ 儿子 → 紧急联系人 (1 ms)
+      √ 配偶 → 共同管理
+      √ 未知关系 → 家属/共同管理
+    getScopeText
+      √ 返回已启用权限的标题 (1 ms)
+      √ 无启用权限返回 fallback
+      √ 非数组返回 fallback
+      √ 空数组返回 fallback
+    mapFamilyMember
+      √ 映射完整成员数据 (5 ms)
+      √ 使用 fallback 填充缺失字段
+      √ 无 id 时使用索引生成
+    enforceHomeFamilyAccess
+      √ 无授权数据时返回原始数据 (1 ms)
+      √ 已解除授权时返回无权限数据
+    getNoFamilyAccessData
+      √ 返回无权限的标准结构
+
+PASS tests/unit/medication.test.js
+  services/medication
+    getStoredMedicationPlans
+      √ 无计划时返回空数组 (1 ms)
+      √ 有计划时返回数组 (1 ms)
+    getStoredMedicationConfirmations
+      √ 无确认记录时返回空数组
+    upsertMedicationPlan
+      √ 新增计划
+      √ 更新已有计划 (1 ms)
+    appendMedicationConfirmation
+      √ 新增确认记录
+      √ 同 logId 同日期更新而非新增
+      √ 不同日期新增记录
+    saveMedicationPlanLocal
+      √ 创建新计划 (2 ms)
+      √ 更新已有计划保持状态
+    deleteMedicationPlanLocal
+      √ 删除指定计划 (1 ms)
+      √ 删除不存在的计划返回 deleted=true
+    toggleMedicationPlanStatusLocal
+      √ 启用→已停用
+      √ 已停用→启用
+      √ 不存在的计划返回 null
+    confirmMedicationLocal
+      √ 创建确认记录
+    revokeMedicationConfirmationLocal
+      √ 撤销今日确认记录
+      √ 撤销不存在的记录返回 null
+    mapMedicationPlanToListItem
+      √ 映射计划到列表项 (1 ms)
+    mergeListByTimestamp
+      √ 合并本地和远程记录，取较新者
+      √ 空数组合并
+    mergeConfirmationsByLogId
+      √ 按 logId 合并，取较新者
+    parseMedTaskId
+      √ 解析标准格式 task-med-{planId}-{index} (1 ms)
+      √ 解析含多段横线的 planId
+      √ 非 task-med 前缀返回 null
+    findNextPendingTime
+      √ 找到下一个待确认时间点 (1 ms)
+      √ 已停用计划返回 null
+      √ 全部已确认返回 null
+
+PASS tests/unit/page-data.test.js
+  services/page-data
+    clone
+      √ 深拷贝对象 (1 ms)
+      √ 深拷贝数组
+      √ undefined 返回 undefined
+      √ null 返回 null
+    deepMerge
+      √ 基础对象合并
+      √ 嵌套对象递归合并
+      √ override 为数组时直接替换
+      √ override 为 undefined 时返回 base 的克隆
+      √ 不修改原始对象
+      √ override 为原始值时直接替换
+    withMockPageData
+      √ 无 transform 函数时执行 deepMerge
+      √ 有 transform 函数时执行自定义合并 (1 ms)
+      √ 未知 key 返回空对象或默认数据
+    mergeArrayItemDefaults
+      √ 按 identityKey 合并默认值
+      √ override 为非数组时返回 base 克隆
+      √ base 为空数组时返回 override 克隆
+
+PASS tests/unit/page-data-consistency.test.js
+  DEFAULT_PAGE_DATA 一致性验证（合并后）
+    √ 不包含 report 键
+    √ trend 键包含合并后的完整字段
+    √ trend.metricOptions 包含血压血糖复合指标和用药指标
+    √ trend.rangeOptions 包含三档时间
+    √ trend 默认值为 7天+血压血糖
+    √ reminder 任务使用 trend 路由 (1 ms)
+    √ reminder 任务标题已更新
+
+Test Suites: 4 passed, 4 total
+Tests:       71 passed, 71 total
+Snapshots:   0 total
+Time:        0.731 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\page-data-consistency.test.js|tests\\unit\\family.test.js|tests\\unit\\medication.test.js|tests\\unit\\page-data.test.js/i.

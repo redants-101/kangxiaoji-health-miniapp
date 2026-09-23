@@ -1,0 +1,382 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a1-member-isolation.test.js
+
+FAIL tests/unit/a1-member-isolation.test.js
+  A1 · 一位老人关联多位家属
+    √ O1 先后绑定 M1、M2：两行 active 关系互不影响 (7 ms)
+  A1 · 重新邀请：清空绑定但不动已有成员
+    × 重邀后 family_auth memberOpenId 清空、status=pending，M1 关系行原样保留 (3 ms)
+  A1 · 精准改权
+    × 修改 M1 后：M2 权限与无关待加入邀请保持不变 (6 ms)
+    × memberId 缺失：拒绝且 family_auth 与 family_members 零写入 (1 ms)
+    × memberId 伪造：拒绝且 family_auth 与 family_members 零写入
+    × memberId 空字符串：拒绝且 family_auth 与 family_members 零写入
+    × 其他 owner 的 memberId：拒绝且零写入 (1 ms)
+    × getFamilyAuthData 预览分支不得回填 family_auth id 充当 memberId
+    × getFamilyData 预览卡不得携带 family_auth id 作为成员 id (1 ms)
+  A1 · 精准撤销
+    √ 撤销 M1 后：M1 新请求被拒（空数据），M2 新请求仍允许 (2 ms)
+    √ 重复撤销：幂等返回且零写入，不触碰无关邀请与其他成员 (2 ms)
+    × 撤销要求 memberId：缺失时拒绝且不清 family_auth (1 ms)
+    √ 撤销只重置确实绑定该成员的 family_auth，不动他人绑定 (1 ms)
+  A1 · 加入家庭：1:1、幂等与自绑
+    × 已绑定 O1 的成员加入 O2 被拒，零新行、O2 邀请保持 pending (1 ms)
+    × 同 owner 重复加入：幂等，不增行、不重置已调整权限
+    √ 拒绝本人自绑定 (1 ms)
+    √ 同一邀请码顺序竞争：先到者绑定，后到者被拒（并发原子性属云端待验证）
+    √ 被撤销的成员可重新加入（新邀请），锚点复活为新关系 (1 ms)
+  A1 · 注销关联清理
+    √ 家属 M1 注销：只删本人关系行，M2 与 O1 数据不受影响 (1 ms)
+    √ 注销者是当前绑定成员时，才重置对应 family_auth；绑定他人则不动 (1 ms)
+  A1 · 客户端镜像：memberId 精确更新，无假成功
+    × 无 memberId 的改权结果：不镜像、不造卡，返回远端结果 (2 ms)
+    √ 带 memberId 的改权：只更新对应成员卡 (1 ms)
+    √ 撤销镜像：只移除目标成员
+
+  ● A1 · 重新邀请：清空绑定但不动已有成员 › 重邀后 family_auth memberOpenId 清空、status=pending，M1 关系行原样保留
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: ""
+    Received: "member-1"
+
+    [0m [90m 189 |[39m     [36mconst[39m inv2 [33m=[39m [36mawait[39m service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes[33m:[39m bpOnlyScopes() })
+     [90m 190 |[39m     [36mconst[39m auth [33m=[39m authRows(db)[[35m0[39m]
+    [31m[1m>[22m[39m[90m 191 |[39m     expect(auth[33m.[39mmemberOpenId)[33m.[39mtoBe([32m''[39m)
+     [90m     |[39m                               [31m[1m^[22m[39m
+     [90m 192 |[39m     expect(auth[33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)
+     [90m 193 |[39m     expect(auth[33m.[39minviteCode)[33m.[39mtoBe(inv2[33m.[39minviteCode)
+     [90m 194 |[39m     [90m// 已有成员的权限、状态、提醒规则不被重邀触碰[39m[0m
+
+      at Object.toBe (tests/unit/a1-member-isolation.test.js:191:31)
+
+  ● A1 · 精准改权 › 修改 M1 后：M2 权限与无关待加入邀请保持不变
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 16
+    + Received  + 16
+
+    @@ -2,59 +2,59 @@
+        "_id": "doc-1",
+        "_openid": "owner-1",
+        "activities": Array [],
+        "createdAt": "SERVER_DATE",
+        "expiresAt": "2026-09-23T05:44:22.107Z",
+    -   "inviteCode": "KXJINV003",
+    +   "inviteCode": "",
+        "member": Object {
+    -     "desc": "家属加入后，可在授权范围内查看健康记录和提醒状态。",
+    -     "name": "女儿",
+    -     "relation": "女儿",
+    +     "desc": "可协助查看记录、用药确认和周报。权限变更后立即生效。",
+    +     "name": "王阿姨",
+    +     "relation": "家属",
+          "role": "主要照护人",
+    -     "status": "待加入",
+    +     "status": "已授权",
+        },
+    -   "memberName": "女儿",
+    +   "memberName": "王阿姨",
+        "memberOpenId": "member-2",
+        "noticeRules": Object {
+    -     "missedMedicine": true,
+    +     "missedMedicine": false,
+          "missingRecord": false,
+    -     "weeklyReport": true,
+    +     "weeklyReport": false,
+        },
+        "ownerName": "王阿姨",
+        "ownerOpenId": "owner-1",
+        "scopes": Array [
+          Object {
+            "key": "bloodPressure",
+            "meta": "数值、测量时间、场景标签和趋势",
+            "read": true,
+    -       "remind": true,
+    +       "remind": false,
+            "title": "血压记录",
+            "write": false,
+          },
+          Object {
+            "key": "bloodGlucose",
+            "meta": "数值、测量时间、测量场景和趋势",
+    -       "read": true,
+    -       "remind": true,
+    +       "read": false,
+    +       "remind": false,
+            "title": "血糖记录",
+            "write": false,
+          },
+          Object {
+            "key": "medicine",
+            "meta": "用药计划、确认状态和未确认记录",
+    -       "read": true,
+    -       "remind": true,
+    +       "read": false,
+    +       "remind": false,
+            "title": "用药确认",
+            "write": false,
+          },
+          Object {
+            "key": "report",
+            "meta": "每周记录汇总和趋势回顾",
+    -       "read": true,
+    -       "remind": true,
+    +       "read": false,
+    +       "remind": false,
+            "title": "健康记录周报",
+            "write": false,
+          },
+        ],
+    -   "status": "pending",
+    +   "status": "active",
+        "updatedAt": "SERVER_DATE",
+      }
+
+    [0m [90m 222 |[39m     expect(memberRows(db)[33m.[39mfind(r [33m=>[39m r[33m.[39mmemberOpenId [33m===[39m [32m'member-2'[39m))[33m.[39mtoEqual(m2Before)
+     [90m 223 |[39m     [90m// 待加入邀请配置不被成员改权覆盖[39m
+    [31m[1m>[22m[39m[90m 224 |[39m     expect(authRows(db)[[35m0[39m])[33m.[39mtoEqual(authBefore)
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 225 |[39m     expect(pending[33m.[39minviteCode)[33m.[39mtoBeTruthy()
+     [90m 226 |[39m   })
+     [90m 227 |[39m[0m
+
+      at Object.toEqual (tests/unit/a1-member-isolation.test.js:224:29)
+
+  ● A1 · 精准改权 › memberId 缺失：拒绝且 family_auth 与 family_members 零写入
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"stats": {"updated": 1}}
+
+    [0m [90m 236 |[39m     [36mconst[39m authBefore [33m=[39m clone(authRows(db))
+     [90m 237 |[39m
+    [31m[1m>[22m[39m[90m 238 |[39m     [36mawait[39m expect(service[33m.[39mupdateFamilyAuth([32m'owner-1'[39m[33m,[39m {
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 239 |[39m       memberId[33m,[39m
+     [90m 240 |[39m       scopes[33m:[39m bpOnlyScopes()
+     [90m 241 |[39m     }))[33m.[39mrejects[33m.[39mtoThrow()[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at expect (tests/unit/a1-member-isolation.test.js:238:11)
+
+  ● A1 · 精准改权 › memberId 伪造：拒绝且 family_auth 与 family_members 零写入
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"stats": {"updated": 1}}
+
+    [0m [90m 236 |[39m     [36mconst[39m authBefore [33m=[39m clone(authRows(db))
+     [90m 237 |[39m
+    [31m[1m>[22m[39m[90m 238 |[39m     [36mawait[39m expect(service[33m.[39mupdateFamilyAuth([32m'owner-1'[39m[33m,[39m {
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 239 |[39m       memberId[33m,[39m
+     [90m 240 |[39m       scopes[33m:[39m bpOnlyScopes()
+     [90m 241 |[39m     }))[33m.[39mrejects[33m.[39mtoThrow()[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at expect (tests/unit/a1-member-isolation.test.js:238:11)
+
+  ● A1 · 精准改权 › memberId 空字符串：拒绝且 family_auth 与 family_members 零写入
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"stats": {"updated": 1}}
+
+    [0m [90m 236 |[39m     [36mconst[39m authBefore [33m=[39m clone(authRows(db))
+     [90m 237 |[39m
+    [31m[1m>[22m[39m[90m 238 |[39m     [36mawait[39m expect(service[33m.[39mupdateFamilyAuth([32m'owner-1'[39m[33m,[39m {
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 239 |[39m       memberId[33m,[39m
+     [90m 240 |[39m       scopes[33m:[39m bpOnlyScopes()
+     [90m 241 |[39m     }))[33m.[39mrejects[33m.[39mtoThrow()[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at expect (tests/unit/a1-member-isolation.test.js:238:11)
+
+  ● A1 · 精准改权 › 其他 owner 的 memberId：拒绝且零写入
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"stats": {"updated": 1}}
+
+    [0m [90m 264 |[39m     [36mconst[39m authBefore [33m=[39m clone(authRows(db))
+     [90m 265 |[39m
+    [31m[1m>[22m[39m[90m 266 |[39m     [36mawait[39m expect(service[33m.[39mupdateFamilyAuth([32m'owner-1'[39m[33m,[39m {
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 267 |[39m       memberId[33m:[39m m9Row[33m.[39m_id[33m,[39m
+     [90m 268 |[39m       scopes[33m:[39m bpOnlyScopes()
+     [90m 269 |[39m     }))[33m.[39mrejects[33m.[39mtoThrow([32m'家属关系不存在或无权操作'[39m)[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.expect (tests/unit/a1-member-isolation.test.js:266:11)
+
+  ● A1 · 精准改权 › getFamilyAuthData 预览分支不得回填 family_auth id 充当 memberId
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: ""
+    Received: "doc-1"
+
+    [0m [90m 278 |[39m     [36mawait[39m service[33m.[39mcreateFamilyInvite([32m'owner-1'[39m[33m,[39m { scopes[33m:[39m fullScopes() })
+     [90m 279 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyAuthData([32m'owner-1'[39m[33m,[39m {})
+    [31m[1m>[22m[39m[90m 280 |[39m     expect(data[33m.[39mmemberId)[33m.[39mtoBe([32m''[39m)
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 281 |[39m   })
+     [90m 282 |[39m
+     [90m 283 |[39m   it([32m'getFamilyData 预览卡不得携带 family_auth id 作为成员 id'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toBe (tests/unit/a1-member-isolation.test.js:280:27)
+
+  ● A1 · 精准改权 › getFamilyData 预览卡不得携带 family_auth id 作为成员 id
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: ""
+    Received: "doc-1"
+
+    [0m [90m 287 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m service[33m.[39mgetFamilyData([32m'owner-1'[39m)
+     [90m 288 |[39m     expect(data[33m.[39mmembers[[35m0[39m][33m.[39misOwner)[33m.[39mtoBe([36mtrue[39m)
+    [31m[1m>[22m[39m[90m 289 |[39m     expect(data[33m.[39mmembers[[35m0[39m][33m.[39mid)[33m.[39mtoBe([32m''[39m)
+     [90m     |[39m                                [31m[1m^[22m[39m
+     [90m 290 |[39m   })
+     [90m 291 |[39m })
+     [90m 292 |[39m[0m
+
+      at Object.toBe (tests/unit/a1-member-isolation.test.js:289:32)
+
+  ● A1 · 精准撤销 › 撤销要求 memberId：缺失时拒绝且不清 family_auth
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"memberId": "doc-1", "status": "revoked"}
+
+    [0m [90m 343 |[39m     [36mconst[39m authBefore [33m=[39m clone(authRows(db))
+     [90m 344 |[39m
+    [31m[1m>[22m[39m[90m 345 |[39m     [36mawait[39m expect(service[33m.[39mrevokeFamilyMember([32m'owner-1'[39m[33m,[39m {}))[33m.[39mrejects[33m.[39mtoThrow()
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 346 |[39m
+     [90m 347 |[39m     expect(memberRows(db))[33m.[39mtoEqual(membersBefore)
+     [90m 348 |[39m     expect(authRows(db))[33m.[39mtoEqual(authBefore)[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.expect (tests/unit/a1-member-isolation.test.js:345:11)
+
+  ● A1 · 加入家庭：1:1、幂等与自绑 › 已绑定 O1 的成员加入 O2 被拒，零新行、O2 邀请保持 pending
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"_id": "doc-2", "memberOpenId": "member-1", "ownerOpenId": "owner-2", "status": "active"}
+
+    [0m [90m 374 |[39m
+     [90m 375 |[39m     [36mconst[39m membersBefore [33m=[39m clone(memberRows(db))
+    [31m[1m>[22m[39m[90m 376 |[39m     [36mawait[39m expect(s1[33m.[39mjoinFamilyByInvite([32m'member-1'[39m[33m,[39m { inviteCode[33m:[39m inv2[33m.[39minviteCode }))
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 377 |[39m       [33m.[39mrejects[33m.[39mtoThrow([32m'你已绑定一位家人'[39m)
+     [90m 378 |[39m
+     [90m 379 |[39m     expect(memberRows(db))[33m.[39mtoEqual(membersBefore)[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.expect (tests/unit/a1-member-isolation.test.js:376:11)
+
+  ● A1 · 加入家庭：1:1、幂等与自绑 › 同 owner 重复加入：幂等，不增行、不重置已调整权限
+
+    邀请不存在或已失效
+
+    [0m [90m 575 |[39m     [36mconst[39m auth [33m=[39m authList[[35m0[39m]
+     [90m 576 |[39m     [36mif[39m ([33m![39mauth) {
+    [31m[1m>[22m[39m[90m 577 |[39m       [36mthrow[39m [36mnew[39m [33mError[39m([32m'邀请不存在或已失效'[39m)
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 578 |[39m     }
+     [90m 579 |[39m     [36mif[39m (auth[33m.[39mstatus [33m===[39m [32m'revoked'[39m) {
+     [90m 580 |[39m       [36mthrow[39m [36mnew[39m [33mError[39m([32m'邀请已撤销'[39m)[0m
+
+      at Object.joinFamilyByInvite (cloudfunctions/healthApi/family-service.js:577:13)
+      at Object.<anonymous> (tests/unit/a1-member-isolation.test.js:401:19)
+
+  ● A1 · 客户端镜像：memberId 精确更新，无假成功 › 无 memberId 的改权结果：不镜像、不造卡，返回远端结果
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  2
+    + Received  + 50
+
+      Object {
+    -   "stats": Object {
+    -     "updated": 1,
+    +   "activities": Array [],
+    +   "currentMemberId": "rel-1",
+    +   "member": Object {
+    +     "desc": "可协助查看记录、用药确认和周报。权限变更后立即生效。",
+    +     "name": "小李",
+    +     "relation": "女儿",
+    +     "role": "主要照护人",
+    +     "status": "已授权",
+    +   },
+    +   "memberName": "小李",
+    +   "members": Array [
+    +     Object {
+    +       "id": "rel-1",
+    +       "initial": "女",
+    +       "lastSeen": "最近暂无查看记录",
+    +       "name": "小李",
+    +       "relation": "女儿",
+    +       "role": "主要照护人",
+    +       "scope": "血压记录",
+    +       "status": "已授权",
+    +     },
+    +     Object {
+    +       "id": "rel-2",
+    +       "name": "小张",
+    +       "relation": "儿子",
+    +       "scope": "血糖记录",
+    +       "status": "已授权",
+    +     },
+    +   ],
+    +   "noticeRules": Object {},
+    +   "scopes": Array [
+    +     Object {
+    +       "key": "bloodPressure",
+    +       "read": true,
+    +       "remind": false,
+          },
+    +     Object {
+    +       "key": "bloodGlucose",
+    +       "read": false,
+    +     },
+    +     Object {
+    +       "key": "medicine",
+    +       "read": false,
+    +     },
+    +     Object {
+    +       "key": "report",
+    +       "read": false,
+    +     },
+    +   ],
+    +   "status": "active",
+    +   "updatedAt": "2026-09-22T05:44:22.137Z",
+      }
+
+    [0m [90m 509 |[39m     [36mconst[39m remoteResult [33m=[39m { stats[33m:[39m { updated[33m:[39m [35m1[39m } }
+     [90m 510 |[39m     [36mconst[39m result [33m=[39m updateFamilyAuthLocal({ scopes[33m:[39m bpOnlyScopes() }[33m,[39m remoteResult)
+    [31m[1m>[22m[39m[90m 511 |[39m     expect(result)[33m.[39mtoEqual(remoteResult)
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 512 |[39m     [36mconst[39m stored [33m=[39m getStoredFamilyAuth()
+     [90m 513 |[39m     expect(stored[33m.[39mmembers)[33m.[39mtoHaveLength([35m2[39m)
+     [90m 514 |[39m     expect(stored[33m.[39mmembers[[35m0[39m][33m.[39mid)[33m.[39mtoBe([32m'rel-1'[39m)[0m
+
+      at Object.toEqual (tests/unit/a1-member-isolation.test.js:511:20)
+
+Test Suites: 1 failed, 1 total
+Tests:       12 failed, 11 passed, 23 total
+Snapshots:   0 total
+Time:        0.695 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a1-member-isolation.test.js/i.

@@ -1,0 +1,881 @@
+diff --git a/services/core.js b/services/core.js
+index b8c1d89..fbdbd6f 100644
+--- a/services/core.js
++++ b/services/core.js
+@@ -219,6 +219,25 @@ function createCloudReadCacheKey(key, payload) {
+   return `${key}:${JSON.stringify(normalizeCachePayload(payload || {}))}`
+ }
+ 
++// A5 缓存口径（撤销实时生效）：
++// - owner 本人读：60s 内存 TTL；网络性失败可回退过期缓存（离线回显），
++//   但服务端显式拒绝（带 errCode 的错误）绝不回填；
++// - 家族敏感读（family 域 key 或 payload.familyView=true）：零缓存、每次回源、
++//   失败一律上抛——本地缓存不能作为授权依据，家族读永远以服务端
++//   active family_members 关系与当前 scopes 为准。
++const FAMILY_SENSITIVE_KEYS = ['family', 'familyInvite', 'familyJoin', 'familyJoinHint', 'familyAuth', 'homeFamily']
++
++/**
++ * 判断一次云读是否家族敏感（必须每次回源、禁止 stale 回填）。
++ * @param {string} key 云函数读接口标识。
++ * @param {Object} [payload] 读请求载荷。
++ * @returns {boolean}
++ */
++function isFamilySensitiveRead(key, payload) {
++  if (FAMILY_SENSITIVE_KEYS.includes(key)) return true
++  return !!(payload && payload.familyView)
++}
++
+ function getCloudReadCache(cacheKey, allowStale = false) {
+   const entry = cloudReadCache[cacheKey]
+   if (!entry || (!allowStale && entry.expireAt < Date.now())) return null
+@@ -234,17 +253,26 @@ function getCloudReadCache(cacheKey, allowStale = false) {
+  */
+ function requestCloudByKey(key, payload = {}) {
+   const cacheKey = createCloudReadCacheKey(key, payload)
+-  const cached = getCloudReadCache(cacheKey)
+-  if (cached) return Promise.resolve(cached)
++  // A5：家族敏感读零缓存——不读缓存、不写缓存、失败不回填
++  const familySensitive = isFamilySensitiveRead(key, payload)
++  if (!familySensitive) {
++    const cached = getCloudReadCache(cacheKey)
++    if (cached) return Promise.resolve(cached)
++  }
+   if (inFlightCloudReads[cacheKey]) return inFlightCloudReads[cacheKey].then(clone)
+ 
+   const request = callCloudWithRetry({ name: apiConfig.cloudFunctionName, data: { key, payload } })
+     .then(result => {
+       if (result && isFailureErrMsg(result.errMsg)) throw buildCloudError(result)
+-      cloudReadCache[cacheKey] = { data: clone(result), expireAt: Date.now() + CLOUD_READ_CACHE_TTL_MS }
++      if (!familySensitive) {
++        cloudReadCache[cacheKey] = { data: clone(result), expireAt: Date.now() + CLOUD_READ_CACHE_TTL_MS }
++      }
+       return result
+     })
+     .catch(err => {
++      // A5：服务端显式拒绝（带 errCode）任何键都不回填旧缓存；
++      // 家族敏感读任何失败都不回填——旧缓存不能在被拒绝后回填页面。
++      if (familySensitive || (err && err.code)) throw err
+       const stale = getCloudReadCache(cacheKey, true)
+       if (stale) { console.warn(`[Cloud] ${key} 失败，使用缓存`, err); return stale }
+       throw err
+@@ -318,6 +346,7 @@ module.exports = {
+   getRelatedCacheKeys,
+   getRetryDelay,
+   isDirty,
++  isFamilySensitiveRead,
+   isTransientError,
+   markClean,
+   markDirty,
+diff --git a/services/family.js b/services/family.js
+index a053c96..140ae06 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -1,7 +1,9 @@
+ const {
+   STORAGE_KEYS,
++  clearCacheByKeys,
+   createRecordId,
+   getRelatedCacheKeys,
++  markDirty,
+   readStorage,
+   resolveMockData,
+   resolveRemote,
+@@ -9,6 +11,22 @@ const {
+ } = require('./core')
+ const { deepMerge, withMockPageData } = require('./page-data')
+ 
++// A5：家族事件（撤销/改权/加入/代录成功）后需要失效并重载的页面键。
++// 家族敏感读本身零缓存（services/core isFamilySensitiveRead），这里同时负责：
++// 1) 清掉这些键的 owner 模式缓存条目（同键不同 payload 共享前缀）；
++// 2) 置脏标记，驱动已打开页面 onShow 重载，拿到撤销/改权/代录后的最新服务端状态。
++const FAMILY_PAGE_KEYS = ['homeFamily', 'family', 'trend', 'recordList', 'recordDetail', 'medList', 'medHistory']
++
++/**
++ * 家族事件后的精准缓存失效：清七个家族页面键并置脏。
++ * 只在云端动作成功后调用；本地镜像另行按 memberId 精确更新，不做全量清空。
++ * @returns {void}
++ */
++function invalidateFamilyCaches() {
++  clearCacheByKeys(FAMILY_PAGE_KEYS)
++  markDirty(FAMILY_PAGE_KEYS)
++}
++
+ /**
+  * 家庭协同服务模块（三级权限契约）。
+  * 负责家属邀请、加入家庭、家庭页成员展示和家属权限的本地镜像持久化。
+@@ -126,6 +144,8 @@ function mapMemberCardToAuthMember(memberCard) {
+ }
+ 
+ function updateFamilyAuthLocal(payload, remoteResult) {
++  // A5：云端改权已成功——家族页面缓存精准失效并置脏（镜像按 memberId 精确更新，见下）
++  invalidateFamilyCaches()
+   // A1：镜像必须携带服务端确认的 memberId；缺失时不镜像、不造卡，直接返回远端结果。
+   // 镜像仅用于离线回显，不是授权依据；服务端拒绝时 resolveRemote 已抛错，本函数不会执行。
+   const memberId = payload && payload.memberId
+@@ -169,6 +189,8 @@ function updateFamilyAuthLocal(payload, remoteResult) {
+ }
+ 
+ function createFamilyInviteLocal(payload, remoteResult) {
++  // A5：云端邀请已成功——家庭页/家属页缓存失效（新待加入卡片）
++  invalidateFamilyCaches()
+   const storedAuth = getStoredFamilyAuth() || {}
+   const relationMeta = getRelationMeta(payload.selectedRelation)
+   const inviteCode = (remoteResult && (remoteResult.inviteCode || remoteResult.inviteId)) || createRecordId('invite').replace(/-/g, '').slice(-12)
+@@ -210,6 +232,8 @@ function createFamilyInviteLocal(payload, remoteResult) {
+ }
+ 
+ function joinFamilyByInviteLocal(payload, remoteResult) {
++  // A5：云端加入已成功——B 端家族页面缓存失效并置脏（拒绝态页面需重载为授权态）
++  invalidateFamilyCaches()
+   const storedAuth = getStoredFamilyAuth() || {}
+   const inviteCode = (payload && payload.inviteCode) || ''
+ 
+@@ -248,6 +272,9 @@ function joinFamilyByInviteLocal(payload, remoteResult) {
+ }
+ 
+ function revokeFamilyMemberLocal(payload, remoteResult) {
++  // A5：云端撤销已成功——家族页面缓存精准失效并置脏；
++  // 镜像只按服务端确认的 memberId 精确移除（撤 M1 不动 M2 的卡片）。
++  invalidateFamilyCaches()
+   // A1：撤销镜像只按服务端确认的 memberId 精确移除；缺失时不镜像。
+   const memberId = payload && payload.memberId
+   if (!memberId) return remoteResult
+@@ -434,12 +461,17 @@ function revokeFamilyMember(payload) {
+ }
+ 
+ // A4 家属代录写路由（服务端闸口鉴权；本地不缓存写入结果，以云端响应为准）
+-function familyRecordBloodPressure(payload) { return resolveRemote('familyRecordBloodPressure', payload) }
+-function familyRecordBloodGlucose(payload) { return resolveRemote('familyRecordBloodGlucose', payload) }
+-function familyConfirmMedication(payload) { return resolveRemote('familyConfirmMedication', payload) }
+-function familyRevokeProxyConfirmation(payload) { return resolveRemote('familyRevokeProxyConfirmation', payload) }
++// A5：云端成功后精准失效家族页面缓存并置脏（owner 侧数据已变化，onShow 重载拉新）
++function withFamilyInvalidation(promise) {
++  return promise.then((res) => { invalidateFamilyCaches(); return res })
++}
++function familyRecordBloodPressure(payload) { return withFamilyInvalidation(resolveRemote('familyRecordBloodPressure', payload)) }
++function familyRecordBloodGlucose(payload) { return withFamilyInvalidation(resolveRemote('familyRecordBloodGlucose', payload)) }
++function familyConfirmMedication(payload) { return withFamilyInvalidation(resolveRemote('familyConfirmMedication', payload)) }
++function familyRevokeProxyConfirmation(payload) { return withFamilyInvalidation(resolveRemote('familyRevokeProxyConfirmation', payload)) }
+ 
+ module.exports = {
++  FAMILY_PAGE_KEYS,
+   FAMILY_RELATIONS,
+   SCOPE_KEYS,
+   createFamilyInvite,
+@@ -460,6 +492,7 @@ module.exports = {
+   getRelationMeta,
+   getScopeText,
+   getStoredFamilyAuth,
++  invalidateFamilyCaches,
+   joinFamilyByInvite,
+   joinFamilyByInviteLocal,
+   mapFamilyMember,
+diff --git a/tests/unit/a5-cache-revocation.test.js b/tests/unit/a5-cache-revocation.test.js
+new file mode 100644
+index 0000000..9ff55e8
+--- /dev/null
++++ b/tests/unit/a5-cache-revocation.test.js
+@@ -0,0 +1,471 @@
++/**
++ * A5 撤销实时生效与缓存治理（先失败后实现）。
++ *
++ * 口径（详见本批 data-flow-review.md）：
++ * - 家族敏感读（family 域 key 或 payload.familyView=true）：零缓存、每次回源、失败绝不旧数据回填；
++ * - owner 本人读：保持 60s 内存 TTL；网络性失败可回退过期缓存，但服务端显式拒绝（带 errCode）绝不回填；
++ * - 动作成功：全局清读缓存（现状 fail-safe 保留）+ 家族事件对七个页面键精准失效并置脏标记；
++ * - 本地镜像只做离线回显与 fail-closed 收窄，不作为授权依据。
++ *
++ * 存储/网络替身只模拟存取与传输；权限与撤销规则走真实 family-policy / family-service，不复制规则。
++ */
++
++const { createRecordService } = require('../../cloudfunctions/healthApi/record-service')
++const { createMedicationService } = require('../../cloudfunctions/healthApi/medication-service')
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++// ─── wx / 云调用替身 ───
++
++function setupWx(router) {
++  const storage = {}
++  const calls = { keys: {}, actions: {} }
++  global.wx = {
++    getStorageSync: (k) => (k in storage ? storage[k] : ''),
++    setStorageSync: (k, v) => { storage[k] = v },
++    removeStorageSync: (k) => { delete storage[k] },
++    showToast: jest.fn(),
++    showModal: jest.fn(),
++    setNavigationBarTitle: jest.fn(),
++    cloud: {
++      callFunction: jest.fn((opts) => {
++        const d = opts.data || {}
++        const isKey = d.key !== undefined
++        const bucket = isKey ? calls.keys : calls.actions
++        const name = isKey ? d.key : d.action
++        bucket[name] = (bucket[name] || 0) + 1
++        const result = router ? router(d) : (isKey ? { ok: true, echo: d.key } : { ok: 1 })
++        opts.success({ result })
++      })
++    }
++  }
++  return { storage, calls }
++}
++
++function makeEnv(router) {
++  jest.resetModules()
++  const env = setupWx(router)
++  let core, family, dataRights
++  jest.isolateModules(() => {
++    core = require('../../services/core')
++    family = require('../../services/family')
++    dataRights = require('../../services/data-rights')
++  })
++  return { core, family, dataRights, storage: env.storage, calls: env.calls }
++}
++
++const FAMILY_PAGE_KEYS = ['homeFamily', 'family', 'trend', 'recordList', 'recordDetail', 'medList', 'medHistory']
++
++// ─── 服务端存储替身（与 A4 测试同构；仅模拟存取） ───
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
++  dailyStats: 'health_daily_stats',
++  recordStats: 'health_record_stats',
++  profiles: 'profiles'
++}
++
++function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)) }
++
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store; this.query = query
++    this.orderField = ''; this.orderDir = 'asc'; this.max = Infinity; this.skipN = 0
++    this.docId = ''; this.hasDocId = false
++  }
++  where(c) { return new StoreQuery(this.store, c) }
++  orderBy(f, d) { const q = new StoreQuery(this.store, this.query); q.orderField = f; q.orderDir = d; q.max = this.max; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  limit(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = n; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  skip(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; q.skipN = n; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.hasDocId = true; q.max = this.max; q.skipN = this.skipN; return q }
++  field() { return this }
++  _matchOne(doc, q) {
++    return Object.entries(q).every(([k, v]) => {
++      if (v && v.__op === 'in') return v.values.includes(doc[k])
++      if (v && v.__op === 'lt') return doc[k] !== undefined && doc[k] < v.value
++      if (v && v.__op === 'gt') return doc[k] !== undefined && doc[k] > v.value
++      if (v && v.__op === 'or') return v.clauses.some(c => this._matchOne(doc, c))
++      if (v && v.__op === 'range') {
++        const val = doc[k]
++        if (val === undefined) return false
++        if (v.gte !== undefined && !(val >= v.gte)) return false
++        if (v.lte !== undefined && !(val <= v.lte)) return false
++        return true
++      }
++      return doc[k] === v
++    })
++  }
++  _targets() {
++    if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
++    return this.store.rows.filter(d => this._matchOne(d, this.query))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    if (this.skipN) rows = rows.slice(this.skipN)
++    return { data: this.max === Infinity ? rows : rows.slice(0, this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) { const e = new Error('E11000 duplicate key error'); e.errCode = -502005; throw e }
++    this.store.rows.push({ _id, ...clone(data) })
++    return { _id }
++  }
++  async update({ data }) {
++    const t = this._targets()
++    t.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
++    return { stats: { updated: t.length } }
++  }
++  async remove() {
++    const ids = new Set(this._targets().map(d => d._id))
++    const before = this.store.rows.length
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((a) => { stores[COLLECTIONS[a]] = { rows: Array.isArray(initial[a]) ? clone(initial[a]) : [], seq: 1 } })
++  return {
++    collection(n) { if (!stores[n]) stores[n] = { rows: [], seq: 1 }; return new StoreQuery(stores[n]) },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++}
++
++function rangeOp(op, v) { const m = { __op: 'range' }; m[op] = v; m.and = (o) => { m[op === 'gte' ? 'lte' : 'gte'] = o.value; return m }; return m }
++const commands = {
++  in: values => ({ __op: 'in', values }),
++  lt: v => ({ __op: 'lt', value: v }),
++  gt: v => ({ __op: 'gt', value: v }),
++  gte: v => rangeOp('gte', v),
++  lte: v => rangeOp('lte', v),
++  or: clauses => ({ __op: 'or', clauses }),
++  inc: v => ({ __op: 'inc', value: v })
++}
++
++function build(seed = {}) {
++  const db = createStoreDb(seed)
++  const withPerfLog = (m, fn) => fn()
++  const recordService = createRecordService({ db, _: commands, collections: COLLECTIONS, getRecordStatus: helpers.getRecordStatus, withPerfLog })
++  const medicationService = createMedicationService({
++    db, _: commands, collections: COLLECTIONS,
++    assertOwnedDocument: async (coll, openId, id, label) => {
++      const { data } = await db.collection(coll).where({ _id: id, _openid: openId }).limit(1).get()
++      if (!data.length) throw new Error(`${label}不存在或无权操作`)
++      return data[0]
++    },
++    validateMedicationPlanPayload: p => p,
++    validateMedicationConfirmationPayload: p => p,
++    withPerfLog
++  })
++  const familyService = createFamilyService({
++    db, _: commands, collections: COLLECTIONS, withPerfLog,
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    canPerformScopeAction: policy.canPerformScopeAction,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: helpers.getLimitedString,
++    createInviteCode: () => 'KXJTEST00001',
++    getRecordService: () => recordService,
++    getMedicationService: () => medicationService,
++    getDailyStatsService: () => ({
++      async updateRecordStats() { return { updated: 0 } },
++      async getHomeStats() { return { dailyStats: {}, recordStats: {} } }
++    })
++  })
++  return { db, recordService, medicationService, familyService }
++}
++
++function scopesOf(bp, bg, med) {
++  return [
++    { key: 'bloodPressure', title: '血压记录', meta: 'm', read: bp.read, write: bp.write, remind: false },
++    { key: 'bloodGlucose', title: '血糖记录', meta: 'm', read: bg.read, write: bg.write, remind: false },
++    { key: 'medicine', title: '用药确认', meta: 'm', read: med.read, write: med.write, remind: false },
++    { key: 'report', title: '健康记录周报', meta: 'm', read: false, write: false, remind: false }
++  ]
++}
++const RW = { read: true, write: true }
++const RO = { read: true, write: false }
++
++// ─── 测试 ───
++
++describe('A5 · 云读缓存策略（services/core）', () => {
++  it('家族敏感读键每次回源不缓存；owner 读键 TTL 内复用', async () => {
++    const env = makeEnv()
++    await env.core.resolveMockData('homeFamily')
++    await env.core.resolveMockData('homeFamily')
++    expect(env.calls.keys.homeFamily).toBe(2)
++    await env.core.resolveMockData('family')
++    await env.core.resolveMockData('family')
++    expect(env.calls.keys.family).toBe(2)
++    await env.core.resolveMockData('home')
++    await env.core.resolveMockData('home')
++    expect(env.calls.keys.home).toBe(1)
++  })
++
++  it('familyView 载荷读取不落缓存；同键 owner 读取保持缓存', async () => {
++    const env = makeEnv()
++    await env.core.resolveMockData('recordList', { familyView: true })
++    await env.core.resolveMockData('recordList', { familyView: true })
++    expect(env.calls.keys.recordList).toBe(2)
++    await env.core.resolveMockData('recordList')
++    await env.core.resolveMockData('recordList')
++    expect(env.calls.keys.recordList).toBe(3)
++  })
++
++  it('TTL 过期+云端失败：家族读不旧缓存回填（抛错），owner 读网络性失败可回退', async () => {
++    let failMode = false
++    const env = makeEnv((d) => {
++      if (failMode) return { errMsg: 'busy' }
++      return d.key ? { ok: true, echo: d.key } : { ok: 1 }
++    })
++    const t0 = Date.now()
++    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => t0)
++    try {
++      await env.core.resolveMockData('homeFamily')
++      await env.core.resolveMockData('home')
++      nowSpy.mockImplementation(() => t0 + 61000)
++      failMode = true
++      await expect(env.core.resolveMockData('homeFamily')).rejects.toThrow('busy')
++      const stale = await env.core.resolveMockData('home')
++      expect(stale).toEqual({ ok: true, echo: 'home' })
++      expect(env.calls.keys.home).toBe(2) // 过期后确实回源过（失败→回退）
++    } finally {
++      nowSpy.mockRestore()
++    }
++  })
++
++  it('服务端显式拒绝（errCode）对 owner 键也不回填旧缓存', async () => {
++    let failMode = false
++    const env = makeEnv((d) => {
++      if (failMode) return { errMsg: 'no permission', errCode: 'DENIED' }
++      return d.key ? { ok: true, echo: d.key } : { ok: 1 }
++    })
++    const t0 = Date.now()
++    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => t0)
++    try {
++      await env.core.resolveMockData('home')
++      nowSpy.mockImplementation(() => t0 + 61000)
++      failMode = true
++      await expect(env.core.resolveMockData('home')).rejects.toMatchObject({ code: 'DENIED' })
++    } finally {
++      nowSpy.mockRestore()
++    }
++  })
++
++  it('action 成功后全局清读缓存（现状 fail-safe 保留）', async () => {
++    const env = makeEnv()
++    await env.core.resolveMockData('home')
++    await env.core.resolveRemote('saveProfile', {}, () => ({}))
++    await env.core.resolveMockData('home')
++    expect(env.calls.keys.home).toBe(2)
++  })
++})
++
++describe('A5 · 家族缓存精准失效（services/family）', () => {
++  it('invalidateFamilyCaches：清七个家族页面键并置脏；不波及 home/me', async () => {
++    const env = makeEnv()
++    const ownerCached = ['recordList', 'recordDetail', 'trend', 'medList', 'medHistory']
++    for (const k of [...ownerCached, 'home', 'me']) await env.core.resolveMockData(k)
++    expect(typeof env.family.invalidateFamilyCaches).toBe('function')
++    env.family.invalidateFamilyCaches()
++    for (const k of [...ownerCached, 'homeFamily', 'family']) await env.core.resolveMockData(k)
++    for (const k of ownerCached) expect(env.calls.keys[k]).toBe(2)
++    expect(env.calls.keys.home).toBe(1)
++    expect(env.calls.keys.me).toBe(1)
++    for (const p of FAMILY_PAGE_KEYS) expect(env.core.isDirty(p)).toBe(true)
++  })
++
++  it('撤销成功后：镜像精确移除 M1 保留 M2；家族页缓存失效并置脏', async () => {
++    const env = makeEnv()
++    env.storage.family_auth_v1 = {
++      status: 'active',
++      currentMemberId: 'M1',
++      members: [
++        { id: 'M1', name: '女儿', bound: true, relation: '女儿', status: '已授权' },
++        { id: 'M2', name: '儿子', bound: true, relation: '儿子', status: '已授权' }
++      ]
++    }
++    await env.core.resolveMockData('recordList')
++    await env.family.revokeFamilyMember({ memberId: 'M1' })
++    const mirror = env.storage.family_auth_v1
++    expect(mirror.members.map(m => m.id)).toEqual(['M2'])
++    expect(mirror.currentMemberId).toBe('M2')
++    expect(env.core.isDirty('homeFamily')).toBe(true)
++    expect(env.core.isDirty('trend')).toBe(true)
++    await env.core.resolveMockData('recordList')
++    expect(env.calls.keys.recordList).toBe(2)
++  })
++
++  it('改权成功后：家族页缓存失效并置脏', async () => {
++    const env = makeEnv()
++    env.storage.family_auth_v1 = {
++      status: 'active',
++      currentMemberId: 'M1',
++      members: [{ id: 'M1', name: '女儿', bound: true, relation: '女儿', status: '已授权' }]
++    }
++    await env.core.resolveMockData('medList')
++    await env.family.updateFamilyAuth({
++      memberId: 'M1',
++      scopes: scopesOf(RO, RO, RO),
++      noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: false }
++    })
++    expect(env.core.isDirty('medList')).toBe(true)
++    expect(env.core.isDirty('homeFamily')).toBe(true)
++    await env.core.resolveMockData('medList')
++    expect(env.calls.keys.medList).toBe(2)
++  })
++
++  it('家属代录成功后：七个家族页全部置脏（onShow 重载拉取 owner 新数据）', async () => {
++    const env = makeEnv((d) => (d.action === 'familyRecordBloodPressure'
++      ? { familyWrite: { allowed: true, ownerOpenId: 'A' } }
++      : (d.key ? { ok: true, echo: d.key } : { ok: 1 })))
++    await env.family.familyRecordBloodPressure({ systolic: 128, diastolic: 78, measuredAt: '08:00' })
++    for (const p of FAMILY_PAGE_KEYS) expect(env.core.isDirty(p)).toBe(true)
++  })
++
++  it('加入成功后：B 端镜像置 active 且家族页缓存失效置脏', async () => {
++    const env = makeEnv()
++    env.storage.family_auth_v1 = {
++      inviteCode: 'KXJ123456789',
++      expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
++      status: 'pending'
++    }
++    await env.family.joinFamilyByInvite({ inviteCode: 'KXJ123456789' })
++    expect(env.storage.family_auth_v1.status).toBe('active')
++    expect(env.core.isDirty('homeFamily')).toBe(true)
++  })
++
++  it('镜像只收窄不放行：active 镜像不能回填服务端未授权数据；revoked 镜像清空数据', () => {
++    const env = makeEnv()
++    env.storage.family_auth_v1 = { status: 'active', members: [{ id: 'M1', bound: true, name: '女儿' }] }
++    const serverEmpty = {
++      member: { name: '家属', scopeText: '暂未授权' },
++      latestMetrics: [],
++      medicineLogs: []
++    }
++    expect(env.family.enforceHomeFamilyAccess(serverEmpty)).toEqual(serverEmpty)
++
++    env.storage.family_auth_v1 = { status: 'revoked', members: [] }
++    const full = { member: { name: '王阿姨' }, latestMetrics: [{ label: '血压' }], medicineLogs: [{ id: 'x' }] }
++    const blanked = env.family.enforceHomeFamilyAccess(full)
++    expect(blanked.latestMetrics).toEqual([])
++    expect(blanked.member.name).toBe('家属')
++  })
++
++  it('家属注销：只清本人本地存储与读缓存（服务端连带由 A1 测试覆盖）', async () => {
++    const env = makeEnv()
++    env.storage.family_auth_v1 = { status: 'active', members: [{ id: 'M1', bound: true }] }
++    env.storage.user_profile_v1 = { name: 'B' }
++    await env.core.resolveMockData('home')
++    await env.dataRights.clearUserAccount({})
++    expect(env.core.readStorage('family_auth_v1', null)).toBeNull()
++    expect(env.core.readStorage('user_profile_v1', null)).toBeNull()
++    await env.core.resolveMockData('home')
++    expect(env.calls.keys.home).toBe(2)
++  })
++})
++
++describe('A5 · 服务端撤销实时生效（family-service，存储替身）', () => {
++  it('撤销 M1 后：M1 家族读全拒绝，M2 不受影响，owner 自读不受影响', async () => {
++    const { familyService, recordService } = build({
++      familyMembers: [
++        { _id: 'M1', _openid: 'M1', ownerOpenId: 'A', ownerName: '王阿姨', memberOpenId: 'M1', memberName: '女儿', scopes: scopesOf(RW, RO, RO), status: 'active', updatedAt: '2026-09-23T01:00:00Z' },
++        { _id: 'M2', _openid: 'M2', ownerOpenId: 'A', ownerName: '王阿姨', memberOpenId: 'M2', memberName: '儿子', scopes: scopesOf(RO, RO, RO), status: 'active', updatedAt: '2026-09-23T01:00:00Z' }
++      ],
++      familyAuth: [],
++      records: [
++        { _id: 'r1', _openid: 'A', type: 'bp', systolic: 128, diastolic: 78, measuredAt: '08:00', tag: '晨起', createdAt: '2026-09-23T00:00:00Z' }
++      ],
++      profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++
++    await familyService.revokeFamilyMember('A', { memberId: 'M1' })
++
++    // M1：家属视图拒绝 + 首页无授权数据（服务端不返回 owner 数据）
++    const m1View = await familyService.resolveFamilyView('M1', { familyView: true })
++    expect(m1View).toEqual({ mode: 'denied', reason: 'revoked' })
++    const m1List = await familyService.getFamilyRecordListData('M1', { familyView: true })
++    expect(m1List.familyView).toMatchObject({ allowed: false, reason: 'revoked' })
++    const m1Home = await familyService.getHomeFamilyData('M1')
++    expect(m1Home.latestMetrics).toEqual([])
++    expect(m1Home.member.scopeText).toBe('暂未授权')
++
++    // M2：读取不受 M1 撤销影响
++    const m2View = await familyService.resolveFamilyView('M2', { familyView: true })
++    expect(m2View.mode).toBe('member')
++    const m2Home = await familyService.getHomeFamilyData('M2')
++    expect(m2Home.latestMetrics.length).toBe(1)
++
++    // owner A：自读不受影响
++    const ownerList = await recordService.getRecordListData('A', {})
++    expect(Array.isArray(ownerList.records)).toBe(true)
++    expect(ownerList.records.length).toBe(1)
++  })
++
++  it('改权（关闭 bloodPressure read）后：下一次读取立即按新 scopes 过滤，无需任何缓存操作', async () => {
++    const { familyService } = build({
++      familyMembers: [
++        { _id: 'M1', _openid: 'M1', ownerOpenId: 'A', ownerName: '王阿姨', memberOpenId: 'M1', memberName: '女儿', scopes: scopesOf(RW, RO, RO), status: 'active', updatedAt: '2026-09-23T01:00:00Z' }
++      ],
++      familyAuth: [],
++      records: [
++        { _id: 'r1', _openid: 'A', type: 'bp', systolic: 128, diastolic: 78, measuredAt: '08:00', tag: '晨起', createdAt: '2026-09-23T00:00:00Z' },
++        { _id: 'r2', _openid: 'A', type: 'bg', glucose: 6.4, measuredAt: '07:00', tag: '空腹', createdAt: '2026-09-23T00:10:00Z' }
++      ],
++      profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    const before = await familyService.getFamilyRecordListData('M1', { familyView: true })
++    expect(before.records.some(r => r.type === 'bp' || String(r.value).includes('128'))).toBe(true)
++
++    await familyService.updateFamilyAuth('A', {
++      memberId: 'M1',
++      memberName: '女儿',
++      scopes: scopesOf({ read: false, write: false }, RO, RO),
++      noticeRules: { missedMedicine: false, missingRecord: false, weeklyReport: false }
++    })
++
++    const after = await familyService.getFamilyRecordListData('M1', { familyView: true })
++    expect(after.records.every(r => r.type !== 'bp')).toBe(true)
++    // 全部 read 关闭 → scopeDenied
++    await familyService.updateFamilyAuth('A', {
++      memberId: 'M1',
++      memberName: '女儿',
++      scopes: scopesOf({ read: false, write: false }, { read: false, write: false }, { read: false, write: false }),
++      noticeRules: { missedMedicine: false, missingRecord: false, weeklyReport: false }
++    })
++    const denied = await familyService.getFamilyRecordListData('M1', { familyView: true })
++    expect(denied.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++  })
++})
+diff --git a/tests/unit/a5-page-staleness.test.js b/tests/unit/a5-page-staleness.test.js
+new file mode 100644
+index 0000000..de0f45e
+--- /dev/null
++++ b/tests/unit/a5-page-staleness.test.js
+@@ -0,0 +1,203 @@
++/**
++ * A5 页面级：撤销/改权后所有家属页面以服务端响应为准渲染；
++ * 旧请求晚返回不得覆盖撤销后的新状态（page-factory 用真实实现——被测对象即其 stale 守卫）。
++ * api / adaptive / pre-check / route-guard / snooze / subscribe-prompt / chart-adapter 用替身。
++ */
++
++const mockApi = {
++  getRecordListData: jest.fn(),
++  getRecordDetailData: jest.fn(),
++  deleteRecord: jest.fn(),
++  getMedListData: jest.fn(),
++  deleteMedicationPlan: jest.fn(),
++  toggleMedicationPlanStatus: jest.fn(),
++  revokeMedicationConfirmation: jest.fn(),
++  confirmMedication: jest.fn(),
++  familyConfirmMedication: jest.fn(),
++  familyRevokeProxyConfirmation: jest.fn(),
++  getMedHistoryData: jest.fn(),
++  getHomeFamilyData: jest.fn(),
++  getTrendData: jest.fn()
++}
++jest.mock('../../utils/api', () => mockApi)
++jest.mock('../../utils/adaptive', () => ({
++  applyAdaptiveState: jest.fn(),
++  bindAdaptiveResize: jest.fn(),
++  buildAdaptiveState: () => ({}),
++  unbindAdaptiveResize: jest.fn()
++}))
++jest.mock('../../utils/pre-check', () => ({ autoPreCheck: jest.fn() }))
++jest.mock('../../utils/route-guard', () => ({
++  safeNavigateTo: jest.fn(),
++  safeRedirectTo: jest.fn(),
++  safeSwitchTab: jest.fn(),
++  safeNavigateWithPageCheck: jest.fn(),
++  safeRedirectWithPageCheck: jest.fn(),
++  safeNavigateBack: jest.fn()
++}))
++jest.mock('../../services/snooze', () => ({ removeSnoozeReminderByLogId: jest.fn() }))
++jest.mock('../../utils/subscribe-prompt', () => ({ promptSubscribeAfterAction: jest.fn(() => Promise.resolve({ ok: false })) }))
++jest.mock('../../utils/chart-adapter', () => ({
++  buildTrendChart: jest.fn(() => ({})),
++  buildBpBgCharts: jest.fn(() => ({}))
++}))
++
++const pageConfigs = []
++global.Page = (cfg) => { pageConfigs.push(cfg); return cfg }
++const storageMap = {}
++global.wx = {
++  setNavigationBarTitle: jest.fn(),
++  showToast: jest.fn(),
++  showModal: jest.fn((opt) => opt.success && opt.success({ confirm: true })),
++  setClipboardData: jest.fn(),
++  showActionSheet: jest.fn(),
++  getStorageSync: (k) => (k in storageMap ? storageMap[k] : ''),
++  setStorageSync: (k, v) => { storageMap[k] = v },
++  removeStorageSync: (k) => { delete storageMap[k] }
++}
++global.getApp = () => ({ globalData: {} })
++
++require('../../pages/record/record-list/index.js')      // pageConfigs[0]
++require('../../pages/record/record-detail/index.js')    // pageConfigs[1]
++require('../../pages/medication/med-list/index.js')     // pageConfigs[2]
++require('../../pages/medication/med-history/index.js')  // pageConfigs[3]
++require('../../pages/family-sub/home-family/index.js')  // pageConfigs[4]
++require('../../pages/trend/index.js')                   // pageConfigs[5]
++const { loadPageData } = require('../../utils/page-factory')
++
++function makePage(cfg, route) {
++  return Object.assign({}, cfg, {
++    data: JSON.parse(JSON.stringify(cfg.data)),
++    route,
++    setData(patch) { Object.assign(this.data, patch) }
++  })
++}
++
++const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
++
++describe('A5 · 撤销后重开所有家属页面（服务端拒绝即渲染，本地 active 镜像不回填）', () => {
++  beforeEach(() => {
++    jest.clearAllMocks()
++    // 过期的本地 active 镜像：不得成为任何页面的授权依据
++    storageMap.family_auth_v1 = {
++      status: 'active',
++      currentMemberId: 'M1',
++      members: [{ id: 'M1', name: '女儿', bound: true, relation: '女儿', status: '已授权' }]
++    }
++  })
++
++  it('record-list 家属态：revoked 拒绝渲染 familyDenied，records 为空', async () => {
++    mockApi.getRecordListData.mockResolvedValue({ familyView: { allowed: false, reason: 'revoked' } })
++    const page = makePage(pageConfigs[0], 'pages/record/record-list/index')
++    await page.onLoad({ familyView: '1' })
++    expect(page.data.isFamilyView).toBe(true)
++    expect(page.data.familyDenied).toBe(true)
++    expect(page.data.records).toEqual([])
++    expect(mockApi.getRecordListData).toHaveBeenCalledWith(true)
++  })
++
++  it('record-detail 家属态：read 关闭后 scopeDenied，不泄露 owner 记录字段', async () => {
++    mockApi.getRecordDetailData.mockResolvedValue({ familyView: { allowed: false, reason: 'scopeDenied' } })
++    const page = makePage(pageConfigs[1], 'pages/record/record-detail/index')
++    await page.onLoad({ id: 'r1', familyView: '1' })
++    expect(page.data.familyDenied).toBe(true)
++    expect(page.data.record).toBeFalsy()
++    expect(page.data.details).toEqual([])
++  })
++
++  it('med-list 家属态：revoked 拒绝渲染，代确认入口关闭', async () => {
++    mockApi.getMedListData.mockResolvedValue({ familyView: { allowed: false, reason: 'revoked' } })
++    const page = makePage(pageConfigs[2], 'pages/medication/med-list/index')
++    await page.onLoad({ familyView: '1' })
++    expect(page.data.familyDenied).toBe(true)
++    expect(page.data.familyCanConfirm).toBe(false)
++    expect(page.data.todayCards).toBeUndefined()
++  })
++
++  it('med-history 家属态：revoked 拒绝渲染 familyDenied', async () => {
++    mockApi.getMedHistoryData.mockResolvedValue({ familyView: { allowed: false, reason: 'revoked' } })
++    const page = makePage(pageConfigs[3], 'pages/medication/med-history/index')
++    page.onLoad({ familyView: '1' })
++    await flush()
++    expect(page.data.familyDenied).toBe(true)
++  })
++
++  it('home-family：服务端未授权空数据渲染，镜像 active 不回填、不下发写入口', async () => {
++    mockApi.getHomeFamilyData.mockResolvedValue({
++      member: { name: '家属', scopeText: '暂未授权' },
++      todayAlert: { title: '暂无授权数据', meta: '授权已解除或尚未完成家庭授权，请重新获得邀请后查看。' },
++      latestMetrics: [],
++      medicineLogs: [],
++      reportSummary: '暂无可查看的周报数据。'
++    })
++    const page = makePage(pageConfigs[4], 'pages/family-sub/home-family/index')
++    await page.onLoad()
++    expect(page.data.latestMetrics).toEqual([])
++    expect(page.data.member.scopeText).toBe('暂未授权')
++    expect(page.data.writePermissions).toBeUndefined()
++  })
++
++  it('trend 家属态（全局标记进入）：revoked 拒绝渲染 familyDenied', async () => {
++    global.getApp = () => ({ globalData: { familyView: true } })
++    try {
++      mockApi.getTrendData.mockResolvedValue({ familyView: { allowed: false, reason: 'revoked' }, records: [] })
++      const page = makePage(pageConfigs[5], 'pages/trend/index')
++      await page.onLoad({})
++      expect(page.data.isFamilyView).toBe(true)
++      expect(page.data.familyDenied).toBe(true)
++    } finally {
++      global.getApp = () => ({ globalData: {} })
++    }
++  })
++
++  it('owner 模式（无 familyView）正常渲染本人数据，不受家族态失效影响', async () => {
++    mockApi.getRecordListData.mockResolvedValue({ records: [{ id: 'r1', type: 'bp' }] })
++    const page = makePage(pageConfigs[0], 'pages/record/record-list/owner')
++    await page.onLoad({})
++    expect(page.data.records.length).toBe(1)
++    expect(page.data.familyDenied).toBe(false)
++    expect(mockApi.getRecordListData).toHaveBeenCalledWith(undefined)
++  })
++})
++
++describe('A5 · 旧请求晚返回不得覆盖新状态', () => {
++  it('同毫秒双加载：先发的旧请求（owner 数据）晚归，不得覆盖已到的拒绝态', async () => {
++    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1758567600000)
++    try {
++      const page = {
++        route: 'pages/stale-guard/test',
++        data: {},
++        setData(patch) { Object.assign(this.data, patch) }
++      }
++      let releaseFirst, releaseSecond
++      const firstGate = new Promise((r) => { releaseFirst = r })
++      const secondGate = new Promise((r) => { releaseSecond = r })
++      // 旧请求：撤销前发出，携带 owner 数据，晚返回
++      const loaderOld = () => firstGate.then(() => ({
++        records: [{ id: 'owner-r1' }],
++        familyView: { allowed: true }
++      }))
++      // 新请求：撤销后发出，返回拒绝态
++      const loaderNew = () => secondGate.then(() => ({
++        familyView: { allowed: false, reason: 'revoked' }
++      }))
++
++      const pOld = loadPageData(page, loaderOld)
++      const pNew = loadPageData(page, loaderNew)
++
++      // 旧请求先归（新请求仍在途）：不得写入 owner 数据
++      releaseFirst()
++      await pOld
++      expect(page.data.records).toBeUndefined()
++      expect(page.data.familyView).toBeUndefined()
++
++      // 新请求归：写入拒绝态
++      releaseSecond()
++      await pNew
++      expect(page.data.familyView).toEqual({ allowed: false, reason: 'revoked' })
++      expect(page.data.records).toBeUndefined()
++    } finally {
++      nowSpy.mockRestore()
++    }
++  })
++})
+diff --git a/utils/page-factory.js b/utils/page-factory.js
+index 4e1d910..2aaec8c 100644
+--- a/utils/page-factory.js
++++ b/utils/page-factory.js
+@@ -17,6 +17,9 @@ const {
+ 
+ // 请求去重：记录正在进行的页面加载
+ const pendingPageLoads = new Map()
++// A5：单调递增序号替代 Date.now() 组装 loadKey——同毫秒双加载时键也唯一，
++// 先发旧请求晚归不会因键碰撞通过"最新实例"检查而覆盖撤销/改权后的新状态。
++let pageLoadSeq = 0
+ 
+ /**
+  * 统一页面跳转方法。
+@@ -76,7 +79,7 @@ function redirectRoute(routeKey) {
+  */
+ async function loadPageData(page, loader, pageKey = '') {
+   const pagePath = page && page.route ? page.route : (pageKey || 'unknown')
+-  const loadKey = `${pagePath}_${Date.now()}`
++  const loadKey = `${pagePath}#${++pageLoadSeq}`
+ 
+   // 记录当前加载实例（允许并发加载，仅最新实例的数据会写入页面）
+   pendingPageLoads.set(pagePath, loadKey)

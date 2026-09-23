@@ -1,0 +1,28 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a0-contract-integration.test.js
+
+PASS tests/unit/a0-contract-integration.test.js
+  A0-2 集成 · 创建邀请（默认契约）
+    √ 空入参生成 pending 邀请：8 关系默认女儿、scopes 读取/提醒默认开、write 默认关 (5 ms)
+    √ 未知关系在入口被拒绝，不写入 (21 ms)
+    √ report write=true、非布尔、未知/重复 scope 在创建入口被拒绝 (1 ms)
+    √ 8 种关系可往返，提交的关系名称写入邀请成员 (1 ms)
+  A0-2 集成 · 加入家庭
+    √ 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active (1 ms)
+  A0-2 集成 · 家属首页按 read 输出受控明细
+    √ 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏） (1 ms)
+    √ 全块 read：血压血糖均输出，用药与周报可见 (1 ms)
+    √ 血糖块开、血压块关：只输出血糖
+  A0-2 集成 · 授权保存/回显
+    √ updateFamilyAuth：新 scopes 同步到 family_auth 与 family_members (1 ms)
+    √ updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key (1 ms)
+    √ getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules (1 ms)
+  A0-2 集成 · owner 本人功能不被误伤
+    √ getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成
+
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        0.354 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a0-contract-integration.test.js/i.

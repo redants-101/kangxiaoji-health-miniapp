@@ -1,0 +1,6 @@
+== S5a recordList familyView (noBinding) ==
+✔ [healthApi] call succeeded
+Return result：{"familyView":{"allowed":false,"reason":"noBinding"}}
+== S5b homeFamily (未授权空数据) ==
+✔ [healthApi] call succeeded
+Return result：{"member":{"name":"家属","scopeText":"暂未授权"},"todayAlert":{"title":"暂无授权数据","meta":"请先在家庭页完成家属授权后再查看。"},"latestMetrics":[],"medicineLogs":[],"reportSummary":"暂无可查看的周报数据。","readPermissions":{"bloodPressure":false,"bloodGlucose":false,"medicine":false,"report":false},"phoneReminder":{"remindAllowed":false,"configured":false,"canCall":false,"masked":""}}

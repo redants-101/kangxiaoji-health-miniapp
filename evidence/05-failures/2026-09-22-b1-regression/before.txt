@@ -1,0 +1,14 @@
+﻿
+> regression
+> node scripts/health-api-regression.js
+
+npm.cmd : TypeError: Cannot read properties of undefined (reading '0')
+所在位置 行:1 字符: 330
++ ... ression\before.txt'; & "$nodeDir\npm.cmd" run regression *>&1 | Tee-O ...
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (TypeError: Cann...d (reading '0'):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    at testMedicationService (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\scripts\health-api-regression.js:295:36)
+    at async main (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\scripts\health-api-regression.js:523:3)
+EXITCODE=1

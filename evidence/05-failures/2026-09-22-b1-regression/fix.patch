@@ -1,0 +1,53 @@
+diff --git a/scripts/health-api-regression.js b/scripts/health-api-regression.js
+index 9adbf77..e916ca7 100644
+--- a/scripts/health-api-regression.js
++++ b/scripts/health-api-regression.js
+@@ -22,6 +22,20 @@ function clone(value) {
+   return JSON.parse(JSON.stringify(value))
+ }
+ 
++// 与 medication-service.getTodayDateValue 保持同一口径（北京时间日期串）。
++// 用药确认记录现在按 confirmDate=当天 查询（medication-service.js getMedListData），
++// 夹具中的确认记录必须带当天 confirmDate 才能进入今日列表。
++const CHINA_TIME_OFFSET_MS = 8 * 60 * 60 * 1000
++
++function getTodayDateValue() {
++  const now = new Date()
++  const chinaTime = new Date(now.getTime() + CHINA_TIME_OFFSET_MS)
++  const y = chinaTime.getUTCFullYear()
++  const m = String(chinaTime.getUTCMonth() + 1).padStart(2, '0')
++  const d = String(chinaTime.getUTCDate()).padStart(2, '0')
++  return `${y}-${m}-${d}`
++}
++
+ class MockCollectionQuery {
+   constructor(db, name, query = {}) {
+     this.db = db
+@@ -276,6 +290,7 @@ async function testMedicationService() {
+         logId: 'log-plan-1-0',
+         status: 'taken',
+         statusText: '已服',
++        confirmDate: getTodayDateValue(),
+         actionAt: '2026-04-27T07:10:00'
+       }
+     ]
+@@ -292,7 +307,10 @@ async function testMedicationService() {
+   })
+ 
+   const list = await service.getMedListData('user-1')
+-  assert.strictEqual(list.todayLogs[0].statusText, '已服')
++  // 返回结构已由扁平 todayLogs 演进为 todayCards（按计划分组，内含 logs）+ confirmations（已确认流水）
++  assert.ok(Array.isArray(list.todayCards))
++  assert.strictEqual(list.todayCards[0].logs[0].statusText, '已服')
++  assert.strictEqual(list.confirmations[0].statusText, '已服')
+   assert.strictEqual(list.plans[0].schedule, '每天 07:00, 21:00')
+ 
+   const saveResult = await service.saveMedicationPlan('user-1', {
+@@ -340,6 +358,7 @@ async function testFamilyService() {
+         name: '降压药',
+         dosage: '1片',
+         times: ['07:00'],
++        status: '启用',
+         updatedAt: '2026-04-27T07:00:00'
+       }
+     ],

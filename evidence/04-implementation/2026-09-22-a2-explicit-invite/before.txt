@@ -1,0 +1,209 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a2-explicit-invite.test.js
+
+FAIL tests/unit/a2-explicit-invite.test.js
+  打开与刷新：只读不生成
+    × onLoad 读取数据且零生成请求 (4 ms)
+    × reloadPage 零生成请求 (1 ms)
+  编辑配置：只更新草稿不写云端
+    × selectRelation / toggleScope / selectAllScopes 均零生成请求 (1 ms)
+  显式生成：点击才提交
+    × 点击生成一次：提交草稿并落状态 (1 ms)
+    × 请求在途时重复点击：仅提交一次
+    × 已有码时重新生成需确认（说明旧码失效） (1 ms)
+  失败态：旧码不得冒充新配置生效
+    × 生成失败：submitting 复位、错误提示、无码时不展示生效态
+    × 已有旧码时生成失败：旧码保留但标记脏草稿，禁止复制分享 (1 ms)
+  脏草稿：禁止“新文案+旧码”组合
+    × 编辑后复制被拦截并提示重新生成
+    × 编辑后分享回退为无码路径（不携带旧码）
+    × 未生成时分享回退为无码路径
+  重新生成成功后：文案、权限与分享链接一致
+    × 改草稿后重新生成：preview/sharePath/code 均对应新配置 (1 ms)
+
+  ● 打开与刷新：只读不生成 › onLoad 读取数据且零生成请求
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 0
+    Received number of calls: 1
+
+    [0m [90m 76 |[39m     [36mawait[39m page[33m.[39monLoad()
+     [90m 77 |[39m     expect(mockApi[33m.[39mgetFamilyInviteData)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)
+    [31m[1m>[22m[39m[90m 78 |[39m     expect(mockApi[33m.[39mcreateFamilyInvite)[33m.[39mtoHaveBeenCalledTimes([35m0[39m)
+     [90m    |[39m                                        [31m[1m^[22m[39m
+     [90m 79 |[39m   })
+     [90m 80 |[39m
+     [90m 81 |[39m   it([32m'reloadPage 零生成请求'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toHaveBeenCalledTimes (tests/unit/a2-explicit-invite.test.js:78:40)
+
+  ● 打开与刷新：只读不生成 › reloadPage 零生成请求
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 0
+    Received number of calls: 2
+
+    [0m [90m 83 |[39m     [36mawait[39m page[33m.[39monLoad()
+     [90m 84 |[39m     [36mawait[39m page[33m.[39mreloadPage()
+    [31m[1m>[22m[39m[90m 85 |[39m     expect(mockApi[33m.[39mcreateFamilyInvite)[33m.[39mtoHaveBeenCalledTimes([35m0[39m)
+     [90m    |[39m                                        [31m[1m^[22m[39m
+     [90m 86 |[39m   })
+     [90m 87 |[39m })
+     [90m 88 |[39m[0m
+
+      at Object.toHaveBeenCalledTimes (tests/unit/a2-explicit-invite.test.js:85:40)
+
+  ● 编辑配置：只更新草稿不写云端 › selectRelation / toggleScope / selectAllScopes 均零生成请求
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 0
+    Received number of calls: 4
+
+    [0m [90m 94 |[39m     page[33m.[39mtoggleScope({ currentTarget[33m:[39m { dataset[33m:[39m { key[33m:[39m [32m'report'[39m[33m,[39m field[33m:[39m [32m'read'[39m } }[33m,[39m detail[33m:[39m { value[33m:[39m [36mfalse[39m } })
+     [90m 95 |[39m     page[33m.[39mselectAllScopes()
+    [31m[1m>[22m[39m[90m 96 |[39m     expect(mockApi[33m.[39mcreateFamilyInvite)[33m.[39mtoHaveBeenCalledTimes([35m0[39m)
+     [90m    |[39m                                        [31m[1m^[22m[39m
+     [90m 97 |[39m     expect(page[33m.[39mdata[33m.[39mselectedRelation)[33m.[39mtoBe([32m'son'[39m)
+     [90m 98 |[39m   })
+     [90m 99 |[39m })[0m
+
+      at Object.toHaveBeenCalledTimes (tests/unit/a2-explicit-invite.test.js:96:40)
+
+  ● 显式生成：点击才提交 › 点击生成一次：提交草稿并落状态
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 103 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 104 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 105 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 106 |[39m     expect(mockApi[33m.[39mcreateFamilyInvite)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)
+     [90m 107 |[39m     expect(page[33m.[39mdata[33m.[39minviteCode)[33m.[39mtoBe([32m'KXJGEN000001'[39m)
+     [90m 108 |[39m     expect(page[33m.[39mdata[33m.[39mdraftDirty)[33m.[39mtoBe([36mfalse[39m)[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:105:16)
+
+  ● 显式生成：点击才提交 › 请求在途时重复点击：仅提交一次
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 113 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 114 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 115 |[39m     [36mconst[39m p1 [33m=[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 116 |[39m     [36mconst[39m p2 [33m=[39m page[33m.[39mgenerateInvite()
+     [90m 117 |[39m     [36mawait[39m [33mPromise[39m[33m.[39mall([p1[33m,[39m p2])
+     [90m 118 |[39m     expect(mockApi[33m.[39mcreateFamilyInvite)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:115:21)
+
+  ● 显式生成：点击才提交 › 已有码时重新生成需确认（说明旧码失效）
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 123 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 124 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 125 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 126 |[39m     global[33m.[39mwx[33m.[39mshowModal[33m.[39mmockClear()
+     [90m 127 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m 128 |[39m     expect(global[33m.[39mwx[33m.[39mshowModal)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:125:16)
+
+  ● 失败态：旧码不得冒充新配置生效 › 生成失败：submitting 复位、错误提示、无码时不展示生效态
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 138 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 139 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 140 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 141 |[39m     expect(page[33m.[39mdata[33m.[39msubmitting)[33m.[39mtoBe([36mfalse[39m)
+     [90m 142 |[39m     expect(page[33m.[39mdata[33m.[39mgenerateError)[33m.[39mtoBeTruthy()
+     [90m 143 |[39m     expect(page[33m.[39mdata[33m.[39minviteCode)[33m.[39mtoBe([32m''[39m)[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:140:16)
+
+  ● 失败态：旧码不得冒充新配置生效 › 已有旧码时生成失败：旧码保留但标记脏草稿，禁止复制分享
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 148 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 149 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 150 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 151 |[39m     page[33m.[39mtoggleScope({ currentTarget[33m:[39m { dataset[33m:[39m { key[33m:[39m [32m'report'[39m[33m,[39m field[33m:[39m [32m'read'[39m } }[33m,[39m detail[33m:[39m { value[33m:[39m [36mfalse[39m } })
+     [90m 152 |[39m     mockApi[33m.[39mcreateFamilyInvite[33m.[39mmockRejectedValue([36mnew[39m [33mError[39m([32m'网络异常'[39m))
+     [90m 153 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:150:16)
+
+  ● 脏草稿：禁止“新文案+旧码”组合 › 编辑后复制被拦截并提示重新生成
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 165 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 166 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 167 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 168 |[39m     page[33m.[39mselectRelation({ currentTarget[33m:[39m { dataset[33m:[39m { key[33m:[39m [32m'son'[39m } } })
+     [90m 169 |[39m     expect(page[33m.[39mdata[33m.[39mdraftDirty)[33m.[39mtoBe([36mtrue[39m)
+     [90m 170 |[39m     global[33m.[39mwx[33m.[39msetClipboardData[33m.[39mmockClear()[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:167:16)
+
+  ● 脏草稿：禁止“新文案+旧码”组合 › 编辑后分享回退为无码路径（不携带旧码）
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 176 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 177 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 178 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 179 |[39m     page[33m.[39mselectRelation({ currentTarget[33m:[39m { dataset[33m:[39m { key[33m:[39m [32m'son'[39m } } })
+     [90m 180 |[39m     [36mconst[39m share [33m=[39m page[33m.[39monShareAppMessage()
+     [90m 181 |[39m     expect(share[33m.[39mpath)[33m.[39mnot[33m.[39mtoContain([32m'KXJGEN000001'[39m)[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:178:16)
+
+  ● 脏草稿：禁止“新文案+旧码”组合 › 未生成时分享回退为无码路径
+
+    expect(received).not.toContain(expected) // indexOf
+
+    Expected substring: not "inviteCode="
+    Received string:        "/pages/family-sub/family-join/index?inviteCode=KXJGEN000001"
+
+    [0m [90m 186 |[39m     [36mawait[39m page[33m.[39monLoad()
+     [90m 187 |[39m     [36mconst[39m share [33m=[39m page[33m.[39monShareAppMessage()
+    [31m[1m>[22m[39m[90m 188 |[39m     expect(share[33m.[39mpath)[33m.[39mnot[33m.[39mtoContain([32m'inviteCode='[39m)
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 189 |[39m   })
+     [90m 190 |[39m })
+     [90m 191 |[39m[0m
+
+      at Object.toContain (tests/unit/a2-explicit-invite.test.js:188:28)
+
+  ● 重新生成成功后：文案、权限与分享链接一致 › 改草稿后重新生成：preview/sharePath/code 均对应新配置
+
+    TypeError: page.generateInvite is not a function
+
+    [0m [90m 194 |[39m     [36mconst[39m page [33m=[39m makePage()
+     [90m 195 |[39m     [36mawait[39m page[33m.[39monLoad()
+    [31m[1m>[22m[39m[90m 196 |[39m     [36mawait[39m page[33m.[39mgenerateInvite()
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 197 |[39m     page[33m.[39mtoggleScope({ currentTarget[33m:[39m { dataset[33m:[39m { key[33m:[39m [32m'report'[39m[33m,[39m field[33m:[39m [32m'read'[39m } }[33m,[39m detail[33m:[39m { value[33m:[39m [36mfalse[39m } })
+     [90m 198 |[39m     mockApi[33m.[39mcreateFamilyInvite[33m.[39mmockImplementation([36masync[39m (payload) [33m=>[39m {
+     [90m 199 |[39m       [36mconst[39m readTitles [33m=[39m (payload[33m.[39mscopes [33m||[39m [])[33m.[39mfilter(s [33m=>[39m s[33m.[39mread)[33m.[39mmap(s [33m=>[39m s[33m.[39mtitle)[0m
+
+      at Object.generateInvite (tests/unit/a2-explicit-invite.test.js:196:16)
+
+Test Suites: 1 failed, 1 total
+Tests:       12 failed, 12 total
+Snapshots:   0 total
+Time:        0.668 s
+Ran all test suites matching /tests\\unit\\a2-explicit-invite.test.js/i.

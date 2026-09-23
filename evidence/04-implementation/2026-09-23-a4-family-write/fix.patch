@@ -1,0 +1,1325 @@
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index 12d4420..9360ac0 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -8,6 +8,7 @@ const {
+   INVITE_FAILURE_LIMIT_PER_DAY
+ } = require('./family-policy')
+ const { getTodayDateValue } = require('./payload-helpers')
++const { validateBloodPressurePayload, validateBloodGlucosePayload } = require('./payload-validation')
+ 
+ function minimalScopes() {
+   return SCOPE_KEYS_V2.map(key => ({ key }))
+@@ -28,6 +29,7 @@ function createFamilyService({
+   normalizeFamilyScopesV2,
+   normalizeNoticeRulesV2,
+   canViewScope,
++  canPerformScopeAction,
+   getScopeTextV2,
+   normalizeFamilyAuthPayloadV2,
+   normalizeFamilyInvitePayloadV2,
+@@ -35,7 +37,8 @@ function createFamilyService({
+   getLimitedString,
+   createInviteCode,
+   getRecordService,
+-  getMedicationService
++  getMedicationService,
++  getDailyStatsService
+ }) {
+   // ============ A2：邀请错误码、原子频控与失效分类 ============
+ 
+@@ -302,7 +305,14 @@ function createFamilyService({
+       medicineLogs,
+       reportSummary: canViewReport
+         ? `已授权记录 ${records.length} 条，已确认用药 ${confirmationTotal} 次。`
+-        : '暂未授权查看周报。'
++        : '暂未授权查看周报。',
++      // A4：家属态写能力下发（read+write 才为 true；report 恒 false）
++      writePermissions: {
++        bloodPressure: canPerformScopeAction(relation.scopes, 'recordBloodPressure'),
++        bloodGlucose: canPerformScopeAction(relation.scopes, 'recordBloodGlucose'),
++        medicine: canPerformScopeAction(relation.scopes, 'confirmMedication'),
++        report: false
++      }
+     }
+   }
+ 
+@@ -1118,10 +1128,24 @@ function createFamilyService({
+     if (resolution.mode === 'self') return getMedicationService().getMedListData(openId)
+     if (resolution.mode === 'denied') return familyViewDenied(resolution.reason)
+     if (!familyReadAllowed(resolution, ['medicine'])) return familyViewDenied('scopeDenied')
+-    return decorateFamilyView(
+-      await getMedicationService().getMedListData(resolution.ownerOpenId),
+-      resolution
+-    )
++    const data = await getMedicationService().getMedListData(resolution.ownerOpenId)
++    // A4：家属态写能力下发与"仅本人代确认可撤销"标记
++    const canConfirm = canPerformScopeAction(resolution.relation.scopes, 'confirmMedication')
++    if (data && typeof data === 'object') {
++      data.familyView = {
++        allowed: true,
++        readOnly: !canConfirm,
++        ownerName: resolution.relation.ownerName || '',
++        writePermissions: { medicine: canConfirm }
++      }
++      if (Array.isArray(data.confirmations)) {
++        data.confirmations = data.confirmations.map(c => ({
++          ...c,
++          canRevokeProxy: c.createdByMemberOpenId === openId
++        }))
++      }
++    }
++    return data
+   }
+ 
+   async function getFamilyMedHistoryData(openId, payload = {}) {
+@@ -1148,8 +1172,143 @@ function createFamilyService({
+     return decorateFamilyView(data, resolution)
+   }
+ 
++  // ============ A4：家属代录写入闭环 ============
++  // ownerOpenId 一律由服务端 active 关系推导；客户端传入的 ownerOpenId /
++  // createdByMemberOpenId / _openid / memberId 一律忽略（不入参）。
++  // 失败路径零写入；写库顺序 = 先鉴权 → 再校验 → 最后写。
++
++  function familyWriteDenied(reason) {
++    return { familyWrite: { allowed: false, reason } }
++  }
++
++  async function resolveMemberWriter(openId) {
++    const ctx = await getFamilyAccessContext(openId)
++    if (ctx && ctx.mode === 'member') {
++      if (ctx.relation.status !== 'active') return { denied: familyWriteDenied('revoked') }
++      return { ownerOpenId: ctx.ownerOpenId, memberOpenId: openId, relation: ctx.relation }
++    }
++    if (ctx && ctx.mode === 'ownerPreview') return { denied: familyWriteDenied('notMember') }
++    const { data: rows = [] } = await db.collection(collections.familyMembers)
++      .where({ memberOpenId: openId })
++      .limit(1)
++      .get()
++    if (rows.length && rows[0].status === 'revoked') return { denied: familyWriteDenied('revoked') }
++    return { denied: familyWriteDenied('noBinding') }
++  }
++
++  function memberAudit(writer) {
++    return {
++      ownerOpenId: writer.ownerOpenId,
++      createdByMemberOpenId: writer.memberOpenId,
++      createdByRole: 'member'
++    }
++  }
++
++  async function familyRecordBloodPressure(openId, payload = {}) {
++    const writer = await resolveMemberWriter(openId)
++    if (writer.denied) return writer.denied
++    if (!canPerformScopeAction(writer.relation.scopes, 'recordBloodPressure')) {
++      return familyWriteDenied('scopeDenied')
++    }
++    const record = validateBloodPressurePayload(payload)
++    const result = await withPerfLog({
++      routeType: 'action',
++      route: 'familyRecordBloodPressure',
++      step: 'db.records.add'
++    }, () => db.collection(collections.records).add({
++      data: {
++        _openid: writer.ownerOpenId,
++        ...memberAudit(writer),
++        type: 'bp',
++        source: 'family',
++        ...record,
++        createdAt: db.serverDate()
++      }
++    }))
++    await getDailyStatsService().updateRecordStats(writer.ownerOpenId, 'bp', record, 1, 'familyRecordBloodPressure')
++    return { familyWrite: { allowed: true, ownerOpenId: writer.ownerOpenId }, result }
++  }
++
++  async function familyRecordBloodGlucose(openId, payload = {}) {
++    const writer = await resolveMemberWriter(openId)
++    if (writer.denied) return writer.denied
++    if (!canPerformScopeAction(writer.relation.scopes, 'recordBloodGlucose')) {
++      return familyWriteDenied('scopeDenied')
++    }
++    const record = validateBloodGlucosePayload(payload)
++    const result = await withPerfLog({
++      routeType: 'action',
++      route: 'familyRecordBloodGlucose',
++      step: 'db.records.add'
++    }, () => db.collection(collections.records).add({
++      data: {
++        _openid: writer.ownerOpenId,
++        ...memberAudit(writer),
++        type: 'bg',
++        source: 'family',
++        ...record,
++        createdAt: db.serverDate()
++      }
++    }))
++    await getDailyStatsService().updateRecordStats(writer.ownerOpenId, 'bg', record, 1, 'familyRecordBloodGlucose')
++    return { familyWrite: { allowed: true, ownerOpenId: writer.ownerOpenId }, result }
++  }
++
++  async function familyConfirmMedication(openId, payload = {}) {
++    const writer = await resolveMemberWriter(openId)
++    if (writer.denied) return writer.denied
++    if (!canPerformScopeAction(writer.relation.scopes, 'confirmMedication')) {
++      return familyWriteDenied('scopeDenied')
++    }
++    // 保护他人确认：同 logId+当日 已由 owner 或其他成员创建的确认，禁止代确认覆盖
++    const todayStr = getTodayDateValue()
++    const logId = getLimitedString(payload.logId, '用药日志ID', 80, true)
++    const { data: existing = [] } = await db.collection(collections.medicationConfirmations)
++      .where({ _openid: writer.ownerOpenId, logId, confirmDate: todayStr })
++      .limit(1)
++      .get()
++    if (existing.length && existing[0].createdByMemberOpenId !== openId) {
++      return familyWriteDenied('foreignRecord')
++    }
++    const result = await getMedicationService().confirmMedication(writer.ownerOpenId, payload, {
++      audit: memberAudit(writer)
++    })
++    return { familyWrite: { allowed: true, ownerOpenId: writer.ownerOpenId }, result }
++  }
++
++  async function familyRevokeProxyConfirmation(openId, payload = {}) {
++    const writer = await resolveMemberWriter(openId)
++    if (writer.denied) return writer.denied
++    if (!canPerformScopeAction(writer.relation.scopes, 'revokeMedicationConfirmation')) {
++      return familyWriteDenied('scopeDenied')
++    }
++    const logId = getLimitedString(payload.logId, '用药日志ID', 80, true)
++    const todayStr = getTodayDateValue()
++    // 仅本人本次代确认（createdByMemberOpenId=当前成员）可撤销
++    const { data: existing = [] } = await db.collection(collections.medicationConfirmations)
++      .where({
++        _openid: writer.ownerOpenId,
++        logId,
++        confirmDate: todayStr,
++        createdByMemberOpenId: openId
++      })
++      .limit(1)
++      .get()
++    if (!existing.length) return familyWriteDenied('notFound')
++    await withPerfLog({
++      routeType: 'action',
++      route: 'familyRevokeProxyConfirmation',
++      step: 'db.medicationConfirmations.remove'
++    }, () => db.collection(collections.medicationConfirmations).doc(existing[0]._id).remove())
++    return { familyWrite: { allowed: true }, removed: 1 }
++  }
++
+   return {
+     createFamilyInvite,
++    familyConfirmMedication,
++    familyRecordBloodGlucose,
++    familyRecordBloodPressure,
++    familyRevokeProxyConfirmation,
+     getFamilyAuthData,
+     getFamilyData,
+     getFamilyInviteData,
+diff --git a/cloudfunctions/healthApi/index.js b/cloudfunctions/healthApi/index.js
+index 6a5d8c4..23b1be0 100644
+--- a/cloudfunctions/healthApi/index.js
++++ b/cloudfunctions/healthApi/index.js
+@@ -38,7 +38,8 @@ const {
+   normalizeFamilyInvitePayloadV2,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+-  createFamilyAccessContext
++  createFamilyAccessContext,
++  canPerformScopeAction
+ } = require('./family-policy')
+ 
+ cloud.init({
+@@ -193,12 +194,16 @@ function getFamilyService() {
+       normalizeFamilyScopesV2,
+       normalizeNoticeRulesV2,
+       canViewScope,
++      canPerformScopeAction,
+       getScopeTextV2,
+       normalizeFamilyAuthPayloadV2,
+       normalizeFamilyInvitePayloadV2,
+       validateInviteCodePayload,
+       getLimitedString,
+-      createInviteCode
++      createInviteCode,
++      getRecordService,
++      getMedicationService,
++      getDailyStatsService
+     })
+   }
+   return familyService
+@@ -927,6 +932,10 @@ const finishRoute = (result, ok = true) => {
+       'toggleMedicationPlanStatus': () => getMedicationService().toggleMedicationPlanStatus(openId, payload?.planId, payload?.status),
+       'revokeMedicationConfirmation': () => getMedicationService().revokeMedicationConfirmation(openId, payload?.logId),
+       'confirmMedication': () => getMedicationService().confirmMedication(openId, payload),
++      'familyRecordBloodPressure': () => getFamilyService().familyRecordBloodPressure(openId, payload),
++      'familyRecordBloodGlucose': () => getFamilyService().familyRecordBloodGlucose(openId, payload),
++      'familyConfirmMedication': () => getFamilyService().familyConfirmMedication(openId, payload),
++      'familyRevokeProxyConfirmation': () => getFamilyService().familyRevokeProxyConfirmation(openId, payload),
+       'updateFamilyAuth': () => getFamilyService().updateFamilyAuth(openId, payload),
+       'createFamilyInvite': () => getFamilyService().createFamilyInvite(openId, payload),
+       'joinFamilyByInvite': () => getFamilyService().joinFamilyByInvite(openId, payload),
+diff --git a/cloudfunctions/healthApi/medication-service.js b/cloudfunctions/healthApi/medication-service.js
+index 5b05ac2..f08209b 100644
+--- a/cloudfunctions/healthApi/medication-service.js
++++ b/cloudfunctions/healthApi/medication-service.js
+@@ -366,9 +366,11 @@ function createMedicationService({
+     }))
+   }
+ 
+-  async function confirmMedication(openId, payload) {
++  async function confirmMedication(openId, payload, options = {}) {
+     const { logId, time, name, dosage, status, statusText } = validateMedicationConfirmationPayload(payload)
+     const todayStr = getTodayDateValue()
++    // A4：家属代确认审计字段（仅家属路由传入；owner 路径不传，行为不变）
++    const audit = options && options.audit ? options.audit : null
+ 
+     // 先查找同一 logId + confirmDate 是否已有记录，有则更新，无则新增（upsert 语义）
+     const { data: existing } = await withPerfLog({
+@@ -392,7 +394,8 @@ function createMedicationService({
+           time,
+           name,
+           dosage,
+-          actionAt: db.serverDate()
++          actionAt: db.serverDate(),
++          ...(audit || {})
+         }
+       }))
+     }
+@@ -412,7 +415,8 @@ function createMedicationService({
+         statusText,
+         confirmDate: todayStr,
+         createdAt: db.serverDate(),
+-        actionAt: db.serverDate()
++        actionAt: db.serverDate(),
++        ...(audit || {})
+       }
+     }))
+   }
+diff --git a/pages/family-sub/home-family/index.js b/pages/family-sub/home-family/index.js
+index 51e1a39..935877b 100644
+--- a/pages/family-sub/home-family/index.js
++++ b/pages/family-sub/home-family/index.js
+@@ -115,6 +115,15 @@ Page({
+     goRoute('medList', 'familyView=1')
+   },
+ 
++  /**
++   * A4 家属代录入口：携带 familyView 进入记录页（写路由由服务端闸口鉴权）。
++   * @param {Object} event 组件事件；detail.route 为路由键。
++   * @returns {void}
++   */
++  handleProxyRecord(event) {
++    goRoute(event.detail.route, 'familyView=1')
++  },
++
+   /** @returns {void} 返回家庭页。 */
+   goFamily() {
+     goRoute('family')
+diff --git a/pages/family-sub/home-family/index.wxml b/pages/family-sub/home-family/index.wxml
+index 4cdaca8..bd4e2b6 100644
+--- a/pages/family-sub/home-family/index.wxml
++++ b/pages/family-sub/home-family/index.wxml
+@@ -38,6 +38,14 @@
+     </view>
+   </view>
+ 
++  <view class="section" wx:if="{{writePermissions.bloodPressure || writePermissions.bloodGlucose}}">
++    <view class="section-title">家属代录</view>
++    <view class="quick-grid">
++      <quick-action wx:if="{{writePermissions.bloodPressure}}" icon="血压" icon-src="/assets/icons/icon-bp.png" title="代录血压" route="recordBp" bindactiontap="handleProxyRecord" />
++      <quick-action wx:if="{{writePermissions.bloodGlucose}}" icon="血糖" icon-src="/assets/icons/icon-bg.png" title="代录血糖" route="recordBg" bindactiontap="handleProxyRecord" />
++    </view>
++  </view>
++
+   <view class="section">
+     <view class="section-head">
+       <view class="section-title">最新记录</view>
+diff --git a/pages/medication/med-list/index.js b/pages/medication/med-list/index.js
+index 29f7215..03e24ad 100644
+--- a/pages/medication/med-list/index.js
++++ b/pages/medication/med-list/index.js
+@@ -6,7 +6,7 @@ const {
+   safeNavigateTo,
+   unbindAdaptiveResize
+ } = require('../../../utils/page-factory')
+-const { getMedListData, deleteMedicationPlan, toggleMedicationPlanStatus, revokeMedicationConfirmation, confirmMedication } = require('../../../utils/api')
++const { getMedListData, deleteMedicationPlan, toggleMedicationPlanStatus, revokeMedicationConfirmation, confirmMedication, familyConfirmMedication, familyRevokeProxyConfirmation } = require('../../../utils/api')
+ const { removeSnoozeReminderByLogId } = require('../../../services/snooze')
+ const { promptSubscribeAfterAction } = require('../../../utils/subscribe-prompt')
+ 
+@@ -23,7 +23,8 @@ Page({
+       try {
+         this.setData({
+           _loaded: true,
+-          familyDenied: !!(data && data.familyView && data.familyView.allowed === false)
++          familyDenied: !!(data && data.familyView && data.familyView.allowed === false),
++          familyCanConfirm: !!(data && data.familyView && data.familyView.writePermissions && data.familyView.writePermissions.medicine)
+         })
+       } catch (e) { /* 页面可能已销毁 */ }
+     })
+@@ -81,13 +82,45 @@ Page({
+   },
+ 
+   handleConfirmTap(event) {
+-    if (this._familyReadOnly()) return
++    // A4 家属态：代确认（已服）走家属写路由；无写权限时只读提示
++    if (this.data.isFamilyView) {
++      if (!this.data.familyCanConfirm) {
++        this._familyReadOnly()
++        return
++      }
++      this.handleFamilyConfirm(event, 'taken')
++      return
++    }
+     const planId = event.currentTarget.dataset.planId
+     const logId = event.currentTarget.dataset.logId
+     if (!planId) return
+     safeNavigateTo(`/pages/medication/med-confirm/index?planId=${planId}&logId=${logId || ''}`)
+   },
+ 
++  /** A4 家属代确认（已服/跳过）；以云端响应为准，拒绝不本地假成功。 */
++  async handleFamilyConfirm(event, status) {
++    const dataset = event.currentTarget.dataset
++    const logId = dataset.logId
++    if (!logId) return
++    try {
++      const res = await familyConfirmMedication({
++        logId,
++        time: dataset.time || '',
++        name: dataset.name || '',
++        dosage: dataset.dosage || '',
++        status
++      })
++      if (res && res.familyWrite && res.familyWrite.allowed === false) {
++        wx.showToast({ title: '代确认被拒绝：' + (res.familyWrite.reason || '无权限'), icon: 'none' })
++        return
++      }
++      wx.showToast({ title: status === 'taken' ? '已确认已服' : '已记录跳过', icon: 'success' })
++      await this.loadData()
++    } catch (error) {
++      wx.showToast({ title: error && error.message ? error.message : '代确认失败', icon: 'none' })
++    }
++  },
++
+   handleLogTap(event) {
+     if (this.data.isFamilyView && event.currentTarget.dataset.action !== 'view' && event.currentTarget.dataset.action !== 'none') {
+       this._familyReadOnly()
+@@ -135,12 +168,33 @@ Page({
+   },
+ 
+   handleRevokeConfirmation(event) {
+-    if (this._familyReadOnly()) return
++    // A4 家属态：仅撤销本人本次代确认（wxml 仅对 canRevokeProxy 项显示按钮）
++    if (this.data.isFamilyView) {
++      const logId = event.currentTarget.dataset.logId
++      if (!logId) return
++      this._familyRevokeProxy(logId)
++      return
++    }
+     const logId = event.currentTarget.dataset.logId
+     if (!logId) return
+     this._doRevoke(logId)
+   },
+ 
++  /** A4 家属撤销本人代确认；以云端响应为准。 */
++  async _familyRevokeProxy(logId) {
++    try {
++      const res = await familyRevokeProxyConfirmation({ logId })
++      if (res && res.familyWrite && res.familyWrite.allowed === false) {
++        wx.showToast({ title: res.familyWrite.reason === 'notFound' ? '该确认不可撤销' : '撤销被拒绝', icon: 'none' })
++        return
++      }
++      wx.showToast({ title: '已撤销', icon: 'success' })
++      await this.loadData()
++    } catch (error) {
++      wx.showToast({ title: error && error.message ? error.message : '撤销失败', icon: 'none' })
++    }
++  },
++
+   _revokeByLogId(logId) {
+     if (!logId) return
+     this._doRevoke(logId)
+diff --git a/pages/medication/med-list/index.wxml b/pages/medication/med-list/index.wxml
+index 5f18af9..9d9af1d 100644
+--- a/pages/medication/med-list/index.wxml
++++ b/pages/medication/med-list/index.wxml
+@@ -60,6 +60,10 @@
+             <view class="action-highlight">{{item.logs[item.pendingIndex].time}} 待确认</view>
+             <view class="action-btn" data-plan-id="{{item.id}}" data-log-id="{{item.logs[item.pendingIndex].id}}" bindtap="handleConfirmTap">确认</view>
+           </view>
++          <view class="card-action" wx:if="{{item.pendingIndex >= 0 && familyView && familyCanConfirm}}">
++            <view class="action-btn" data-log-id="{{item.logs[item.pendingIndex].id}}" data-time="{{item.logs[item.pendingIndex].time}}" data-name="{{item.name}}" data-dosage="{{item.dosage}}" data-status="taken" bindtap="handleFamilyConfirm">已服</view>
++            <view class="action-btn" data-log-id="{{item.logs[item.pendingIndex].id}}" data-time="{{item.logs[item.pendingIndex].time}}" data-name="{{item.name}}" data-dosage="{{item.dosage}}" data-status="skipped" bindtap="handleFamilyConfirm">跳过</view>
++          </view>
+         </view>
+       </view>
+     </block>
+@@ -126,7 +130,7 @@
+               <text class="confirm-status {{item.status === 'taken' ? 'status-taken' : 'status-skipped'}}">{{item.statusText}}</text>
+             </view>
+           </view>
+-          <view wx:if="{{!familyView}}" class="confirm-revoke" data-log-id="{{item.logId}}" bindtap="handleRevokeConfirmation">撤销</view>
++          <view wx:if="{{!familyView || item.canRevokeProxy}}" class="confirm-revoke" data-log-id="{{item.logId}}" bindtap="handleRevokeConfirmation">撤销</view>
+         </view>
+       </view>
+     </block>
+diff --git a/pages/record/record-bg/index.js b/pages/record/record-bg/index.js
+index ab2289f..d591ad4 100644
+--- a/pages/record/record-bg/index.js
++++ b/pages/record/record-bg/index.js
+@@ -1,5 +1,5 @@
+ const { safeNavigateBack, loadPageData, clearPageLoadState, bindAdaptiveResize, unbindAdaptiveResize } = require('../../../utils/page-factory')
+-const { getRecordBgData, saveBloodGlucoseRecord } = require('../../../utils/api')
++const { getRecordBgData, saveBloodGlucoseRecord, familyRecordBloodGlucose } = require('../../../utils/api')
+ const { promptSubscribeAfterAction } = require('../../../utils/subscribe-prompt')
+ const routes = require('../../../utils/routes')
+ 
+@@ -23,10 +23,15 @@ Page({
+     timeManuallySet: false,
+     adaptive: {},
+     isLoading: false,
+-    loadError: ''
++    loadError: '',
++    isFamilyView: false,
++    submitError: ''
+   },
+ 
+-  async onLoad() {
++  async onLoad(options = {}) {
++    if (options.familyView === '1' || options.familyView === true) {
++      this.setData({ isFamilyView: true })
++    }
+     wx.setNavigationBarTitle({
+       title: '血糖记录'
+     })
+@@ -208,7 +213,17 @@ Page({
+         note: form.note
+       }
+       
+-      await saveBloodGlucoseRecord(payload)
++      if (this.data.isFamilyView) {
++        // A4 家属代录：走家属写路由；以云端响应为准，拒绝不本地假成功
++        const res = await familyRecordBloodGlucose(payload)
++        if (res && res.familyWrite && res.familyWrite.allowed === false) {
++          this.setData({ isLoading: false, submitError: res.familyWrite.reason || 'scopeDenied' })
++          wx.showToast({ title: '代录被拒绝：' + (res.familyWrite.reason || '无权限'), icon: 'none' })
++          return
++        }
++      } else {
++        await saveBloodGlucoseRecord(payload)
++      }
+       
+       wx.showToast({
+         title: '记录已保存',
+diff --git a/pages/record/record-bp/index.js b/pages/record/record-bp/index.js
+index fc5c70d..4f98a4a 100644
+--- a/pages/record/record-bp/index.js
++++ b/pages/record/record-bp/index.js
+@@ -1,5 +1,5 @@
+ const { safeNavigateBack, loadPageData, clearPageLoadState, bindAdaptiveResize, unbindAdaptiveResize } = require('../../../utils/page-factory')
+-const { getRecordBpData, saveBloodPressureRecord } = require('../../../utils/api')
++const { getRecordBpData, saveBloodPressureRecord, familyRecordBloodPressure } = require('../../../utils/api')
+ const { promptSubscribeAfterAction } = require('../../../utils/subscribe-prompt')
+ const routes = require('../../../utils/routes')
+ Page({
+@@ -20,10 +20,15 @@ Page({
+     timeManuallySet: false,
+     adaptive: {},
+     isLoading: false,
+-    loadError: ''
++    loadError: '',
++    isFamilyView: false,
++    submitError: ''
+   },
+ 
+-  async onLoad() {
++  async onLoad(options = {}) {
++    if (options.familyView === '1' || options.familyView === true) {
++      this.setData({ isFamilyView: true })
++    }
+     wx.setNavigationBarTitle({
+       title: '血压记录'
+     })
+@@ -216,7 +221,17 @@ Page({
+         note: form.note
+       }
+       
+-      await saveBloodPressureRecord(payload)
++      if (this.data.isFamilyView) {
++        // A4 家属代录：走家属写路由；以云端响应为准，拒绝不本地假成功
++        const res = await familyRecordBloodPressure(payload)
++        if (res && res.familyWrite && res.familyWrite.allowed === false) {
++          this.setData({ isLoading: false, submitError: res.familyWrite.reason || 'scopeDenied' })
++          wx.showToast({ title: '代录被拒绝：' + (res.familyWrite.reason || '无权限'), icon: 'none' })
++          return
++        }
++      } else {
++        await saveBloodPressureRecord(payload)
++      }
+       
+       wx.showToast({
+         title: '记录已保存',
+diff --git a/scripts/health-api-regression.js b/scripts/health-api-regression.js
+index 2251a8a..57d9876 100644
+--- a/scripts/health-api-regression.js
++++ b/scripts/health-api-regression.js
+@@ -24,6 +24,7 @@ const {
+   getScopeTextV2,
+   normalizeFamilyAuthPayloadV2,
+   normalizeFamilyInvitePayloadV2,
++  canPerformScopeAction,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+   createFamilyAccessContext
+@@ -100,7 +101,15 @@ class MockCollectionQuery {
+     const docs = this.docId
+       ? this.db.data[this.name].filter(item => item._id === this.docId)
+       : this.db.data[this.name].filter(item => this.db.matches(item, this.query))
+-    docs.forEach(doc => Object.assign(doc, clone(data)))
++    docs.forEach((doc) => {
++      Object.entries(data).forEach(([key, value]) => {
++        if (value && value.__op === 'inc') {
++          doc[key] = (typeof doc[key] === 'number' ? doc[key] : 0) + value.value
++        } else {
++          doc[key] = clone(value)
++        }
++      })
++    })
+     return Promise.resolve({ stats: { updated: docs.length } })
+   }
+ 
+@@ -178,6 +187,12 @@ class MockDb {
+       if (expected && expected.__op === 'in') {
+         return expected.values.includes(doc[key])
+       }
++      if (expected && expected.__op === 'lt') {
++        return typeof doc[key] === 'number' && doc[key] < expected.value
++      }
++      if (expected && expected.__op === 'gt') {
++        return typeof doc[key] === 'number' && doc[key] > expected.value
++      }
+       return doc[key] === expected
+     })
+   }
+@@ -320,7 +335,12 @@ async function testFamilyService() {
+ 
+   const service = createFamilyService({
+     db,
+-    _: { in: values => ({ __op: 'in', values }) },
++    _: {
++      in: values => ({ __op: 'in', values }),
++      lt: value => ({ __op: 'lt', value }),
++      gt: value => ({ __op: 'gt', value }),
++      inc: value => ({ __op: 'inc', value })
++    },
+     collections: COLLECTIONS,
+     withPerfLog,
+     getProfileDisplayName,
+@@ -336,10 +356,12 @@ async function testFamilyService() {
+     getScopeTextV2,
+     normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2,
++    canPerformScopeAction,
+     validateInviteCodePayload,
+     getLimitedString,
+     // 确定性测试替身：固定邀请码以便断言；不是业务逻辑的复制。
+-    createInviteCode: () => 'KXJREGRESS01'
++    createInviteCode: () => 'KXJREGRESS01',
++    getDailyStatsService: () => ({ async updateRecordStats() { return { updated: 0 } }, async getHomeStats() { return { dailyStats: {}, recordStats: {} } } })
+   })
+ 
+   // 显式提交授权：血压/血糖/用药/周报 read 全开（与后续 homeFamily 断言对应）
+diff --git a/services/family.js b/services/family.js
+index 4fdd252..a053c96 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -211,7 +211,7 @@ function createFamilyInviteLocal(payload, remoteResult) {
+ 
+ function joinFamilyByInviteLocal(payload, remoteResult) {
+   const storedAuth = getStoredFamilyAuth() || {}
+-  const inviteCode = (payload && payload.inviteCode) || storedAuth.inviteCode || ''
++  const inviteCode = (payload && payload.inviteCode) || ''
+ 
+   // A2（decisions #15）：本地模式镜像校验——码必须匹配且未过期，失败不假成功。
+   // 错误码与云端契约一致，页面可统一消费。
+@@ -220,6 +220,10 @@ function joinFamilyByInviteLocal(payload, remoteResult) {
+     error.code = code
+     throw error
+   }
++  // 无码（payload 与本地记录都没有）：尚未获得邀请，不得假成功
++  if (!inviteCode && !storedAuth.inviteCode) {
++    localInviteError('FAMILY_INVITE_NOT_FOUND', '邀请不存在或已失效')
++  }
+   if (storedAuth.inviteCode && inviteCode !== storedAuth.inviteCode) {
+     localInviteError('FAMILY_INVITE_NOT_FOUND', '邀请不存在或已失效')
+   }
+@@ -429,11 +433,21 @@ function revokeFamilyMember(payload) {
+   })
+ }
+ 
++// A4 家属代录写路由（服务端闸口鉴权；本地不缓存写入结果，以云端响应为准）
++function familyRecordBloodPressure(payload) { return resolveRemote('familyRecordBloodPressure', payload) }
++function familyRecordBloodGlucose(payload) { return resolveRemote('familyRecordBloodGlucose', payload) }
++function familyConfirmMedication(payload) { return resolveRemote('familyConfirmMedication', payload) }
++function familyRevokeProxyConfirmation(payload) { return resolveRemote('familyRevokeProxyConfirmation', payload) }
++
+ module.exports = {
+   FAMILY_RELATIONS,
+   SCOPE_KEYS,
+   createFamilyInvite,
+   createFamilyInviteLocal,
++  familyRecordBloodPressure,
++  familyRecordBloodGlucose,
++  familyConfirmMedication,
++  familyRevokeProxyConfirmation,
+   enforceHomeFamilyAccess,
+   getDefaultInviteScopes,
+   getFamilyAuthData,
+diff --git a/tests/unit/a0-contract-integration.test.js b/tests/unit/a0-contract-integration.test.js
+index 5c0bade..a6186a4 100644
+--- a/tests/unit/a0-contract-integration.test.js
++++ b/tests/unit/a0-contract-integration.test.js
+@@ -41,6 +41,8 @@ class StoreQuery {
+       ? this.store.rows.filter(d => d._id === this.docId)
+       : this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
+         if (v && v.__op === 'in') return v.values.includes(d[k])
++        if (v && v.__op === 'lt') return typeof d[k] === 'number' && d[k] < v.value
++        if (v && v.__op === 'gt') return typeof d[k] === 'number' && d[k] > v.value
+         return d[k] === v
+       }))
+   }
+@@ -57,13 +59,23 @@ class StoreQuery {
+   }
+   async count() { return { total: this._targets().length } }
+   async add({ data }) {
+-    const _id = `doc-${this.store.seq++}`
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) {
++      const err = new Error('E11000 duplicate key error')
++      err.errCode = -502005
++      throw err
++    }
+     this.store.rows.push({ _id, ...clone(data) })
+     return { _id }
+   }
+   async update({ data }) {
+     const targets = this._targets()
+-    targets.forEach(d => Object.assign(d, clone(data)))
++    targets.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
+     return { stats: { updated: targets.length } }
+   }
+   async remove() {
+@@ -91,9 +103,14 @@ function createStoreDb(initial = {}) {
+ }
+ 
+ const commands = {
+-  in: values => ({ __op: 'in', values })
++  in: values => ({ __op: 'in', values }),
++  lt: value => ({ __op: 'lt', value }),
++  gt: value => ({ __op: 'gt', value }),
++  inc: value => ({ __op: 'inc', value })
+ }
+ 
++let inviteSeq = 0
++
+ // 全量装配：与 index.js 中 getFamilyService 使用同一套 family-policy 导出
+ const policy = require('../../cloudfunctions/healthApi/family-policy')
+ const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
+@@ -115,12 +132,14 @@ function createService(db) {
+     normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
++    canPerformScopeAction: policy.canPerformScopeAction,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+     validateInviteCodePayload: policy.validateInviteCodePayload,
+     getLimitedString: helpers.getLimitedString,
+-    createInviteCode: () => 'KXJTEST00001'
++    // 顺序桩：A2 收尾后重邀必发新码（候选命中自己旧码也算冲突），常量桩会触发冲突路径
++    createInviteCode: () => `KXJTEST${String(++inviteSeq).padStart(5, '0')}`
+   })
+ }
+ 
+diff --git a/tests/unit/a1-member-isolation.test.js b/tests/unit/a1-member-isolation.test.js
+index 1baafbb..0eac1b6 100644
+--- a/tests/unit/a1-member-isolation.test.js
++++ b/tests/unit/a1-member-isolation.test.js
+@@ -50,6 +50,8 @@ class StoreQuery {
+     if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
+     return this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
+       if (v && v.__op === 'in') return v.values.includes(d[k])
++      if (v && v.__op === 'lt') return typeof d[k] === 'number' && d[k] < v.value
++      if (v && v.__op === 'gt') return typeof d[k] === 'number' && d[k] > v.value
+       return d[k] === v
+     }))
+   }
+@@ -66,13 +68,23 @@ class StoreQuery {
+   }
+   async count() { return { total: this._targets().length } }
+   async add({ data }) {
+-    const _id = `doc-${this.store.seq++}`
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) {
++      const err = new Error('E11000 duplicate key error')
++      err.errCode = -502005
++      throw err
++    }
+     this.store.rows.push({ _id, ...clone(data) })
+     return { _id }
+   }
+   async update({ data }) {
+     const targets = this._targets()
+-    targets.forEach(d => Object.assign(d, clone(data)))
++    targets.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
+     return { stats: { updated: targets.length } }
+   }
+   async remove() {
+@@ -99,7 +111,12 @@ function createStoreDb(initial = {}) {
+   }
+ }
+ 
+-const commands = { in: values => ({ __op: 'in', values }) }
++const commands = {
++  in: values => ({ __op: 'in', values }),
++  lt: value => ({ __op: 'lt', value }),
++  gt: value => ({ __op: 'gt', value }),
++  inc: value => ({ __op: 'inc', value })
++}
+ 
+ function createService(db, inviteSeq = { n: 0 }) {
+   return createFamilyService({
+@@ -117,6 +134,7 @@ function createService(db, inviteSeq = { n: 0 }) {
+     normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
++    canPerformScopeAction: policy.canPerformScopeAction,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+diff --git a/tests/unit/a3-family-readonly.test.js b/tests/unit/a3-family-readonly.test.js
+index 7cd3560..84b018c 100644
+--- a/tests/unit/a3-family-readonly.test.js
++++ b/tests/unit/a3-family-readonly.test.js
+@@ -153,6 +153,7 @@ function buildServices(seed) {
+     normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
++    canPerformScopeAction: policy.canPerformScopeAction,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+@@ -160,7 +161,8 @@ function buildServices(seed) {
+     getLimitedString: helpers.getLimitedString,
+     createInviteCode: () => 'KXJTEST00001',
+     getRecordService: () => recordService,
+-    getMedicationService: () => medicationService
++    getMedicationService: () => medicationService,
++    getDailyStatsService: () => ({ async updateRecordStats() { return { updated: 0 } }, async getHomeStats() { return { dailyStats: {}, recordStats: {} } } })
+   })
+   return { db, recordService, medicationService, familyService }
+ }
+diff --git a/.a4tmp5/post/tests/unit/a4-family-write.test.js b/tests/unit/a4-family-write.test.js
+new file mode 100644
+index 0000000..d72a3a7
+--- /dev/null
++++ b/tests/unit/a4-family-write.test.js
+@@ -0,0 +1,471 @@
++/**
++ * A4 家属代录写入闭环测试（先失败后实现）。
++ * 存储替身模拟存取；权限判定调用 family-policy（canPerformScopeAction），不在测试中复制规则。
++ */
++
++const { createRecordService } = require('../../cloudfunctions/healthApi/record-service')
++const { createMedicationService } = require('../../cloudfunctions/healthApi/medication-service')
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
++  dailyStats: 'health_daily_stats',
++  recordStats: 'health_record_stats',
++  profiles: 'profiles'
++}
++
++function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)) }
++
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store; this.query = query
++    this.orderField = ''; this.orderDir = 'asc'; this.max = Infinity; this.skipN = 0
++    this.docId = ''; this.hasDocId = false
++  }
++  where(c) { return new StoreQuery(this.store, c) }
++  orderBy(f, d) { const q = new StoreQuery(this.store, this.query); q.orderField = f; q.orderDir = d; q.max = this.max; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  limit(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = n; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  skip(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; q.skipN = n; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.hasDocId = true; q.max = this.max; q.skipN = this.skipN; return q }
++  field() { return this }
++  _matchOne(doc, q) {
++    return Object.entries(q).every(([k, v]) => {
++      if (v && v.__op === 'in') return v.values.includes(doc[k])
++      if (v && v.__op === 'lt') return doc[k] !== undefined && doc[k] < v.value
++      if (v && v.__op === 'gt') return doc[k] !== undefined && doc[k] > v.value
++      if (v && v.__op === 'or') return v.clauses.some(c => this._matchOne(doc, c))
++      if (v && v.__op === 'range') {
++        const val = doc[k]
++        if (val === undefined) return false
++        if (v.gte !== undefined && !(val >= v.gte)) return false
++        if (v.lte !== undefined && !(val <= v.lte)) return false
++        return true
++      }
++      return doc[k] === v
++    })
++  }
++  _targets() {
++    if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
++    return this.store.rows.filter(d => this._matchOne(d, this.query))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    if (this.skipN) rows = rows.slice(this.skipN)
++    return { data: this.max === Infinity ? rows : rows.slice(0, this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) { const e = new Error('E11000 duplicate key error'); e.errCode = -502005; throw e }
++    this.store.rows.push({ _id, ...clone(data) })
++    return { _id }
++  }
++  async update({ data }) {
++    const t = this._targets()
++    t.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
++    return { stats: { updated: t.length } }
++  }
++  async remove() {
++    const ids = new Set(this._targets().map(d => d._id))
++    const before = this.store.rows.length
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((a) => { stores[COLLECTIONS[a]] = { rows: Array.isArray(initial[a]) ? clone(initial[a]) : [], seq: 1 } })
++  return {
++    collection(n) { if (!stores[n]) stores[n] = { rows: [], seq: 1 }; return new StoreQuery(stores[n]) },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++}
++
++function rangeOp(op, v) { const m = { __op: 'range' }; m[op] = v; m.and = (o) => { m[op === 'gte' ? 'lte' : 'gte'] = o.value; return m }; return m }
++const commands = {
++  in: values => ({ __op: 'in', values }),
++  lt: v => ({ __op: 'lt', value: v }),
++  gt: v => ({ __op: 'gt', value: v }),
++  gte: v => rangeOp('gte', v),
++  lte: v => rangeOp('lte', v),
++  or: clauses => ({ __op: 'or', clauses }),
++  inc: v => ({ __op: 'inc', value: v })
++}
++
++function scopesOf(bp, bg, med) {
++  return [
++    { key: 'bloodPressure', title: '血压记录', meta: 'm', read: bp.read, write: bp.write, remind: false },
++    { key: 'bloodGlucose', title: '血糖记录', meta: 'm', read: bg.read, write: bg.write, remind: false },
++    { key: 'medicine', title: '用药确认', meta: 'm', read: med.read, write: med.write, remind: false },
++    { key: 'report', title: '健康记录周报', meta: 'm', read: false, write: false, remind: false }
++  ]
++}
++
++function build(seed = {}) {
++  const db = createStoreDb(seed)
++  const withPerfLog = (m, fn) => fn()
++  const recordService = createRecordService({ db, _: commands, collections: COLLECTIONS, getRecordStatus: helpers.getRecordStatus, withPerfLog })
++  const medicationService = createMedicationService({
++    db, _: commands, collections: COLLECTIONS,
++    assertOwnedDocument: async (coll, openId, id, label) => {
++      const { data } = await db.collection(coll).where({ _id: id, _openid: openId }).limit(1).get()
++      if (!data.length) throw new Error(`${label}不存在或无权操作`)
++      return data[0]
++    },
++    validateMedicationPlanPayload: p => p,
++    validateMedicationConfirmationPayload: p => p,
++    withPerfLog
++  })
++  const familyService = createFamilyService({
++    db, _: commands, collections: COLLECTIONS, withPerfLog,
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    canPerformScopeAction: policy.canPerformScopeAction,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: helpers.getLimitedString,
++    createInviteCode: () => 'KXJTEST00001',
++    getRecordService: () => recordService,
++    getMedicationService: () => medicationService,
++    getDailyStatsService: () => ({
++      async updateRecordStats() { return { updated: 0 } },
++      async getHomeStats() { return { dailyStats: {}, recordStats: {} } }
++    })
++  })
++  return { db, recordService, medicationService, familyService }
++}
++
++function memberRow(scopes, overrides = {}) {
++  return {
++    _id: 'active-member-b', _openid: 'B', ownerOpenId: 'A', ownerName: '王阿姨',
++    memberOpenId: 'B', scopes, status: 'active', ...overrides
++  }
++}
++
++const RW = { read: true, write: true }
++const RO = { read: true, write: false }
++const WO = { read: false, write: true }
++const NONE = { read: false, write: false }
++
++describe('A4 · 身份与关系', () => {
++  it('B 为 A 的 active 家属且 bp read+write：代录成功并带审计字段', async () => {
++    const { db, familyService } = build({ familyMembers: [memberRow(scopesOf(RW, NONE, NONE))] })
++    const res = await familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 })
++    expect(res.familyWrite.allowed).toBe(true)
++    const rec = db._stores[COLLECTIONS.records].rows[0]
++    expect(rec.ownerOpenId).toBe('A')
++    expect(rec.createdByMemberOpenId).toBe('B')
++    expect(rec.createdByRole).toBe('member')
++    expect(rec._openid).toBe('A')
++    expect(rec.type).toBe('bp')
++    expect(rec.systolic).toBe(128)
++  })
++
++  it('无关系 / revoked / 跨 owner 伪造：拒绝且零写入', async () => {
++    const noRel = build({})
++    await expect(noRel.familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 }))
++      .resolves.toMatchObject({ familyWrite: { allowed: false, reason: 'noBinding' } })
++    expect(noRel.db._stores[COLLECTIONS.records].rows).toHaveLength(0)
++
++    const revoked = build({ familyMembers: [memberRow(scopesOf(RW, NONE, NONE), { status: 'revoked' })] })
++    await expect(revoked.familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 }))
++      .resolves.toMatchObject({ familyWrite: { allowed: false, reason: 'revoked' } })
++    expect(revoked.db._stores[COLLECTIONS.records].rows).toHaveLength(0)
++
++    const cross = build({ familyMembers: [memberRow(scopesOf(RW, NONE, NONE))] })
++    const res = await cross.familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78, ownerOpenId: 'O2' })
++    expect(res.familyWrite.allowed).toBe(true)
++    expect(cross.db._stores[COLLECTIONS.records].rows[0].ownerOpenId).toBe('A') // 伪造 ownerOpenId 被忽略
++  })
++
++  it('payload 伪造审计字段被忽略', async () => {
++    const { db, familyService } = build({ familyMembers: [memberRow(scopesOf(RW, NONE, NONE))] })
++    await familyService.familyRecordBloodPressure('B', {
++      systolic: 128, diastolic: 78,
++      ownerOpenId: 'X', createdByMemberOpenId: 'Y', createdByRole: 'owner', _openid: 'Z'
++    })
++    const rec = db._stores[COLLECTIONS.records].rows[0]
++    expect(rec.ownerOpenId).toBe('A')
++    expect(rec.createdByMemberOpenId).toBe('B')
++    expect(rec.createdByRole).toBe('member')
++    expect(rec._openid).toBe('A')
++  })
++
++  it('owner 自己不走家属代录路由（行为不变由 owner 路由承担）', async () => {
++    const { familyService } = build({ familyMembers: [memberRow(scopesOf(RW, NONE, NONE))] })
++    const res = await familyService.familyRecordBloodPressure('A', { systolic: 128, diastolic: 78 })
++    expect(res.familyWrite.allowed).toBe(false)
++  })
++
++  it('owner 查询能看到代录记录（按 ownerOpenId 归属）', async () => {
++    const { db, recordService, familyService } = build({ familyMembers: [memberRow(scopesOf(RW, RW, NONE))] })
++    await familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 })
++    await familyService.familyRecordBloodGlucose('B', { glucose: 6.4 })
++    const list = await recordService.getRecordListData('A', {})
++    expect(list.records.map(r => r.type).sort()).toEqual(['bg', 'bp'])
++  })
++
++  it('revoked 后新写入立即拒绝', async () => {
++    const { db, familyService } = build({ familyMembers: [memberRow(scopesOf(RW, NONE, NONE))] })
++    db._stores[COLLECTIONS.familyMembers].rows[0].status = 'revoked'
++    const res = await familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 })
++    expect(res.familyWrite.allowed).toBe(false)
++    expect(db._stores[COLLECTIONS.records].rows).toHaveLength(0)
++  })
++})
++
++describe('A4 · 权限矩阵', () => {
++  it('bp read+write 允许；read-only / write-only / remind-only 拒绝', async () => {
++    const ok = build({ familyMembers: [memberRow(scopesOf(RW, NONE, NONE))] })
++    expect((await ok.familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 })).familyWrite.allowed).toBe(true)
++
++    const ro = build({ familyMembers: [memberRow(scopesOf(RO, NONE, NONE))] })
++    expect((await ro.familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 })).familyWrite.reason).toBe('scopeDenied')
++
++    const wo = build({ familyMembers: [memberRow(scopesOf(WO, NONE, NONE))] })
++    expect((await wo.familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 })).familyWrite.reason).toBe('scopeDenied')
++
++    const remindOnly = build({ familyMembers: [memberRow([{ key: 'bloodPressure', title: 't', meta: 'm', read: false, write: false, remind: true }, { key: 'bloodGlucose', title: 't', meta: 'm', read: false, write: false, remind: false }, { key: 'medicine', title: 't', meta: 'm', read: false, write: false, remind: false }, { key: 'report', title: 't', meta: 'm', read: false, write: false, remind: false }])] })
++    expect((await remindOnly.familyService.familyRecordBloodPressure('B', { systolic: 128, diastolic: 78 })).familyWrite.reason).toBe('scopeDenied')
++  })
++
++  it('bg read+write 允许血糖代录', async () => {
++    const { db, familyService } = build({ familyMembers: [memberRow(scopesOf(NONE, RW, NONE))] })
++    const res = await familyService.familyRecordBloodGlucose('B', { glucose: 6.4 })
++    expect(res.familyWrite.allowed).toBe(true)
++    expect(db._stores[COLLECTIONS.records].rows[0].type).toBe('bg')
++  })
++
++  it('medicine read+write 允许已服/跳过代确认', async () => {
++    const { db, familyService } = build({
++      familyMembers: [memberRow(scopesOf(NONE, NONE, RW))],
++      medicationPlans: [{ _id: 'plan-1', _openid: 'A', name: '降压药', dosage: '1片', times: ['07:00'], status: '启用' }]
++    })
++    const taken = await familyService.familyConfirmMedication('B', { logId: 'log-plan-1-0700', time: '07:00', name: '降压药', dosage: '1片', status: 'taken' })
++    expect(taken.familyWrite.allowed).toBe(true)
++    const skipped = await familyService.familyConfirmMedication('B', { logId: 'log-plan-1-0700', time: '07:00', name: '降压药', dosage: '1片', status: 'skipped' })
++    expect(skipped.familyWrite.allowed).toBe(true)
++    const docs = db._stores[COLLECTIONS.medicationConfirmations].rows
++    expect(docs).toHaveLength(1) // upsert：重复提交不产生重复文档
++    expect(docs[0].status).toBe('skipped')
++    expect(docs[0].createdByMemberOpenId).toBe('B')
++    expect(docs[0]._openid).toBe('A')
++  })
++
++  it('read-only / write-only medicine 拒绝代确认', async () => {
++    const ro = build({ familyMembers: [memberRow(scopesOf(NONE, NONE, RO))] })
++    expect((await ro.familyService.familyConfirmMedication('B', { logId: 'l', time: '07:00', name: '药', status: 'taken' })).familyWrite.reason).toBe('scopeDenied')
++    const wo = build({ familyMembers: [memberRow(scopesOf(NONE, NONE, WO))] })
++    expect((await wo.familyService.familyConfirmMedication('B', { logId: 'l', time: '07:00', name: '药', status: 'taken' })).familyWrite.reason).toBe('scopeDenied')
++  })
++
++  it('report write、计划管理、记录删除：无家属写路由', async () => {
++    const { familyService } = build({ familyMembers: [memberRow(scopesOf(RW, RW, RW))] })
++    expect(typeof familyService.familySaveMedicationPlan).toBe('undefined')
++    expect(typeof familyService.familyDeleteMedicationPlan).toBe('undefined')
++    expect(typeof familyService.familyDeleteRecord).toBe('undefined')
++    expect(typeof familyService.familyRecordReport).toBe('undefined')
++  })
++})
++
++describe('A4 · 代确认撤销', () => {
++  const seedConfirm = (extra = {}) => ({
++    familyMembers: [memberRow(scopesOf(NONE, NONE, RW))],
++    medicationConfirmations: [{
++      _id: 'conf-1', _openid: 'A', ownerOpenId: 'A', logId: 'log-plan-1-0700',
++      confirmDate: helpers.getTodayDateValue(), status: 'taken', statusText: '已服',
++      createdByMemberOpenId: 'B', createdByRole: 'member', ...extra
++    }]
++  })
++
++  it('B 可撤销自己本次代确认', async () => {
++    const { db, familyService } = build(seedConfirm())
++    const res = await familyService.familyRevokeProxyConfirmation('B', { logId: 'log-plan-1-0700' })
++    expect(res.familyWrite.allowed).toBe(true)
++    expect(db._stores[COLLECTIONS.medicationConfirmations].rows).toHaveLength(0)
++  })
++
++  it('B 不能撤销 owner 创建的确认', async () => {
++    const { db, familyService } = build(seedConfirm({ createdByMemberOpenId: undefined, createdByRole: undefined }))
++    const res = await familyService.familyRevokeProxyConfirmation('B', { logId: 'log-plan-1-0700' })
++    expect(res.familyWrite.allowed).toBe(false)
++    expect(db._stores[COLLECTIONS.medicationConfirmations].rows).toHaveLength(1)
++  })
++
++  it('B 不能撤销其他 member 的确认', async () => {
++    const { db, familyService } = build(seedConfirm({ createdByMemberOpenId: 'B2' }))
++    const res = await familyService.familyRevokeProxyConfirmation('B', { logId: 'log-plan-1-0700' })
++    expect(res.familyWrite.allowed).toBe(false)
++    expect(db._stores[COLLECTIONS.medicationConfirmations].rows).toHaveLength(1)
++  })
++
++  it('重复撤销：第二次明确拒绝且不异常', async () => {
++    const { db, familyService } = build(seedConfirm())
++    await familyService.familyRevokeProxyConfirmation('B', { logId: 'log-plan-1-0700' })
++    const second = await familyService.familyRevokeProxyConfirmation('B', { logId: 'log-plan-1-0700' })
++    expect(second.familyWrite.allowed).toBe(false)
++    expect(second.familyWrite.reason).toBe('notFound')
++  })
++})
++
++describe('A4 · homeFamily 写权限下发', () => {
++  it('homeFamily 响应携带 writePermissions（read+write 才为 true）', async () => {
++    const { familyService } = build({
++      familyMembers: [memberRow(scopesOf(RW, RO, RW))],
++      profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    const data = await familyService.getHomeFamilyData('B')
++    expect(data.writePermissions).toEqual({
++      bloodPressure: true, bloodGlucose: false, medicine: true, report: false
++    })
++  })
++})
++
++// ─── 页面级 ───
++const mockApi = {
++  getMedListData: jest.fn(),
++  getRecordBpData: jest.fn(() => Promise.resolve({})),
++  getRecordBgData: jest.fn(() => Promise.resolve({})),
++  familyConfirmMedication: jest.fn(),
++  familyRevokeProxyConfirmation: jest.fn(),
++  familyRecordBloodPressure: jest.fn(),
++  familyRecordBloodGlucose: jest.fn(),
++  getRecordDetailData: jest.fn(),
++  deleteRecord: jest.fn(),
++  saveBloodPressureRecord: jest.fn(),
++  saveBloodGlucoseRecord: jest.fn()
++}
++const mockFactory = {
++  autoPreCheck: jest.fn(),
++  bindAdaptiveResize: jest.fn(),
++  unbindAdaptiveResize: jest.fn(),
++  goRoute: jest.fn(),
++  clearPageLoadState: jest.fn(),
++  safeNavigateBack: jest.fn(),
++  safeNavigateTo: jest.fn(),
++  loadPageData: jest.fn()
++}
++jest.mock('../../utils/api', () => mockApi)
++jest.mock('../../utils/page-factory', () => mockFactory)
++jest.mock('../../services/snooze', () => ({ removeSnoozeReminderByLogId: jest.fn() }))
++jest.mock('../../utils/subscribe-prompt', () => ({ promptSubscribeAfterAction: jest.fn(() => Promise.resolve({ ok: false })) }))
++global.Page = (cfg) => { pageConfigs.push(cfg); return cfg }
++global.wx = {
++  setNavigationBarTitle: jest.fn(),
++  showToast: jest.fn(),
++  showModal: jest.fn((opt) => opt.success && opt.success({ confirm: true })),
++  setClipboardData: jest.fn(),
++  showActionSheet: jest.fn()
++}
++global.getApp = () => ({ globalData: {} })
++const pageConfigs = []
++require('../../pages/medication/med-list/index.js')
++require('../../pages/record/record-bp/index.js')
++require('../../pages/record/record-bg/index.js')
++
++function makePage(cfg) {
++  return Object.assign({}, cfg, {
++    data: JSON.parse(JSON.stringify(cfg.data)),
++    route: 'x',
++    setData(patch) { Object.assign(this.data, patch) }
++  })
++}
++
++describe('A4 · 页面家属态写入口', () => {
++  beforeEach(() => {
++    jest.clearAllMocks()
++    mockFactory.loadPageData.mockImplementation(async (page, loader) => {
++      const d = await loader()
++      Object.assign(page.data, d)
++      page.data._loaded = true
++      return d
++    })
++  })
++
++  it('med-list 家属态：medicine write 时显示代确认入口；计划增删改入口仍隐藏', async () => {
++    mockApi.getMedListData.mockResolvedValue({
++      todayCards: [{ id: 'plan-1', name: '降压药', logs: [{ id: 'log-1', time: '07:00', status: 'pending' }], pendingIndex: 0 }],
++      confirmations: [],
++      familyView: { allowed: true, readOnly: true, writePermissions: { medicine: true } }
++    })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad({ familyView: '1' })
++    expect(page.data.isFamilyView).toBe(true)
++    expect(page.data.familyCanConfirm).toBe(true)
++    // 代确认走家属路由
++    page.handleConfirmTap({ currentTarget: { dataset: { planId: 'plan-1', logId: 'log-1' } } })
++    expect(mockApi.familyConfirmMedication).toHaveBeenCalled()
++    expect(mockFactory.goRoute).not.toHaveBeenCalled() // 不跳 owner 确认页
++    // 计划编辑入口守卫仍生效
++    page.editPlan({ currentTarget: { dataset: { id: 'plan-1' } } })
++    expect(mockFactory.safeNavigateTo).not.toHaveBeenCalled()
++  })
++
++  it('med-list 家属态 medicine 只读：代确认入口不开放', async () => {
++    mockApi.getMedListData.mockResolvedValue({
++      todayCards: [{ id: 'plan-1', name: '降压药', logs: [{ id: 'log-1', time: '07:00', status: 'pending' }], pendingIndex: 0 }],
++      confirmations: [],
++      familyView: { allowed: true, readOnly: true, writePermissions: { medicine: false } }
++    })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad({ familyView: '1' })
++    expect(page.data.familyCanConfirm).toBe(false)
++    page.handleConfirmTap({ currentTarget: { dataset: { planId: 'plan-1', logId: 'log-1' } } })
++    expect(mockApi.familyConfirmMedication).not.toHaveBeenCalled()
++  })
++
++  it('record-bp 家属态：提交走家属代录路由；云端拒绝不本地假成功', async () => {
++    mockApi.familyRecordBloodPressure.mockResolvedValue({ familyWrite: { allowed: false, reason: 'scopeDenied' } })
++    const page = makePage(pageConfigs[1])
++    await page.onLoad({ familyView: '1' })
++    expect(page.data.isFamilyView).toBe(true)
++    page.setData({ form: { systolic: '128', diastolic: '78', pulse: '', note: '' }, selectedTag: '晨起', measuredAt: '08:00' })
++    await page.handleSave()
++    expect(mockApi.familyRecordBloodPressure).toHaveBeenCalled()
++    expect(mockApi.saveBloodPressureRecord).not.toHaveBeenCalled()
++    expect(page.data.submitError).toBe('scopeDenied')
++  })
++
++  it('record-bg 家属态：提交走家属代录路由；云端拒绝不本地假成功', async () => {
++    mockApi.familyRecordBloodGlucose.mockResolvedValue({ familyWrite: { allowed: false, reason: 'scopeDenied' } })
++    const page = makePage(pageConfigs[2])
++    await page.onLoad({ familyView: '1' })
++    expect(page.data.isFamilyView).toBe(true)
++    page.setData({ form: { glucose: '6.4', note: '' }, selectedMealTag: '空腹', measuredAt: '08:00' })
++    await page.handleSave()
++    expect(mockApi.familyRecordBloodGlucose).toHaveBeenCalled()
++    expect(mockApi.saveBloodGlucoseRecord).not.toHaveBeenCalled()
++    expect(page.data.submitError).toBe('scopeDenied')
++  })
++})
+diff --git a/utils/api.js b/utils/api.js
+index 95e0d28..79313fe 100644
+--- a/utils/api.js
++++ b/utils/api.js
+@@ -357,6 +357,10 @@ module.exports = {
+   createFamilyInvite: family.createFamilyInvite,
+   joinFamilyByInvite: family.joinFamilyByInvite,
+   revokeFamilyMember: family.revokeFamilyMember,
++  familyRecordBloodPressure: family.familyRecordBloodPressure,
++  familyRecordBloodGlucose: family.familyRecordBloodGlucose,
++  familyConfirmMedication: family.familyConfirmMedication,
++  familyRevokeProxyConfirmation: family.familyRevokeProxyConfirmation,
+   exportUserData: dataRights.exportUserData,
+   deleteUserData: dataRights.deleteUserData,
+   clearUserAccount: dataRights.clearUserAccount,

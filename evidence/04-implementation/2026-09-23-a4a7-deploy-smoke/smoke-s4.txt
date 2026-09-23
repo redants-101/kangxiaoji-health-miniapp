@@ -1,0 +1,56 @@
+== S4a insert expired auth doc (_id=smoke-a4a7-expired-auth) ==
+- Loading data...
+- Executing command...
+[
+  {
+    "n": {
+      "$numberInt": "1"
+    },
+    "opTime": {
+      "ts": {
+        "$timestamp": {
+          "t": 1790132218,
+          "i": 1
+        }
+      },
+      "t": {
+        "$numberLong": "7"
+      }
+    },
+    "electionId": {
+      "$oid": "7fffffff0000000000000007"
+    },
+    "ok": {
+      "$numberDouble": "1.0"
+    },
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1790132218,
+          "i": 1
+        }
+      },
+      "signature": {
+        "hash": {
+          "$binary": {
+            "base64": "pkZQssMOFFlXoIDPBCQo4jVoRMo=",
+            "subType": "00"
+          }
+        },
+        "keyId": {
+          "$numberLong": "7656807102463082498"
+        }
+      }
+    },
+    "operationTime": {
+      "$timestamp": {
+        "t": 1790132218,
+        "i": 1
+      }
+    }
+  }
+]
+== S4b expired invoke ==
+✔ [healthApi] call succeeded
+Request Id ：9cda9a49-1033-4846-819f-4cdf86c8daf5
+Return result：{"inviteCode":"KXJSMOKEEXP1","inviteTitle":"家庭健康记录邀请","inviteSubtitle":"加入后，你只能查看对方授权给你的内容，并可接收授权范围内的提醒。","remainHours":0,"agreed":false,"identity":{"initial":"家","title":"家属","meta":"可在家庭页查看授权记录"},"scopes":[],"inviteError":{"code":"FAMILY_INVITE_EXPIRED","message":"邀请已过期，请让家人重新发起"}}

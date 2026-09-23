@@ -1,0 +1,1325 @@
+diff --git a/cloudfunctions/healthApi/family-policy.js b/cloudfunctions/healthApi/family-policy.js
+index bbf3b52..ba19a80 100644
+--- a/cloudfunctions/healthApi/family-policy.js
++++ b/cloudfunctions/healthApi/family-policy.js
+@@ -384,6 +384,16 @@ function createFamilyAccessContext({ db, collections }) {
+   }
+ }
+ 
++/**
++ * 成员锚点文档 ID：family_members 中同一成员的确定性 _id。
++ * 用于事务内把同一成员的并发加入压到同一把文档锁上（A1 1:1 保障）。
++ * @param {string} memberOpenId 成员 openId。
++ * @returns {string} 锚点文档 _id。
++ */
++function getMemberAnchorId(memberOpenId) {
++  return `active-${memberOpenId}`
++}
++
+ module.exports = {
+   getDefaultFamilyMember,
+   SCOPE_KEYS_V2,
+@@ -402,5 +412,6 @@ module.exports = {
+   canViewReminderInfo,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+-  createFamilyAccessContext
++  createFamilyAccessContext,
++  getMemberAnchorId
+ }
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index c6d369a..54d2754 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -1,5 +1,5 @@
+-// 关系目录与北京日期口径直接引用共享模块（同部署目录、无循环依赖）
+-const { FAMILY_RELATIONS_V2, SCOPE_KEYS_V2 } = require('./family-policy')
++// 关系目录、成员锚点与北京日期口径直接引用共享模块（同部署目录、无循环依赖）
++const { FAMILY_RELATIONS_V2, SCOPE_KEYS_V2, getMemberAnchorId } = require('./family-policy')
+ const { getTodayDateValue } = require('./payload-helpers')
+ 
+ function minimalScopes() {
+@@ -196,6 +196,7 @@ function createFamilyService({
+         eyebrow: '家庭管理',
+         members: relations.map((relation) => ({
+           id: relation._id,
++          bound: true,
+           initial: relation.member?.relation ? relation.member.relation.slice(0, 1) : '家',
+           name: relation.memberName || relation.member?.name || '家庭成员',
+           relation: relation.member?.relation || '家属',
+@@ -247,7 +248,9 @@ function createFamilyService({
+       familyCount: 1,
+       members: [
+         {
+-          id: auth._id || 'member-owner',
++          // 邀请预览卡不是关系行：id 置空、bound=false，客户端不得据此提交改权/撤销
++          id: '',
++          bound: false,
+           initial: auth.member?.relation ? auth.member.relation.slice(0, 1) : '家',
+           name: auth.memberName || auth.member?.name || '家庭成员',
+           relation: auth.member?.relation || '家属',
+@@ -404,7 +407,8 @@ function createFamilyService({
+ 
+     return {
+       eyebrow: '授权管理',
+-      memberId: auth._id || '',
++      // 预览分支没有绑定成员：memberId 置空，客户端据此禁止成员改权/撤销提交
++      memberId: '',
+       member: auth.member || getDefaultFamilyMember(),
+       scopes: Array.isArray(auth.scopes)
+         ? auth.scopes
+@@ -416,13 +420,49 @@ function createFamilyService({
+   }
+ 
+   async function updateFamilyAuth(openId, payload) {
+-    const memberId = payload && payload.memberId
+-    const authData = {
+-      ...normalizeFamilyAuthPayloadV2(payload),
++    // A1：memberId 必填（decisions 4.2），校验通过前零写入。
++    const memberId = getLimitedString(payload && payload.memberId, '家属ID', 64, true)
++
++    const { data: relations = [] } = await withPerfLog({
++      routeType: 'action',
++      route: 'updateFamilyAuth',
++      step: 'db.familyMembers.byMemberId'
++    }, () => db.collection(collections.familyMembers)
++      .where({
++        _id: memberId,
++        ownerOpenId: openId,
++        status: 'active'
++      })
++      .limit(1)
++      .get())
++
++    if (!relations.length) {
++      throw new Error('家属关系不存在或无权操作')
++    }
++    const relation = relations[0]
++
++    const normalized = normalizeFamilyAuthPayloadV2(payload)
++    const memberData = {
++      member: normalized.member,
++      memberName: normalized.memberName,
++      scopes: normalized.scopes,
++      noticeRules: normalized.noticeRules,
++      activities: normalized.activities,
+       updatedAt: db.serverDate()
+     }
+ 
+-    const { data: existing = [] } = await withPerfLog({
++    // 只更新目标成员关系行（doc 级），不做按 owner 的批量兜底
++    const result = await withPerfLog({
++      routeType: 'action',
++      route: 'updateFamilyAuth',
++      step: 'db.familyMembers.updateTarget'
++    }, () => db.collection(collections.familyMembers).doc(memberId).update({
++      data: memberData
++    }))
++
++    // family_auth 同步：仅当当前邀请配置确实绑定该成员（memberOpenId 匹配）时，
++    // 才同步展示与权限字段；待加入/他人的邀请配置不被成员改权覆盖。
++    const { data: authList = [] } = await withPerfLog({
+       routeType: 'action',
+       route: 'updateFamilyAuth',
+       step: 'db.familyAuth.current'
+@@ -431,63 +471,24 @@ function createFamilyService({
+       .limit(1)
+       .get())
+ 
+-    if (existing.length > 0) {
+-      const result = await withPerfLog({
++    const auth = authList[0]
++    if (auth && auth.memberOpenId && auth.memberOpenId === relation.memberOpenId) {
++      await withPerfLog({
+         routeType: 'action',
+         route: 'updateFamilyAuth',
+-        step: 'db.familyAuth.update'
+-      }, () => db.collection(collections.familyAuth).doc(existing[0]._id).update({
+-        data: authData
+-      }))
+-
+-      const relationWhere = memberId
+-        ? {
+-          _id: memberId,
+-          ownerOpenId: openId,
+-          status: 'active'
+-        }
+-        : {
+-          ownerOpenId: openId,
+-          status: 'active'
+-        }
+-
+-      const relationData = memberId
+-        ? {
+-          member: authData.member,
+-          memberName: authData.memberName,
+-          scopes: authData.scopes,
+-          noticeRules: authData.noticeRules,
+-          activities: authData.activities,
+-          updatedAt: db.serverDate()
+-        }
+-        : {
+-          scopes: authData.scopes,
+-          noticeRules: authData.noticeRules,
++        step: 'db.familyAuth.syncBoundMember'
++      }, () => db.collection(collections.familyAuth).doc(auth._id).update({
++        data: {
++          member: memberData.member,
++          memberName: memberData.memberName,
++          scopes: memberData.scopes,
++          noticeRules: memberData.noticeRules,
+           updatedAt: db.serverDate()
+         }
+-
+-      await withPerfLog({
+-        routeType: 'action',
+-        route: 'updateFamilyAuth',
+-        step: 'db.familyMembers.sync'
+-      }, () => db.collection(collections.familyMembers)
+-        .where(relationWhere)
+-        .update({ data: relationData }))
+-
+-      return result
++      }))
+     }
+ 
+-    return await withPerfLog({
+-      routeType: 'action',
+-      route: 'updateFamilyAuth',
+-      step: 'db.familyAuth.add'
+-    }, () => db.collection(collections.familyAuth).add({
+-      data: {
+-        _openid: openId,
+-        ...authData,
+-        createdAt: db.serverDate()
+-      }
+-    }))
++    return result
+   }
+ 
+   async function createFamilyInvite(openId, payload) {
+@@ -519,6 +520,8 @@ function createFamilyService({
+       noticeRules: getDefaultInviteNoticeRulesV2(),
+       activities: [],
+       status: 'pending',
++      // 重新邀请显式清空上一位成员的绑定（decisions 4.2），已有 family_members 关系行不受影响
++      memberOpenId: '',
+       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+       updatedAt: db.serverDate()
+     }
+@@ -561,18 +564,30 @@ function createFamilyService({
+     }
+   }
+ 
+-  async function joinFamilyByInvite(openId, payload) {
+-    const inviteCode = validateInviteCodePayload(payload)
+-    const { data: authList = [] } = await withPerfLog({
+-      routeType: 'action',
+-      route: 'joinFamilyByInvite',
+-      step: 'db.familyAuth.byInvite'
+-    }, () => db.collection(collections.familyAuth)
+-      .where({ inviteCode })
+-      .limit(1)
+-      .get())
++  // 组装加入时落库的关系行数据（权限以邀请文档配置为准，经 V2 严格归一化）
++  function buildJoinRelationData(auth, ownerOpenId, ownerName, memberOpenId, inviteCode) {
++    return {
++      _openid: memberOpenId,
++      ownerOpenId,
++      ownerName,
++      memberOpenId,
++      member: {
++        ...(auth.member || getDefaultFamilyMember()),
++        status: '已授权'
++      },
++      memberName: auth.memberName || auth.member?.name || '家属',
++      inviteCode,
++      scopes: normalizeFamilyScopesV2(
++        Array.isArray(auth.scopes) ? auth.scopes : minimalScopes()
++      ),
++      noticeRules: normalizeNoticeRulesV2(auth.noticeRules),
++      status: 'active',
++      joinedAt: db.serverDate(),
++      updatedAt: db.serverDate()
++    }
++  }
+ 
+-    const auth = authList[0]
++  function assertJoinableAuth(auth, openId) {
+     if (!auth) {
+       throw new Error('邀请不存在或已失效')
+     }
+@@ -585,59 +600,127 @@ function createFamilyService({
+     if (auth.expiresAt && new Date(auth.expiresAt).getTime() < Date.now()) {
+       throw new Error('邀请已过期')
+     }
+-
+     const ownerOpenId = auth.ownerOpenId || auth._openid
+     if (ownerOpenId === openId) {
+       throw new Error('不能加入自己创建的家庭邀请')
+     }
++    return ownerOpenId
++  }
+ 
+-    const [ownerName, { data: existing = [] }] = await Promise.all([
+-      auth.ownerName
+-        ? Promise.resolve(auth.ownerName)
+-        : withPerfLog({
+-          routeType: 'action',
+-          route: 'joinFamilyByInvite',
+-          step: 'db.profiles.ownerName'
+-        }, () => getProfileDisplayName(ownerOpenId)),
+-      withPerfLog({
++  async function joinFamilyByInvite(openId, payload) {
++    const inviteCode = validateInviteCodePayload(payload)
++    const { data: authList = [] } = await withPerfLog({
++      routeType: 'action',
++      route: 'joinFamilyByInvite',
++      step: 'db.familyAuth.byInvite'
++    }, () => db.collection(collections.familyAuth)
++      .where({ inviteCode })
++      .limit(1)
++      .get())
++
++    const auth = authList[0]
++    const ownerOpenId = assertJoinableAuth(auth, openId)
++
++    // 1:1 预检（decisions 第 2 项）：本人已有 active 关系时，
++    // 绑定他人 → 拒绝；同一 owner → 幂等返回，零写入、不重置已调整权限。
++    // 该查询同时兜住锚点方案之前的存量随机 id 关系行。
++    const { data: boundActive = [] } = await withPerfLog({
++      routeType: 'action',
++      route: 'joinFamilyByInvite',
++      step: 'db.familyMembers.boundActive'
++    }, () => db.collection(collections.familyMembers)
++      .where({ memberOpenId: openId, status: 'active' })
++      .orderBy('updatedAt', 'desc')
++      .limit(1)
++      .get())
++
++    if (boundActive.length) {
++      const bound = boundActive[0]
++      if (bound.ownerOpenId !== ownerOpenId) {
++        throw new Error('你已绑定一位家人，请先解除原绑定')
++      }
++      return { _id: bound._id, ownerOpenId, memberOpenId: openId, status: 'active', idempotent: true }
++    }
++
++    const ownerName = auth.ownerName
++      ? auth.ownerName
++      : await withPerfLog({
+         routeType: 'action',
+         route: 'joinFamilyByInvite',
+-        step: 'db.familyMembers.existing'
+-      }, () => db.collection(collections.familyMembers)
+-        .where({
+-          ownerOpenId,
+-          memberOpenId: openId
+-        })
+-        .limit(1)
+-        .get())
+-    ])
++        step: 'db.profiles.ownerName'
++      }, () => getProfileDisplayName(ownerOpenId))
+ 
+-    const relationData = {
+-      ownerOpenId,
+-      ownerName,
+-      memberOpenId: openId,
+-      member: {
+-        ...(auth.member || getDefaultFamilyMember()),
+-        status: '已授权'
+-      },
+-      memberName: auth.memberName || auth.member?.name || '家属',
+-      inviteCode,
+-      scopes: normalizeFamilyScopesV2(
+-        Array.isArray(auth.scopes) ? auth.scopes : minimalScopes()
+-      ),
+-      noticeRules: normalizeNoticeRulesV2(auth.noticeRules),
+-      status: 'active',
+-      joinedAt: db.serverDate(),
+-      updatedAt: db.serverDate()
++    // 原子路径（云函数环境）：确定性锚点文档把同一成员的并发加入压到同一把事务锁；
++    // 邀请文档在事务内重读复核，两名成员抢同一邀请码时后写事务触发冲突重试并被状态复核拒绝。
++    // 事务为快照隔离：保障来自单文档写锁，而非查询快照（见 A1 data-flow-review §3）。
++    if (typeof db.runTransaction === 'function') {
++      return await db.runTransaction(async (transaction) => {
++        const anchorId = getMemberAnchorId(openId)
++        const anchorRef = transaction.collection(collections.familyMembers).doc(anchorId)
++        let anchor = null
++        try {
++          anchor = await anchorRef.get()
++        } catch (e) {
++          anchor = null // 锚点不存在
++        }
++        if (anchor && anchor.status === 'active') {
++          if (anchor.ownerOpenId !== ownerOpenId) {
++            throw new Error('你已绑定一位家人，请先解除原绑定')
++          }
++          return { _id: anchor._id || anchorId, ownerOpenId, memberOpenId: openId, status: 'active', idempotent: true }
++        }
++
++        const authRef = transaction.collection(collections.familyAuth).doc(auth._id)
++        let latestAuth = null
++        try {
++          latestAuth = await authRef.get()
++        } catch (e) {
++          latestAuth = null
++        }
++        assertJoinableAuth(latestAuth, openId)
++
++        const relationData = buildJoinRelationData(latestAuth, ownerOpenId, ownerName, openId, inviteCode)
++        if (anchor) {
++          await anchorRef.update({ data: relationData })
++        } else {
++          await anchorRef.set({ data: relationData })
++        }
++        await authRef.update({
++          data: {
++            ownerName,
++            memberOpenId: openId,
++            member: relationData.member,
++            memberName: relationData.memberName,
++            status: 'active',
++            updatedAt: db.serverDate()
++          }
++        })
++        return { _id: anchorId, ownerOpenId, memberOpenId: openId, status: 'active' }
++      })
+     }
+ 
++    // 回退路径（无事务能力的环境，如本地 Mock）：先查后写。
++    // 注意：该路径不具备并发保障，仅用于本地测试；不得视为已验证的原子性。
++    const { data: existing = [] } = await withPerfLog({
++      routeType: 'action',
++      route: 'joinFamilyByInvite',
++      step: 'db.familyMembers.existing'
++    }, () => db.collection(collections.familyMembers)
++      .where({
++        ownerOpenId,
++        memberOpenId: openId
++      })
++      .limit(1)
++      .get())
++
++    const relationData = buildJoinRelationData(auth, ownerOpenId, ownerName, openId, inviteCode)
++
+     const relationWrite = existing.length
+       ? db.collection(collections.familyMembers).doc(existing[0]._id).update({
+         data: relationData
+       })
+       : db.collection(collections.familyMembers).add({
+         data: {
+-          _openid: openId,
+           ...relationData,
+           createdAt: db.serverDate()
+         }
+@@ -670,94 +753,74 @@ function createFamilyService({
+   }
+ 
+   async function revokeFamilyMember(openId, payload = {}) {
+-    const memberId = getLimitedString(payload.memberId, '家属ID', 64)
+-
+-    if (memberId) {
+-      const [{ data: relations = [] }, { data: authList = [] }] = await Promise.all([
+-        withPerfLog({
+-          routeType: 'action',
+-          route: 'revokeFamilyMember',
+-          step: 'db.familyMembers.byMemberId'
+-        }, () => db.collection(collections.familyMembers)
+-          .where({
+-            _id: memberId,
+-            ownerOpenId: openId
+-          })
+-          .limit(1)
+-          .get()),
+-        withPerfLog({
+-          routeType: 'action',
+-          route: 'revokeFamilyMember',
+-          step: 'db.familyAuth.current'
+-        }, () => db.collection(collections.familyAuth)
+-          .where({ _openid: openId })
+-          .limit(1)
+-          .get())
+-      ])
++    // A1：memberId 必填（decisions 4.2），校验通过前零写入；不再有无 memberId 的整体撤销分支。
++    const memberId = getLimitedString(payload.memberId, '家属ID', 64, true)
+ 
+-      if (!relations.length) {
+-        throw new Error('家属关系不存在或无权操作')
+-      }
+-
+-      const relation = relations[0]
+-      const writes = [
+-        db.collection(collections.familyMembers).doc(relation._id).update({
+-          data: {
+-            status: 'revoked',
+-            updatedAt: db.serverDate()
+-          }
++    const [{ data: relations = [] }, { data: authList = [] }] = await Promise.all([
++      withPerfLog({
++        routeType: 'action',
++        route: 'revokeFamilyMember',
++        step: 'db.familyMembers.byMemberId'
++      }, () => db.collection(collections.familyMembers)
++        .where({
++          _id: memberId,
++          ownerOpenId: openId
+         })
+-      ]
+-
+-      if (authList.length && authList[0].memberOpenId === relation.memberOpenId) {
+-        writes.push(db.collection(collections.familyAuth).doc(authList[0]._id).update({
+-          data: {
+-            status: 'revoked',
+-            memberOpenId: '',
+-            updatedAt: db.serverDate()
+-          }
+-        }))
+-      }
+-
+-      await withPerfLog({
++        .limit(1)
++        .get()),
++      withPerfLog({
+         routeType: 'action',
+         route: 'revokeFamilyMember',
+-        step: 'db.familyRevoke.writes'
+-      }, () => Promise.all(writes))
++        step: 'db.familyAuth.current'
++      }, () => db.collection(collections.familyAuth)
++        .where({ _openid: openId })
++        .limit(1)
++        .get())
++    ])
++
++    if (!relations.length) {
++      throw new Error('家属关系不存在或无权操作')
++    }
+ 
++    const relation = relations[0]
++    if (relation.status === 'revoked') {
++      // 重复撤销：幂等返回，零写入，不触碰其他成员与当前邀请配置
+       return {
+         memberId: relation._id,
+-        status: 'revoked'
++        status: 'revoked',
++        alreadyRevoked: true
+       }
+     }
+ 
+-    const { data: authList = [] } = await withPerfLog({
+-      routeType: 'action',
+-      route: 'revokeFamilyMember',
+-      step: 'db.familyAuth.current'
+-    }, () => db.collection(collections.familyAuth)
+-      .where({ _openid: openId })
+-      .limit(1)
+-      .get())
++    const writes = [
++      db.collection(collections.familyMembers).doc(relation._id).update({
++        data: {
++          status: 'revoked',
++          updatedAt: db.serverDate()
++        }
++      })
++    ]
+ 
+-    if (!authList.length) {
+-      throw new Error('当前没有可解除的家属授权')
++    // family_auth 仅当确实绑定该成员时重置；绑定他人或待加入的邀请配置不动
++    const auth = authList[0]
++    if (auth && auth.memberOpenId && auth.memberOpenId === relation.memberOpenId) {
++      writes.push(db.collection(collections.familyAuth).doc(auth._id).update({
++        data: {
++          status: 'revoked',
++          memberOpenId: '',
++          updatedAt: db.serverDate()
++        }
++      }))
+     }
+ 
+     await withPerfLog({
+       routeType: 'action',
+       route: 'revokeFamilyMember',
+-      step: 'db.familyAuth.revoke'
+-    }, () => db.collection(collections.familyAuth).doc(authList[0]._id).update({
+-      data: {
+-        status: 'revoked',
+-        memberOpenId: '',
+-        updatedAt: db.serverDate()
+-      }
+-    }))
++      step: 'db.familyRevoke.writes'
++    }, () => Promise.all(writes))
+ 
+     return {
+-      memberId: authList[0]._id,
++      memberId: relation._id,
+       status: 'revoked'
+     }
+   }
+diff --git a/pages/family/index.js b/pages/family/index.js
+index bd3e22a..6e8e45b 100644
+--- a/pages/family/index.js
++++ b/pages/family/index.js
+@@ -97,6 +97,11 @@ Page({
+    */
+   revokeMember(event) {
+     const memberId = event.currentTarget.dataset.id
++    // A1：邀请预览卡（bound=false，id 为空）不是关系行，不能提交撤销
++    if (!memberId) {
++      wx.showToast({ title: '该成员尚未加入，无需解除', icon: 'none' })
++      return
++    }
+     wx.showModal({
+       title: '确认解除授权？',
+       content: '解除后，该家属将不能继续查看你的新记录。',
+diff --git a/pages/family-sub/family-auth/index.js b/pages/family-sub/family-auth/index.js
+index 54dd431..33ce492 100644
+--- a/pages/family-sub/family-auth/index.js
++++ b/pages/family-sub/family-auth/index.js
+@@ -19,7 +19,9 @@ Page({
+     loadError: '',
+     memberId: '',
+     pendingAction: '',
+-    noticeRuleItems: []
++    noticeRuleItems: [],
++    // A1：无绑定成员（邀请预览）时禁止提交改权/撤销
++    canEdit: false
+   },
+ 
+   /**
+@@ -29,7 +31,10 @@ Page({
+   async loadData() {
+     const data = await loadPageData(this, () => getFamilyAuthData(this.data.memberId))
+     if (data) {
+-      this.setData({ noticeRuleItems: noticeRulesToList(data.noticeRules) })
++      this.setData({
++        noticeRuleItems: noticeRulesToList(data.noticeRules),
++        canEdit: !!this.data.memberId
++      })
+     }
+     return data
+   },
+@@ -110,6 +115,10 @@ Page({
+    * @returns {Promise<void>} 调用 updateFamilyAuth 写入当前授权范围和提醒规则。
+    */
+   async saveAuth() {
++    if (!this.data.memberId) {
++      wx.showToast({ title: '请先从家庭页选择要管理的家属', icon: 'none' })
++      return
++    }
+     try {
+       await runButtonAction(this, 'save', async () => {
+         await updateFamilyAuth({
+@@ -137,6 +146,10 @@ Page({
+    * @returns {void} 弹出统一解除授权确认框。
+    */
+   revokeAuth() {
++    if (!this.data.memberId) {
++      wx.showToast({ title: '请先从家庭页选择要管理的家属', icon: 'none' })
++      return
++    }
+     wx.showModal({
+       title: '确认解除授权？',
+       content: '解除后，该家属将不能继续查看你的新记录。',
+diff --git a/pages/family-sub/family-auth/index.wxml b/pages/family-sub/family-auth/index.wxml
+index 8effe1e..72fe128 100644
+--- a/pages/family-sub/family-auth/index.wxml
++++ b/pages/family-sub/family-auth/index.wxml
+@@ -89,9 +89,9 @@
+   </view>
+ 
+   <view class="section">
+-    <button class="danger-button {{pendingAction ? 'is-disabled' : ''}} {{pendingAction === 'revoke' ? 'is-loading' : ''}}" disabled="{{!!pendingAction}}" loading="{{pendingAction === 'revoke'}}" bindtap="revokeAuth">解除授权</button>
++    <button class="danger-button {{pendingAction ? 'is-disabled' : ''}} {{pendingAction === 'revoke' ? 'is-loading' : ''}} {{!canEdit ? 'is-disabled' : ''}}" disabled="{{!!pendingAction || !canEdit}}" loading="{{pendingAction === 'revoke'}}" bindtap="revokeAuth">解除授权</button>
+   </view>
+ 
+-  <fixed-action text="保存权限" disabled="{{pendingAction === 'revoke'}}" loading="{{pendingAction === 'save'}}" bindactiontap="saveAuth" />
++  <fixed-action text="保存权限" disabled="{{pendingAction === 'revoke' || !canEdit}}" loading="{{pendingAction === 'save'}}" bindactiontap="saveAuth" />
+   </view>
+ </block>
+diff --git a/services/family.js b/services/family.js
+index 7b1d1ac..6d71163 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -97,8 +97,14 @@ function noticeRulesToList(noticeRules) {
+ 
+ function mapFamilyMember(member, fallback = {}, index = 0) {
+   const relation = member.relation || fallback.relation || '家属'
++  // bound=false 的成员卡（邀请预览）不是关系行：保留空 id，禁止客户端拿合成 id 提交改权/撤销
++  const bound = member.bound !== false && fallback.bound !== false
++  const id = bound
++    ? (member.id || member._id || fallback.id || `member-${index + 1}`)
++    : (member.id || '')
+   return {
+-    id: member.id || member._id || fallback.id || `member-${index + 1}`,
++    id,
++    bound,
+     initial: member.initial || fallback.initial || getRelationInitial(relation),
+     name: member.name || member.memberName || fallback.name || '家庭成员',
+     relation,
+@@ -120,21 +126,28 @@ function mapMemberCardToAuthMember(memberCard) {
+ }
+ 
+ function updateFamilyAuthLocal(payload, remoteResult) {
++  // A1：镜像必须携带服务端确认的 memberId；缺失时不镜像、不造卡，直接返回远端结果。
++  // 镜像仅用于离线回显，不是授权依据；服务端拒绝时 resolveRemote 已抛错，本函数不会执行。
++  const memberId = payload && payload.memberId
++  if (!memberId) return remoteResult
++
+   const storedAuth = getStoredFamilyAuth() || {}
+-  const memberId = payload.memberId || storedAuth.currentMemberId || createRecordId('member')
++  const storedMembers = Array.isArray(storedAuth.members) ? storedAuth.members : []
++  // 本地找不到对应成员卡（缓存过期）时跳过镜像，等下次拉取刷新；不新建假卡
++  if (!storedMembers.some(item => item.id === memberId)) return remoteResult
++
+   const scopes = Array.isArray(payload.scopes) ? payload.scopes : storedAuth.scopes || []
+   const targetCard = mapFamilyMember({
+     id: memberId,
++    bound: true,
+     name: payload.member && payload.member.name,
+     relation: payload.member && payload.member.relation,
+     role: payload.member && payload.member.role,
+     status: payload.member && payload.member.status,
+     scope: getScopeText(scopes)
+-  }, storedAuth.members && storedAuth.members.find(item => item.id === memberId))
++  }, storedMembers.find(item => item.id === memberId))
+ 
+-  const members = Array.isArray(storedAuth.members) && storedAuth.members.length
+-    ? storedAuth.members.map(item => (item.id === memberId ? targetCard : item))
+-    : [targetCard]
++  const members = storedMembers.map(item => (item.id === memberId ? targetCard : item))
+ 
+   const nextState = {
+     ...storedAuth,
+@@ -207,13 +220,14 @@ function joinFamilyByInviteLocal(payload, remoteResult) {
+   return remoteResult && remoteResult.status ? remoteResult : nextState
+ }
+ 
+-function revokeFamilyMemberLocal(payload) {
++function revokeFamilyMemberLocal(payload, remoteResult) {
++  // A1：撤销镜像只按服务端确认的 memberId 精确移除；缺失时不镜像。
++  const memberId = payload && payload.memberId
++  if (!memberId) return remoteResult
++
+   const storedAuth = getStoredFamilyAuth() || {}
+-  const memberId = payload && payload.memberId ? payload.memberId : storedAuth.currentMemberId
+   const currentMembers = Array.isArray(storedAuth.members) ? storedAuth.members : []
+-  const nextMembers = memberId
+-    ? currentMembers.filter(item => item.id !== memberId)
+-    : currentMembers.slice(1)
++  const nextMembers = currentMembers.filter(item => item.id !== memberId)
+   const nextCurrent = nextMembers[0] || null
+ 
+   const nextState = {
+@@ -413,5 +427,7 @@ module.exports = {
+   normalizeMemberStatus,
+   noticeRulesToList,
+   revokeFamilyMember,
+-  updateFamilyAuth
++  revokeFamilyMemberLocal,
++  updateFamilyAuth,
++  updateFamilyAuthLocal
+ }
+diff --git a/tests/unit/a0-contract-integration.test.js b/tests/unit/a0-contract-integration.test.js
+index 4199221..e730a53 100644
+--- a/tests/unit/a0-contract-integration.test.js
++++ b/tests/unit/a0-contract-integration.test.js
+@@ -118,7 +118,7 @@ function createService(db) {
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+     validateInviteCodePayload: policy.validateInviteCodePayload,
+-    getLimitedString: policy.getLimitedString,
++    getLimitedString: helpers.getLimitedString,
+     createInviteCode: () => 'KXJTEST01'
+   })
+ }
+@@ -312,9 +312,10 @@ describe('A0-2 集成 · 家属首页按 read 输出受控明细', () => {
+ })
+ 
+ describe('A0-2 集成 · 授权保存/回显', () => {
+-  it('updateFamilyAuth：新 scopes 同步到 family_auth 与 family_members', async () => {
++  it('updateFamilyAuth：新 scopes 同步到 family_members，绑定的 family_auth 同步', async () => {
+     const db = createStoreDb({
+-      familyAuth: [{ _id: 'auth-1', _openid: 'owner-1', status: 'active', inviteCode: 'KXJ1' }],
++      // A1 同步规则：family_auth 仅当 memberOpenId 确实对应该成员时才同步
++      familyAuth: [{ _id: 'auth-1', _openid: 'owner-1', memberOpenId: 'member-1', status: 'active', inviteCode: 'KXJ1' }],
+       familyMembers: [{ _id: 'rel-1', _openid: 'member-1', ownerOpenId: 'owner-1', memberOpenId: 'member-1', status: 'active' }]
+     })
+     const service = createService(db)
+@@ -341,23 +342,29 @@ describe('A0-2 集成 · 授权保存/回显', () => {
+     expect(rel.noticeRules.missingRecord).toBe(true)
+   })
+ 
+-  it('updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key', async () => {
++  it('updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key（A1 后须带有效 memberId）', async () => {
+     const db = createStoreDb({
+-      familyAuth: [{ _id: 'auth-1', _openid: 'owner-1', status: 'active' }]
++      familyAuth: [{ _id: 'auth-1', _openid: 'owner-1', status: 'active' }],
++      familyMembers: [{ _id: 'rel-1', ownerOpenId: 'owner-1', memberOpenId: 'member-1', status: 'active' }]
+     })
+     const service = createService(db)
++    const before = JSON.parse(JSON.stringify(db._stores[COLLECTIONS.familyMembers].rows))
+     await expect(service.updateFamilyAuth('owner-1', {
++      memberId: 'rel-1',
+       scopes: [{ key: 'report', read: true, write: true }]
+     })).rejects.toThrow('周报')
+     await expect(service.updateFamilyAuth('owner-1', {
++      memberId: 'rel-1',
+       scopes: [{ key: 'unknown', read: true }]
+     })).rejects.toThrow('未知')
+     await expect(service.updateFamilyAuth('owner-1', {
++      memberId: 'rel-1',
+       scopes: [
+         { key: 'bloodPressure', read: true },
+         { key: 'bloodPressure', read: false }
+       ]
+     })).rejects.toThrow('重复')
++    expect(db._stores[COLLECTIONS.familyMembers].rows).toEqual(before)
+   })
+ 
+   it('getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules', async () => {
+diff --git a/tests/unit/a1-member-isolation.test.js b/tests/unit/a1-member-isolation.test.js
+new file mode 100644
+index 0000000..7ac7b1e
+--- /dev/null
++++ b/tests/unit/a1-member-isolation.test.js
+@@ -0,0 +1,536 @@
++/**
++ * A1 多成员隔离与精准授权测试。
++ * 存储替身只模拟数据库存取（含 doc 级 update/remove），不复制业务判断；
++ * 事务/锁/重试能力 Mock 不具备，并发原子性属云端待验证项（见 summary），
++ * 本文件验证的是判定逻辑与写入范围：谁被拒、谁被写、写了什么。
++ * 预期值按 decisions.md 第 2 项与 4.2 节字面填写。
++ */
++
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++const { createSettingsDataService } = require('../../cloudfunctions/healthApi/settings-data-service')
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  reminderSettings: 'reminder_settings',
++  privacySettings: 'privacy_settings',
++  feedbacks: 'feedbacks',
++  dailyStats: 'health_daily_stats',
++  recordStats: 'health_record_stats',
++  profiles: 'profiles'
++}
++
++function clone(value) {
++  return JSON.parse(JSON.stringify(value))
++}
++
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store
++    this.query = query
++    this.orderField = ''
++    this.orderDir = 'asc'
++    this.max = Infinity
++    this.docId = ''
++    this.hasDocId = false
++  }
++  where(cond) { return new StoreQuery(this.store, cond) }
++  orderBy(field, dir) { const q = new StoreQuery(this.store, this.query); q.orderField = field; q.orderDir = dir; return q }
++  limit(size) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = size; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  skip() { return this }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.hasDocId = true; q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; return q }
++  field() { return this }
++  _targets() {
++    if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
++    return this.store.rows.filter(d => Object.entries(this.query).every(([k, v]) => {
++      if (v && v.__op === 'in') return v.values.includes(d[k])
++      return d[k] === v
++    }))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    return { data: this.max === Infinity ? rows : rows.slice(0, this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    const _id = `doc-${this.store.seq++}`
++    this.store.rows.push({ _id, ...clone(data) })
++    return { _id }
++  }
++  async update({ data }) {
++    const targets = this._targets()
++    targets.forEach(d => Object.assign(d, clone(data)))
++    return { stats: { updated: targets.length } }
++  }
++  async remove() {
++    const before = this.store.rows.length
++    const ids = new Set(this._targets().map(d => d._id))
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((alias) => {
++    const name = COLLECTIONS[alias]
++    stores[name] = { rows: Array.isArray(initial[alias]) ? clone(initial[alias]) : [], seq: 1 }
++  })
++  return {
++    collection(name) {
++      if (!stores[name]) stores[name] = { rows: [], seq: 1 }
++      return new StoreQuery(stores[name])
++    },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++}
++
++const commands = { in: values => ({ __op: 'in', values }) }
++
++function createService(db, inviteSeq = { n: 0 }) {
++  return createFamilyService({
++    db,
++    _: commands,
++    collections: COLLECTIONS,
++    withPerfLog: (meta, fn) => fn(),
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: helpers.getLimitedString,
++    createInviteCode: () => `KXJINV${String(++inviteSeq.n).padStart(3, '0')}`
++  })
++}
++
++function createSettings(db) {
++  return createSettingsDataService({
++    db,
++    collections: COLLECTIONS,
++    getDefaultReminderSettings: () => ({ subscription: {}, reminders: [], timePlans: [], quietMode: true }),
++    normalizeReminderSettingsPayload: payload => payload,
++    statsService: { async getRecordStats() { return { recordCount: 0 } } },
++    withPerfLog: (meta, fn) => fn()
++  })
++}
++
++function bpOnlyScopes() {
++  return [
++    { key: 'bloodPressure', read: true, remind: false },
++    { key: 'bloodGlucose', read: false },
++    { key: 'medicine', read: false },
++    { key: 'report', read: false }
++  ]
++}
++
++function fullScopes() {
++  return [
++    { key: 'bloodPressure', read: true, write: false, remind: true },
++    { key: 'bloodGlucose', read: true, write: false, remind: true },
++    { key: 'medicine', read: true, write: false, remind: true },
++    { key: 'report', read: true, write: false, remind: true }
++  ]
++}
++
++function memberRows(db) { return db._stores[COLLECTIONS.familyMembers].rows }
++function authRows(db) { return db._stores[COLLECTIONS.familyAuth].rows }
++
++// 场景搭建：O1 邀请并由 M1、M2 先后加入（中间 O1 重新邀请生成新码）
++async function seedTwoMembers(db) {
++  const service = createService(db)
++  const inv1 = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++  await service.joinFamilyByInvite('member-1', { inviteCode: inv1.inviteCode })
++  const inv2 = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++  await service.joinFamilyByInvite('member-2', { inviteCode: inv2.inviteCode })
++  return service
++}
++
++describe('A1 · 一位老人关联多位家属', () => {
++  it('O1 先后绑定 M1、M2：两行 active 关系互不影响', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    await seedTwoMembers(db)
++    const rows = memberRows(db).filter(r => r.status === 'active')
++    expect(rows).toHaveLength(2)
++    expect(rows.map(r => r.memberOpenId).sort()).toEqual(['member-1', 'member-2'])
++    expect(rows.every(r => r.ownerOpenId === 'owner-1')).toBe(true)
++  })
++})
++
++describe('A1 · 重新邀请：清空绑定但不动已有成员', () => {
++  it('重邀后 family_auth memberOpenId 清空、status=pending，M1 关系行原样保留', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const inv1 = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    await service.joinFamilyByInvite('member-1', { inviteCode: inv1.inviteCode })
++    const m1Before = clone(memberRows(db)[0])
++
++    const inv2 = await service.createFamilyInvite('owner-1', { scopes: bpOnlyScopes() })
++    const auth = authRows(db)[0]
++    expect(auth.memberOpenId).toBe('')
++    expect(auth.status).toBe('pending')
++    expect(auth.inviteCode).toBe(inv2.inviteCode)
++    // 已有成员的权限、状态、提醒规则不被重邀触碰
++    expect(memberRows(db)[0]).toEqual(m1Before)
++  })
++})
++
++describe('A1 · 精准改权', () => {
++  it('修改 M1 后：M2 权限与无关待加入邀请保持不变', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = await seedTwoMembers(db)
++    // 再发起一次待加入邀请（family_auth 变为 pending、memberOpenId 清空）
++    const pending = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    const authBefore = clone(authRows(db)[0])
++    const m2Row = memberRows(db).find(r => r.memberOpenId === 'member-2')
++    const m2Before = clone(m2Row)
++    const m1Row = memberRows(db).find(r => r.memberOpenId === 'member-1')
++
++    await service.updateFamilyAuth('owner-1', {
++      memberId: m1Row._id,
++      member: { name: '王阿姨' },
++      scopes: bpOnlyScopes(),
++      noticeRules: { missedMedicine: false, missingRecord: false, weeklyReport: false },
++      activities: []
++    })
++
++    const m1After = memberRows(db).find(r => r.memberOpenId === 'member-1')
++    expect(m1After.scopes.find(s => s.key === 'bloodPressure').read).toBe(true)
++    expect(m1After.scopes.find(s => s.key === 'medicine').read).toBe(false)
++    // M2 不受影响
++    expect(memberRows(db).find(r => r.memberOpenId === 'member-2')).toEqual(m2Before)
++    // 待加入邀请配置不被成员改权覆盖
++    expect(authRows(db)[0]).toEqual(authBefore)
++    expect(pending.inviteCode).toBeTruthy()
++  })
++
++  it.each([
++    ['缺失', undefined],
++    ['伪造', 'not-exist-id'],
++    ['空字符串', '   ']
++  ])('memberId %s：拒绝且 family_auth 与 family_members 零写入', async (_label, memberId) => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = await seedTwoMembers(db)
++    const membersBefore = clone(memberRows(db))
++    const authBefore = clone(authRows(db))
++
++    await expect(service.updateFamilyAuth('owner-1', {
++      memberId,
++      scopes: bpOnlyScopes()
++    })).rejects.toThrow()
++
++    expect(memberRows(db)).toEqual(membersBefore)
++    expect(authRows(db)).toEqual(authBefore)
++  })
++
++  it('其他 owner 的 memberId：拒绝且零写入', async () => {
++    const db = createStoreDb({
++      profiles: [
++        { _openid: 'owner-1', name: '王阿姨' },
++        { _openid: 'owner-2', name: '李叔叔' }
++      ]
++    })
++    const service = createService(db)
++    // owner-2 有自己的成员 M9
++    const inv = await service.createFamilyInvite('owner-2', { scopes: fullScopes() })
++    await service.joinFamilyByInvite('member-9', { inviteCode: inv.inviteCode })
++    const m9Row = memberRows(db).find(r => r.memberOpenId === 'member-9')
++    // owner-1 有自己的成员 M1
++    const inv1 = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    await service.joinFamilyByInvite('member-1', { inviteCode: inv1.inviteCode })
++
++    const membersBefore = clone(memberRows(db))
++    const authBefore = clone(authRows(db))
++
++    await expect(service.updateFamilyAuth('owner-1', {
++      memberId: m9Row._id,
++      scopes: bpOnlyScopes()
++    })).rejects.toThrow('家属关系不存在或无权操作')
++
++    expect(memberRows(db)).toEqual(membersBefore)
++    expect(authRows(db)).toEqual(authBefore)
++  })
++
++  it('getFamilyAuthData 预览分支不得回填 family_auth id 充当 memberId', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    const data = await service.getFamilyAuthData('owner-1', {})
++    expect(data.memberId).toBe('')
++  })
++
++  it('getFamilyData 预览卡不得携带 family_auth id 作为成员 id', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    const data = await service.getFamilyData('owner-1')
++    expect(data.members[0].isOwner).toBe(true)
++    expect(data.members[0].id).toBe('')
++  })
++})
++
++describe('A1 · 精准撤销', () => {
++  it('撤销 M1 后：M1 新请求被拒（空数据），M2 新请求仍允许', async () => {
++    const db = createStoreDb({
++      profiles: [{ _openid: 'owner-1', name: '王阿姨' }],
++      records: [
++        { _id: 'r-bp', _openid: 'owner-1', type: 'bp', systolic: 128, diastolic: 78, measuredAt: '今天 08:00', tag: '晨起', level: '', createdAt: '2026-09-22T08:00:00' }
++      ],
++      medicationPlans: [
++        { _id: 'plan-1', _openid: 'owner-1', name: '降压药', dosage: '1片', times: ['07:00'], status: '启用', updatedAt: '2026-09-22T07:00:00' }
++      ]
++    })
++    const service = await seedTwoMembers(db)
++    const m1Row = memberRows(db).find(r => r.memberOpenId === 'member-1')
++
++    await service.revokeFamilyMember('owner-1', { memberId: m1Row._id })
++
++    expect(memberRows(db).find(r => r.memberOpenId === 'member-1').status).toBe('revoked')
++    expect(memberRows(db).find(r => r.memberOpenId === 'member-2').status).toBe('active')
++
++    const homeM1 = await service.getHomeFamilyData('member-1')
++    expect(homeM1.member.scopeText).toBe('暂未授权')
++    expect(homeM1.latestMetrics).toEqual([])
++    expect(homeM1.medicineLogs).toEqual([])
++
++    const homeM2 = await service.getHomeFamilyData('member-2')
++    expect(homeM2.member.name).toBe('王阿姨')
++    expect(homeM2.latestMetrics.length).toBeGreaterThan(0)
++  })
++
++  it('重复撤销：幂等返回且零写入，不触碰无关邀请与其他成员', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = await seedTwoMembers(db)
++    const m1Row = memberRows(db).find(r => r.memberOpenId === 'member-1')
++    await service.revokeFamilyMember('owner-1', { memberId: m1Row._id })
++    // 撤销后 owner 重新邀请第三人（pending 配置与 M1 无关）
++    await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++
++    const membersBefore = clone(memberRows(db))
++    const authBefore = clone(authRows(db))
++    const second = await service.revokeFamilyMember('owner-1', { memberId: m1Row._id })
++
++    expect(second.status).toBe('revoked')
++    expect(memberRows(db)).toEqual(membersBefore)
++    expect(authRows(db)).toEqual(authBefore)
++  })
++
++  it('撤销要求 memberId：缺失时拒绝且不清 family_auth', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = await seedTwoMembers(db)
++    const membersBefore = clone(memberRows(db))
++    const authBefore = clone(authRows(db))
++
++    await expect(service.revokeFamilyMember('owner-1', {})).rejects.toThrow()
++
++    expect(memberRows(db)).toEqual(membersBefore)
++    expect(authRows(db)).toEqual(authBefore)
++  })
++
++  it('撤销只重置确实绑定该成员的 family_auth，不动他人绑定', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = await seedTwoMembers(db)
++    // 当前 auth 绑定 M2；撤销 M1 不得重置该邀请配置
++    const authBefore = clone(authRows(db)[0])
++    const m1Row = memberRows(db).find(r => r.memberOpenId === 'member-1')
++    await service.revokeFamilyMember('owner-1', { memberId: m1Row._id })
++    expect(authRows(db)[0]).toEqual(authBefore)
++  })
++})
++
++describe('A1 · 加入家庭：1:1、幂等与自绑', () => {
++  it('已绑定 O1 的成员加入 O2 被拒，零新行、O2 邀请保持 pending', async () => {
++    const db = createStoreDb({
++      profiles: [
++        { _openid: 'owner-1', name: '王阿姨' },
++        { _openid: 'owner-2', name: '李叔叔' }
++      ]
++    })
++    const s1 = createService(db)
++    const inv1 = await s1.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    await s1.joinFamilyByInvite('member-1', { inviteCode: inv1.inviteCode })
++    const inv2 = await s1.createFamilyInvite('owner-2', { scopes: fullScopes() })
++
++    const membersBefore = clone(memberRows(db))
++    await expect(s1.joinFamilyByInvite('member-1', { inviteCode: inv2.inviteCode }))
++      .rejects.toThrow('你已绑定一位家人')
++
++    expect(memberRows(db)).toEqual(membersBefore)
++    const o2Auth = authRows(db).find(a => a._openid === 'owner-2')
++    expect(o2Auth.status).toBe('pending')
++  })
++
++  it('同 owner 重复加入：幂等，不增行、不重置已调整权限', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const inv = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    const first = await service.joinFamilyByInvite('member-1', { inviteCode: inv.inviteCode })
++
++    // owner 调整 M1 权限（只留血压）
++    const m1Row = memberRows(db).find(r => r.memberOpenId === 'member-1')
++    await service.updateFamilyAuth('owner-1', {
++      memberId: m1Row._id,
++      scopes: bpOnlyScopes(),
++      noticeRules: { missedMedicine: false, missingRecord: false, weeklyReport: false }
++    })
++    const adjusted = clone(memberRows(db).find(r => r.memberOpenId === 'member-1'))
++    const rowCount = memberRows(db).length
++
++    // M1 用同一邀请码重复加入（重试/重复点击）
++    const again = await service.joinFamilyByInvite('member-1', { inviteCode: inv.inviteCode })
++    expect(again.status).toBe('active')
++    expect(memberRows(db)).toHaveLength(rowCount)
++    expect(memberRows(db).find(r => r.memberOpenId === 'member-1')).toEqual(adjusted)
++    expect(first.ownerOpenId).toBe('owner-1')
++  })
++
++  it('拒绝本人自绑定', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const inv = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    await expect(service.joinFamilyByInvite('owner-1', { inviteCode: inv.inviteCode }))
++      .rejects.toThrow('不能加入自己创建的家庭邀请')
++    expect(memberRows(db)).toHaveLength(0)
++  })
++
++  it('同一邀请码顺序竞争：先到者绑定，后到者被拒（并发原子性属云端待验证）', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const inv = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    await service.joinFamilyByInvite('member-1', { inviteCode: inv.inviteCode })
++    await expect(service.joinFamilyByInvite('member-2', { inviteCode: inv.inviteCode }))
++      .rejects.toThrow('邀请已被其他家属使用')
++    expect(memberRows(db).filter(r => r.status === 'active')).toHaveLength(1)
++  })
++
++  it('被撤销的成员可重新加入（新邀请），锚点复活为新关系', async () => {
++    const db = createStoreDb({ profiles: [{ _openid: 'owner-1', name: '王阿姨' }] })
++    const service = createService(db)
++    const inv1 = await service.createFamilyInvite('owner-1', { scopes: fullScopes() })
++    await service.joinFamilyByInvite('member-1', { inviteCode: inv1.inviteCode })
++    const m1Row = memberRows(db).find(r => r.memberOpenId === 'member-1')
++    await service.revokeFamilyMember('owner-1', { memberId: m1Row._id })
++
++    const inv2 = await service.createFamilyInvite('owner-1', { scopes: bpOnlyScopes() })
++    const rejoin = await service.joinFamilyByInvite('member-1', { inviteCode: inv2.inviteCode })
++    expect(rejoin.status).toBe('active')
++    const active = memberRows(db).filter(r => r.memberOpenId === 'member-1' && r.status === 'active')
++    expect(active).toHaveLength(1)
++    expect(active[0].scopes.find(s => s.key === 'bloodGlucose').read).toBe(false)
++  })
++})
++
++describe('A1 · 注销关联清理', () => {
++  it('家属 M1 注销：只删本人关系行，M2 与 O1 数据不受影响', async () => {
++    const db = createStoreDb({
++      profiles: [
++        { _id: 'p-owner', _openid: 'owner-1', name: '王阿姨' },
++        { _id: 'p-m1', _openid: 'member-1', name: '小李' }
++      ],
++      records: [{ _id: 'r-1', _openid: 'owner-1', type: 'bp', systolic: 120, diastolic: 80 }]
++    })
++    const service = await seedTwoMembers(db)
++    const settings = createSettings(db)
++
++    await settings.clearUserAccount('member-1', { confirm: true })
++
++    expect(memberRows(db).some(r => r.memberOpenId === 'member-1')).toBe(false)
++    const m2 = memberRows(db).find(r => r.memberOpenId === 'member-2')
++    expect(m2.status).toBe('active')
++    // O1 的记录与档案不受影响
++    expect(db._stores[COLLECTIONS.records].rows).toHaveLength(1)
++    expect(db._stores[COLLECTIONS.profiles].rows.find(p => p._openid === 'owner-1')).toBeTruthy()
++    expect(service).toBeTruthy()
++  })
++
++  it('注销者是当前绑定成员时，才重置对应 family_auth；绑定他人则不动', async () => {
++    const db = createStoreDb({
++      profiles: [
++        { _id: 'p-owner', _openid: 'owner-1', name: '王阿姨' },
++        { _id: 'p-m1', _openid: 'member-1', name: '小李' }
++      ]
++    })
++    await seedTwoMembers(db)
++    const settings = createSettings(db)
++    // 当前 auth 绑定 member-2；注销 member-1 不得重置
++    const authBefore = clone(authRows(db)[0])
++    await settings.clearUserAccount('member-1', { confirm: true })
++    expect(authRows(db)[0]).toEqual(authBefore)
++
++    // 注销当前绑定者 member-2 → 对应 family_auth 被重置
++    await settings.clearUserAccount('member-2', { confirm: true })
++    const auth = authRows(db)[0]
++    expect(auth.status).toBe('revoked')
++    expect(auth.memberOpenId).toBe('')
++  })
++})
++
++describe('A1 · 客户端镜像：memberId 精确更新，无假成功', () => {
++  const {
++    updateFamilyAuthLocal,
++    revokeFamilyMemberLocal,
++    getStoredFamilyAuth
++  } = require('../../services/family')
++  const { STORAGE_KEYS, writeStorage } = require('../../services/core')
++
++  beforeEach(() => {
++    writeStorage(STORAGE_KEYS.familyAuth, {
++      currentMemberId: 'rel-1',
++      members: [
++        { id: 'rel-1', name: '小李', relation: '女儿', status: '已授权', scope: '血压记录' },
++        { id: 'rel-2', name: '小张', relation: '儿子', status: '已授权', scope: '血糖记录' }
++      ],
++      status: 'active'
++    })
++  })
++
++  it('无 memberId 的改权结果：不镜像、不造卡，返回远端结果', () => {
++    const remoteResult = { stats: { updated: 1 } }
++    const result = updateFamilyAuthLocal({ scopes: bpOnlyScopes() }, remoteResult)
++    expect(result).toEqual(remoteResult)
++    const stored = getStoredFamilyAuth()
++    expect(stored.members).toHaveLength(2)
++    expect(stored.members[0].id).toBe('rel-1')
++  })
++
++  it('带 memberId 的改权：只更新对应成员卡', () => {
++    updateFamilyAuthLocal({
++      memberId: 'rel-2',
++      member: { name: '小张', relation: '儿子', role: '紧急联系人', status: 'active' },
++      scopes: [
++        { key: 'bloodPressure', title: '血压记录', read: true },
++        { key: 'bloodGlucose', title: '血糖记录', read: false }
++      ]
++    }, { stats: { updated: 1 } })
++    const stored = getStoredFamilyAuth()
++    expect(stored.members.find(m => m.id === 'rel-2').scope).toBe('血压记录')
++    expect(stored.members.find(m => m.id === 'rel-1').scope).toBe('血压记录')
++  })
++
++  it('撤销镜像：只移除目标成员', () => {
++    revokeFamilyMemberLocal({ memberId: 'rel-1' })
++    const stored = getStoredFamilyAuth()
++    expect(stored.members.map(m => m.id)).toEqual(['rel-2'])
++  })
++})

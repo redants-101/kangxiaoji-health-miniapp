@@ -1,0 +1,1716 @@
+diff --git a/cloudfunctions/healthApi/family-policy.js b/cloudfunctions/healthApi/family-policy.js
+index 207923c..5223d19 100644
+--- a/cloudfunctions/healthApi/family-policy.js
++++ b/cloudfunctions/healthApi/family-policy.js
+@@ -315,6 +315,56 @@ function validateInviteCodePayload(payload) {
+   return getLimitedString(data.inviteCode || data.inviteId, '邀请码', 32, true)
+ }
+ 
++// ============================================================================
++// A6 电话提醒（decisions #4/#12）：电话提醒替代订阅消息推送。
++// - 号码属 owner 的家庭授权配置（family_auth 单文档 contactPhone 字段）；
++// - 家属侧仅脱敏展示（138****1234）；完整号码只在拨号时经 action 按需返回；
++// - 任一 scope.remind=true 才可见/可取号；撤销或关闭 remind 后立即不再返回；
++// - 完整号码不写入日志与错误信息（错误文案固定，不回显输入）。
++// ============================================================================
++
++const CONTACT_PHONE_PATTERN = /^1[3-9]\d{9}$/
++
++/**
++ * 归一化提醒电话入参。
++ * undefined/null → null（未提供，不改动既有配置）；'' → 清空；
++ * 合法 11 位大陆手机号 → 原样返回；其余一律拒绝（错误信息不回显输入）。
++ * @param {*} raw 页面提交的 contactPhone。
++ * @returns {string|null}
++ */
++function normalizeContactPhone(raw) {
++  if (raw === undefined || raw === null) return null
++  if (typeof raw !== 'string') {
++    throw new Error('提醒电话格式不正确，请填写 11 位手机号')
++  }
++  const value = raw.trim()
++  if (value === '') return ''
++  if (!CONTACT_PHONE_PATTERN.test(value)) {
++    throw new Error('提醒电话格式不正确，请填写 11 位手机号')
++  }
++  return value
++}
++
++/**
++ * 脱敏手机号：138****1234；非法输入返回空串（不产出半掩码）。
++ * @param {*} phone 完整号码。
++ * @returns {string}
++ */
++function maskContactPhone(phone) {
++  if (typeof phone !== 'string' || !CONTACT_PHONE_PATTERN.test(phone)) return ''
++  return `${phone.slice(0, 3)}****${phone.slice(7)}`
++}
++
++/**
++ * 是否允许电话提醒：任一 scope.remind=true（decisions 4.1）。
++ * read 不参与该判断——read=false+remind=true 时仅出电话按钮。
++ * @param {Array<Object>} scopes 归一化 scopes。
++ * @returns {boolean}
++ */
++function canCallReminderPhone(scopes) {
++  return (Array.isArray(scopes) ? scopes : []).some(scope => scope && scope.remind === true)
++}
++
+ /**
+  * 创建用户显示名称查询函数。
+  * @param {Object} deps 依赖。
+@@ -423,6 +473,10 @@ module.exports = {
+   normalizeNoticeRulesV2,
+   canViewScope,
+   canShowPhoneReminder,
++  canCallReminderPhone,
++  normalizeContactPhone,
++  maskContactPhone,
++  CONTACT_PHONE_PATTERN,
+   getScopeTextV2,
+   getDefaultInviteScopesV2,
+   getDefaultInviteNoticeRulesV2,
+diff --git a/cloudfunctions/healthApi/family-service.js b/cloudfunctions/healthApi/family-service.js
+index 9360ac0..1d4e434 100644
+--- a/cloudfunctions/healthApi/family-service.js
++++ b/cloudfunctions/healthApi/family-service.js
+@@ -30,6 +30,9 @@ function createFamilyService({
+   normalizeNoticeRulesV2,
+   canViewScope,
+   canPerformScopeAction,
++  normalizeContactPhone,
++  maskContactPhone,
++  canCallReminderPhone,
+   getScopeTextV2,
+   normalizeFamilyAuthPayloadV2,
+   normalizeFamilyInvitePayloadV2,
+@@ -186,7 +189,10 @@ function createFamilyService({
+         },
+         latestMetrics: [],
+         medicineLogs: [],
+-        reportSummary: '暂无可查看的周报数据。'
++        reportSummary: '暂无可查看的周报数据。',
++        // A6：无授权时电话入口同样关闭（形状稳定，页面按 remindAllowed 渲染）
++        readPermissions: { bloodPressure: false, bloodGlucose: false, medicine: false, report: false },
++        phoneReminder: { remindAllowed: false, configured: false, canCall: false, masked: '' }
+       }
+     }
+ 
+@@ -207,7 +213,10 @@ function createFamilyService({
+         step: 'db.profiles.ownerName'
+       }, () => getProfileDisplayName(ownerOpenId))
+ 
+-    const [ownerName, recordsResult, plansResult, confirmationResult] = await Promise.all([
++    // A6：任一 scope.remind=true 才回传脱敏号码（read 不参与；完整号码只在拨号 action 返回）
++    const remindAllowed = canCallReminderPhone(relation.scopes)
++
++    const [ownerName, recordsResult, plansResult, confirmationResult, ownerPhone] = await Promise.all([
+       ownerNameTask,
+       allowedTypes.length
+         ? withPerfLog({
+@@ -250,7 +259,14 @@ function createFamilyService({
+         }, () => db.collection(collections.medicationConfirmations)
+           .where({ _openid: ownerOpenId, confirmDate: getTodayDateValue() })
+           .count())
+-        : Promise.resolve({ total: 0 })
++        : Promise.resolve({ total: 0 }),
++      remindAllowed
++        ? withPerfLog({
++          routeType: 'key',
++          route: 'homeFamily',
++          step: 'db.familyAuth.contactPhone'
++        }, () => getOwnerContactPhone(ownerOpenId))
++        : Promise.resolve('')
+     ])
+ 
+     const records = recordsResult.data || []
+@@ -312,6 +328,20 @@ function createFamilyService({
+         bloodGlucose: canPerformScopeAction(relation.scopes, 'recordBloodGlucose'),
+         medicine: canPerformScopeAction(relation.scopes, 'confirmMedication'),
+         report: false
++      },
++      // A6：读能力下发（read=false+remind=true 时页面只保留电话提醒入口）
++      readPermissions: {
++        bloodPressure: canViewBp,
++        bloodGlucose: canViewBg,
++        medicine: canViewMedicine,
++        report: canViewReport
++      },
++      // A6：电话提醒入口（脱敏号码；完整号码由 familyGetReminderPhone 拨号时按需返回）
++      phoneReminder: {
++        remindAllowed,
++        configured: remindAllowed && !!ownerPhone,
++        canCall: remindAllowed && !!ownerPhone,
++        masked: remindAllowed ? maskContactPhone(ownerPhone) : ''
+       }
+     }
+   }
+@@ -379,7 +409,8 @@ function createFamilyService({
+     const auth = authList[0] || {}
+     const scope = getScopeTextV2(auth.scopes)
+ 
+-    if (!auth._id || auth.status === 'revoked') {
++    // A6：纯电话配置文档（无邀请码且无绑定成员）不构成邀请预览卡
++    if (!auth._id || auth.status === 'revoked' || (!auth.inviteCode && !auth.memberOpenId)) {
+       return {
+         eyebrow: '家庭管理',
+         familyCount: 0,
+@@ -545,6 +576,9 @@ function createFamilyService({
+   }
+ 
+   async function getFamilyAuthData(openId, payload = {}) {
++    // A6：提醒电话属 owner 配置，授权管理页（owner 本人）可回读完整号用于编辑
++    const contactPhone = await getOwnerContactPhone(openId)
++    const contactPhoneMasked = maskContactPhone(contactPhone)
+     const memberId = payload && payload.memberId
+     if (memberId) {
+       const { data: relations = [] } = await withPerfLog({
+@@ -582,7 +616,9 @@ function createFamilyService({
+             : normalizeFamilyScopesV2(minimalScopes()),
+           noticeRules: normalizeNoticeRulesV2(relation.noticeRules),
+           activities: relation.activities || [],
+-          memberName: relation.memberName || ''
++          memberName: relation.memberName || '',
++          contactPhone,
++          contactPhoneMasked
+         }
+       }
+     }
+@@ -616,7 +652,9 @@ function createFamilyService({
+         : normalizeFamilyScopesV2(minimalScopes()),
+       noticeRules: normalizeNoticeRulesV2(auth.noticeRules),
+       activities: auth.activities || [],
+-      memberName: auth.memberName || ''
++      memberName: auth.memberName || '',
++      contactPhone,
++      contactPhoneMasked
+     }
+   }
+ 
+@@ -694,6 +732,9 @@ function createFamilyService({
+ 
+   async function createFamilyInvite(openId, payload) {
+     const invite = normalizeFamilyInvitePayloadV2(payload)
++    // A6：邀请可携带提醒电话；先校验后写入（非法号码在任何写库前抛错，零写入）。
++    // undefined/null = 未提供，不改动既有配置；'' = 显式清空。
++    const contactPhone = normalizeContactPhone(payload ? payload.contactPhone : null)
+     const [ownerName, { data: existing = [] }] = await Promise.all([
+       withPerfLog({
+         routeType: 'action',
+@@ -724,7 +765,9 @@ function createFamilyService({
+       // 重新邀请显式清空上一位成员的绑定（decisions 4.2），已有 family_members 关系行不受影响
+       memberOpenId: '',
+       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+-      updatedAt: db.serverDate()
++      updatedAt: db.serverDate(),
++      // A6：仅在显式提供时写入（未提供保留既有号码）
++      ...(contactPhone !== null ? { contactPhone } : {})
+     }
+ 
+     if (existing.length) {
+@@ -1303,9 +1346,75 @@ function createFamilyService({
+     return { familyWrite: { allowed: true }, removed: 1 }
+   }
+ 
++  // ============ A6：电话提醒（decisions #4/#12） ============
++  // 号码存放于 owner 的 family_auth 单文档 contactPhone 字段；
++  // 家属侧只回传脱敏号（homeFamily），完整号码仅在拨号 action 按需返回；
++  // remind=false / 撤销 / 未配置时接口立即不再返回号码。
++  // 日志与错误信息不输出完整号码（withPerfLog 仅记录静态 step 名）。
++
++  async function getOwnerContactPhone(ownerOpenId) {
++    const { data } = await db.collection(collections.familyAuth)
++      .where({ _openid: ownerOpenId })
++      .limit(1)
++      .get()
++    const raw = data[0] && data[0].contactPhone
++    // 非法/陈旧格式一律按未配置处理（不产出半掩码、不回传可疑号码）
++    return maskContactPhone(raw) ? raw.trim() : ''
++  }
++
++  async function setFamilyContactPhone(openId, payload = {}) {
++    // 先校验后写入：非法号码抛错时零写入；错误文案固定，不回显输入
++    const contactPhone = normalizeContactPhone(payload ? payload.contactPhone : null)
++    if (contactPhone === null) {
++      throw new Error('请提供提醒电话；清空请提交空字符串')
++    }
++    const { data: existing = [] } = await withPerfLog({
++      routeType: 'action',
++      route: 'setFamilyContactPhone',
++      step: 'db.familyAuth.current'
++    }, () => db.collection(collections.familyAuth)
++      .where({ _openid: openId })
++      .limit(1)
++      .get())
++
++    if (existing.length) {
++      await db.collection(collections.familyAuth).doc(existing[0]._id).update({
++        data: { contactPhone, updatedAt: db.serverDate() }
++      })
++    } else {
++      // 纯电话配置文档：无 inviteCode/memberOpenId，家庭页不据此生成预览卡
++      await db.collection(collections.familyAuth).add({
++        data: {
++          _openid: openId,
++          contactPhone,
++          createdAt: db.serverDate(),
++          updatedAt: db.serverDate()
++        }
++      })
++    }
++    return { updated: true, contactPhoneMasked: maskContactPhone(contactPhone) }
++  }
++
++  async function familyGetReminderPhone(openId) {
++    // 复用 A4 写者解析：active 成员关系是取号前提（撤销/无绑定/owner 一律拒绝）
++    const writer = await resolveMemberWriter(openId)
++    if (writer.denied) {
++      return { phoneDenied: writer.denied.familyWrite }
++    }
++    if (!canCallReminderPhone(writer.relation.scopes)) {
++      return { phoneDenied: { allowed: false, reason: 'remindDenied' } }
++    }
++    const phone = await getOwnerContactPhone(writer.ownerOpenId)
++    if (!phone) {
++      return { phoneDenied: { allowed: false, reason: 'notConfigured' } }
++    }
++    return { phone, masked: maskContactPhone(phone) }
++  }
++
+   return {
+     createFamilyInvite,
+     familyConfirmMedication,
++    familyGetReminderPhone,
+     familyRecordBloodGlucose,
+     familyRecordBloodPressure,
+     familyRevokeProxyConfirmation,
+@@ -1322,6 +1431,7 @@ function createFamilyService({
+     joinFamilyByInvite,
+     resolveFamilyView,
+     revokeFamilyMember,
++    setFamilyContactPhone,
+     updateFamilyAuth
+   }
+ }
+diff --git a/cloudfunctions/healthApi/index.js b/cloudfunctions/healthApi/index.js
+index 23b1be0..e3ae92d 100644
+--- a/cloudfunctions/healthApi/index.js
++++ b/cloudfunctions/healthApi/index.js
+@@ -33,6 +33,9 @@ const {
+   normalizeFamilyScopesV2,
+   normalizeNoticeRulesV2,
+   canViewScope,
++  canCallReminderPhone,
++  normalizeContactPhone,
++  maskContactPhone,
+   getScopeTextV2,
+   normalizeFamilyAuthPayloadV2,
+   normalizeFamilyInvitePayloadV2,
+@@ -195,6 +198,9 @@ function getFamilyService() {
+       normalizeNoticeRulesV2,
+       canViewScope,
+       canPerformScopeAction,
++      normalizeContactPhone,
++      maskContactPhone,
++      canCallReminderPhone,
+       getScopeTextV2,
+       normalizeFamilyAuthPayloadV2,
+       normalizeFamilyInvitePayloadV2,
+@@ -940,6 +946,8 @@ const finishRoute = (result, ok = true) => {
+       'createFamilyInvite': () => getFamilyService().createFamilyInvite(openId, payload),
+       'joinFamilyByInvite': () => getFamilyService().joinFamilyByInvite(openId, payload),
+       'revokeFamilyMember': () => getFamilyService().revokeFamilyMember(openId, payload),
++      'setFamilyContactPhone': () => getFamilyService().setFamilyContactPhone(openId, payload),
++      'familyGetReminderPhone': () => getFamilyService().familyGetReminderPhone(openId),
+       'exportUserData': () => getSettingsDataService().exportUserData(openId, payload),
+       'deleteUserData': () => getSettingsDataService().deleteUserData(openId, payload),
+       'clearUserAccount': () => getSettingsDataService().clearUserAccount(openId, payload),
+diff --git a/cloudfunctions/healthApi/static-pages.js b/cloudfunctions/healthApi/static-pages.js
+index dfe5e6e..86fa215 100644
+--- a/cloudfunctions/healthApi/static-pages.js
++++ b/cloudfunctions/healthApi/static-pages.js
+@@ -79,6 +79,7 @@ function getPrivacyPolicyData() {
+         title: '三、敏感个人信息说明',
+         items: [
+           '血压、血糖、用药记录、家庭授权关系等可能属于敏感个人信息。',
++          '提醒电话属于敏感个人信息，仅在你主动填写后处理，只用于家属在授权范围内进行电话提醒联系；对家属脱敏展示，拨打时按需获取，可随时修改或清空。',
+           '我们会在你主动填写、保存或授权后处理上述信息，并仅用于记录、提醒、趋势回顾、周报展示和家庭共享。',
+           '你可以拒绝或撤销非必要授权，但相关记录、提醒或家庭共享功能可能无法继续使用。'
+         ]
+@@ -88,6 +89,7 @@ function getPrivacyPolicyData() {
+         items: [
+           '家庭成员只有在你主动邀请并授权后，才能查看你允许共享的记录和提醒状态。',
+           '你可以在家庭或家属权限页面修改授权范围，或随时解除家属授权。',
++          '开启提醒权限后，家属可看到你配置的脱敏提醒电话，并通过系统拨号盘拨打（拨号盘会显示完整号码，属手机系统行为）；关闭提醒或解除授权后，家属立即无法再获取号码。',
+           '家庭成员看到的信息仅供陪伴和记录回顾，不代表医疗诊断或处理建议。'
+         ]
+       },
+@@ -163,6 +165,7 @@ function getUserAgreementData() {
+         items: [
+           '你可以主动邀请家庭成员查看指定范围内的记录和提醒状态。',
+           '被邀请成员应仅将共享信息用于陪伴、提醒和记录回顾，不得未经授权转发、公开或用于其他目的。',
++          '提醒电话仅向你授权的家属脱敏展示，拨打时按需获取完整号码，仅可用于健康提醒联系，不得用于其他目的或向第三方披露。',
+           '你可以随时修改或解除授权，解除后家属将无法继续查看对应授权数据。'
+         ]
+       },
+diff --git a/pages/family-sub/family-auth/index.js b/pages/family-sub/family-auth/index.js
+index 33ce492..b53e4c8 100644
+--- a/pages/family-sub/family-auth/index.js
++++ b/pages/family-sub/family-auth/index.js
+@@ -6,9 +6,13 @@ const {
+   unbindAdaptiveResize
+ } = require('../../../utils/page-factory')
+ const { runButtonAction } = require('../../../utils/button-state')
+-const { getFamilyAuthData, revokeFamilyMember, updateFamilyAuth } = require('../../../utils/api')
++const { getFamilyAuthData, revokeFamilyMember, updateFamilyAuth, setFamilyContactPhone } = require('../../../utils/api')
+ const { noticeRulesToList } = require('../../../services/family')
+ 
++// A6：提醒电话客户端预检（与云端 family-policy CONTACT_PHONE_PATTERN 同规则；
++// 云端仍会独立校验，客户端拦截只为省一次网络往返）
++const CONTACT_PHONE_PATTERN = /^1[3-9]\d{9}$/
++
+ /**
+  * 家属权限页。
+  * 职责：管理某个家属可查看的数据范围、提醒规则，并持久化授权设置。
+@@ -21,7 +25,13 @@ Page({
+     pendingAction: '',
+     noticeRuleItems: [],
+     // A1：无绑定成员（邀请预览）时禁止提交改权/撤销
+-    canEdit: false
++    canEdit: false,
++    // A6：提醒电话（owner 家庭授权配置；本人页可回读完整号用于编辑）
++    contactPhone: '',
++    contactPhoneMasked: '',
++    contactPhoneInput: '',
++    contactPhoneError: '',
++    savingPhone: false
+   },
+ 
+   /**
+@@ -33,7 +43,11 @@ Page({
+     if (data) {
+       this.setData({
+         noticeRuleItems: noticeRulesToList(data.noticeRules),
+-        canEdit: !!this.data.memberId
++        canEdit: !!this.data.memberId,
++        contactPhone: data.contactPhone || '',
++        contactPhoneMasked: data.contactPhoneMasked || '',
++        contactPhoneInput: data.contactPhone || '',
++        contactPhoneError: ''
+       })
+     }
+     return data
+@@ -102,6 +116,55 @@ Page({
+     })
+   },
+ 
++  /**
++   * A6：提醒电话输入（清除错误提示；保存动作需显式点击）。
++   * @param {Object} event input 事件。
++   * @returns {void}
++   */
++  handlePhoneInput(event) {
++    this.setData({ contactPhoneInput: event.detail.value, contactPhoneError: '' })
++  },
++
++  /**
++   * A6：保存提醒电话（空串=清空）。客户端先做格式预检，云端仍独立校验；
++   * 以云端响应为准，失败显式提示、不本地假成功。
++   * @returns {Promise<void>}
++   */
++  async saveContactPhone() {
++    const value = String(this.data.contactPhoneInput || '').trim()
++    if (value && !CONTACT_PHONE_PATTERN.test(value)) {
++      this.setData({ contactPhoneError: '电话格式不正确，请填写 11 位手机号' })
++      wx.showToast({ title: '电话格式不正确', icon: 'none' })
++      return
++    }
++    this.setData({ savingPhone: true })
++    try {
++      const res = await setFamilyContactPhone({ contactPhone: value })
++      this.setData({
++        savingPhone: false,
++        contactPhone: value,
++        contactPhoneMasked: (res && res.contactPhoneMasked) || '',
++        contactPhoneError: ''
++      })
++      wx.showToast({ title: value ? '提醒电话已保存' : '提醒电话已清空', icon: 'none' })
++    } catch (error) {
++      this.setData({ savingPhone: false })
++      wx.showToast({
++        title: error && error.message ? error.message : '保存失败，请稍后重试',
++        icon: 'none'
++      })
++    }
++  },
++
++  /**
++   * A6：清空提醒电话（清空后家属端立即变为未配置状态，接口不再回传号码）。
++   * @returns {Promise<void>}
++   */
++  async clearContactPhone() {
++    this.setData({ contactPhoneInput: '' })
++    await this.saveContactPhone()
++  },
++
+   /**
+    * 返回家庭页。
+    * @returns {void}
+diff --git a/pages/family-sub/family-auth/index.wxml b/pages/family-sub/family-auth/index.wxml
+index 72fe128..9587241 100644
+--- a/pages/family-sub/family-auth/index.wxml
++++ b/pages/family-sub/family-auth/index.wxml
+@@ -68,6 +68,20 @@
+     </view>
+   </view>
+ 
++  <!-- A6 提醒电话：owner 家庭授权配置；家属在"提醒"开启时看到脱敏号并可拨打 -->
++  <view class="section">
++    <view class="section-title">提醒电话</view>
++    <view class="scope-panel">
++      <view class="phone-desc">开启上方任一"提醒"权限后，家属可看到脱敏号码{{contactPhoneMasked ? '（当前：' + contactPhoneMasked + '）' : ''}}并一键拨打；系统拨号盘会显示完整号码。号码仅用于健康提醒联系，可随时修改或清空，关闭提醒或解除授权后家属立即无法再获取。</view>
++      <input class="phone-input" type="number" maxlength="11" value="{{contactPhoneInput}}" placeholder="填写 11 位手机号（默认老人本人号码，可改为紧急联系人）" bindinput="handlePhoneInput" />
++      <view wx:if="{{contactPhoneError}}" class="phone-error">{{contactPhoneError}}</view>
++      <view class="phone-actions">
++        <button class="phone-save" loading="{{savingPhone}}" disabled="{{savingPhone}}" bindtap="saveContactPhone">保存电话</button>
++        <button class="phone-clear" disabled="{{!contactPhone || savingPhone}}" bindtap="clearContactPhone">清空</button>
++      </view>
++    </view>
++  </view>
++
+   <view class="section">
+     <view class="section-head">
+       <view class="section-title">最近查看</view>
+diff --git a/pages/family-sub/family-auth/index.wxss b/pages/family-sub/family-auth/index.wxss
+index 4e50576..c54dc95 100644
+--- a/pages/family-sub/family-auth/index.wxss
++++ b/pages/family-sub/family-auth/index.wxss
+@@ -163,3 +163,56 @@
+   font-size: 24rpx;
+   color: #5c6b60;
+ }
++
++/* A6 提醒电话 */
++.phone-desc {
++  color: #65756d;
++  font-size: 24rpx;
++  line-height: 1.5;
++  margin-bottom: 16rpx;
++}
++
++.phone-input {
++  height: 80rpx;
++  padding: 0 20rpx;
++  border: 1rpx solid #d8e6de;
++  border-radius: 12rpx;
++  background: #fff;
++  font-size: 28rpx;
++}
++
++.phone-error {
++  margin-top: 10rpx;
++  color: #c8463a;
++  font-size: 24rpx;
++}
++
++.phone-actions {
++  display: flex;
++  gap: 20rpx;
++  margin-top: 20rpx;
++}
++
++.phone-save {
++  flex: 1;
++  margin: 0;
++  height: 76rpx;
++  line-height: 76rpx;
++  border-radius: 999rpx;
++  background: #168957;
++  color: #fff;
++  font-size: 28rpx;
++}
++
++.phone-clear {
++  flex: 0 0 auto;
++  margin: 0;
++  padding: 0 36rpx;
++  height: 76rpx;
++  line-height: 76rpx;
++  border-radius: 999rpx;
++  border: 1rpx solid #c8463a;
++  background: #fff;
++  color: #c8463a;
++  font-size: 28rpx;
++}
+diff --git a/pages/family-sub/family-invite/index.js b/pages/family-sub/family-invite/index.js
+index b14e616..48a8f11 100644
+--- a/pages/family-sub/family-invite/index.js
++++ b/pages/family-sub/family-invite/index.js
+@@ -7,6 +7,9 @@ const {
+ } = require('../../../utils/page-factory')
+ const { createFamilyInvite, getFamilyInviteData } = require('../../../utils/api')
+ 
++// A6：提醒电话客户端预检（云端 family-policy 仍独立校验）
++const CONTACT_PHONE_PATTERN = /^1[3-9]\d{9}$/
++
+ /**
+  * 邀请家属页。
+  * 职责：选择家属身份、授权范围（草稿），显式点击"生成邀请"后才提交云端。
+@@ -22,7 +25,10 @@ Page({
+     submitting: false,
+     generatedConfig: null,
+     draftDirty: false,
+-    generateError: ''
++    generateError: '',
++    // A6：提醒电话（可选项，随生成邀请提交；需勾选授权说明）
++    contactPhoneInput: '',
++    phoneAgreed: false
+   },
+ 
+   async loadData() {
+@@ -106,10 +112,33 @@ Page({
+       // 从未生成：有旧码（理论上本页不再出现）也视为不一致，禁止当作新配置分享
+       return !!this.data.inviteCode
+     }
+-    const draft = JSON.stringify({ selectedRelation: this.data.selectedRelation, scopes: this.data.scopes })
++    const draft = JSON.stringify({
++      selectedRelation: this.data.selectedRelation,
++      scopes: this.data.scopes,
++      contactPhone: String(this.data.contactPhoneInput || '').trim()
++    })
+     return draft !== JSON.stringify(this.data.generatedConfig)
+   },
+ 
++  /**
++   * A6：提醒电话输入（草稿字段，参与脏检查）。
++   * @param {Object} event input 事件。
++   * @returns {void}
++   */
++  handlePhoneInput(event) {
++    this.setData({ contactPhoneInput: event.detail.value })
++    this.updateInvitePreview()
++  },
++
++  /**
++   * A6：电话授权说明勾选。
++   * @param {Object} event checkbox 事件。
++   * @returns {void}
++   */
++  togglePhoneAgree(event) {
++    this.setData({ phoneAgreed: !!event.detail.value })
++  },
++
+   /**
+    * 显式生成邀请：用户点击才提交；已有码时先确认"旧码立即失效"。
+    * 请求期间 submitting 防重复提交；失败保留旧码但维持脏标记，不冒充新配置生效。
+@@ -132,9 +161,22 @@ Page({
+     }
+     this.setData({ submitting: true, generateError: '' })
+     try {
++      // A6：提醒电话可选；填写则先过格式预检与授权勾选，随邀请一并提交
++      const contactPhone = String(this.data.contactPhoneInput || '').trim()
++      if (contactPhone && !CONTACT_PHONE_PATTERN.test(contactPhone)) {
++        this.setData({ submitting: false, draftDirty: true })
++        wx.showToast({ title: '电话格式不正确，请填写 11 位手机号', icon: 'none' })
++        return
++      }
++      if (contactPhone && !this.data.phoneAgreed) {
++        this.setData({ submitting: false })
++        wx.showToast({ title: '请先阅读并勾选电话授权说明', icon: 'none' })
++        return
++      }
+       const result = await createFamilyInvite({
+         selectedRelation: this.data.selectedRelation,
+-        scopes: this.data.scopes
++        scopes: this.data.scopes,
++        ...(contactPhone ? { contactPhone } : {})
+       })
+       this.setData({
+         inviteCode: result.inviteCode,
+@@ -143,7 +185,8 @@ Page({
+         invitePreview: { ...this.data.invitePreview, ...(result.invitePreview || {}) },
+         generatedConfig: {
+           selectedRelation: this.data.selectedRelation,
+-          scopes: this.data.scopes
++          scopes: this.data.scopes,
++          contactPhone
+         },
+         draftDirty: false,
+         submitting: false
+diff --git a/pages/family-sub/family-invite/index.wxml b/pages/family-sub/family-invite/index.wxml
+index 72f94c2..8a931bc 100644
+--- a/pages/family-sub/family-invite/index.wxml
++++ b/pages/family-sub/family-invite/index.wxml
+@@ -72,6 +72,23 @@
+     </view>
+   </view>
+ 
++  <!-- A6 提醒电话（可选）：随生成邀请提交；家属仅在"提醒"权限开启时可见脱敏号并拨打 -->
++  <view class="section">
++    <view class="invite-card">
++      <view class="card-label">提醒电话（可选）</view>
++      <input class="phone-input" type="number" maxlength="11" value="{{contactPhoneInput}}" placeholder="默认老人本人号码，可改为紧急联系人" bindinput="handlePhoneInput" />
++      <view class="phone-agree-row">
++        <checkbox-group bindchange="togglePhoneAgree">
++          <label class="phone-agree-label">
++            <checkbox value="agreed" checked="{{phoneAgreed}}" color="#168957" />
++            <text>同意向家属展示该电话号码用于健康提醒联系（脱敏展示、拨号时按需获取），可随时修改或关闭</text>
++          </label>
++        </checkbox-group>
++      </view>
++      <view class="scope-meta">不填写则家属端不显示电话提醒入口；生成邀请后可在家庭页的授权管理中修改。</view>
++    </view>
++  </view>
++
+   <view class="section">
+     <notice-bar text="邀请链接 24 小时内有效，仅可绑定 1 位家属。授权范围可在家庭页随时修改或撤销。" />
+   </view>
+diff --git a/pages/family-sub/family-invite/index.wxss b/pages/family-sub/family-invite/index.wxss
+index fd1b306..1aea650 100644
+--- a/pages/family-sub/family-invite/index.wxss
++++ b/pages/family-sub/family-invite/index.wxss
+@@ -151,4 +151,27 @@
+ .switch-label {
+   font-size: 24rpx;
+   color: #5c6b60;
+-}
+\ No newline at end of file
++}
++/* A6 提醒电话 */
++.phone-input {
++  margin-top: 12rpx;
++  height: 80rpx;
++  padding: 0 20rpx;
++  border: 1rpx solid #d8e6de;
++  border-radius: 12rpx;
++  background: #fff;
++  font-size: 28rpx;
++}
++
++.phone-agree-row {
++  margin-top: 16rpx;
++}
++
++.phone-agree-label {
++  display: flex;
++  align-items: flex-start;
++  gap: 8rpx;
++  color: #65756d;
++  font-size: 24rpx;
++  line-height: 1.5;
++}
+diff --git a/pages/family-sub/home-family/index.js b/pages/family-sub/home-family/index.js
+index 935877b..b88e301 100644
+--- a/pages/family-sub/home-family/index.js
++++ b/pages/family-sub/home-family/index.js
+@@ -6,9 +6,18 @@ const {
+   autoPreCheck,
+   unbindAdaptiveResize
+ } = require('../../../utils/page-factory')
+-const { getHomeFamilyData } = require('../../../utils/api')
++const { getHomeFamilyData, familyGetReminderPhone } = require('../../../utils/api')
+ const { markClean } = require('../../../services/core')
+ 
++// A6：取号被拒原因 → 用户可读提示（不假设已拨出、不本地假成功）
++const PHONE_DENIED_MESSAGES = {
++  remindDenied: '提醒权限已关闭',
++  notConfigured: '家人尚未配置提醒电话',
++  revoked: '家属授权已解除',
++  noBinding: '暂无家庭绑定',
++  notMember: '仅家属可使用电话提醒'
++}
++
+ /**
+  * 家属视角首页。
+  * 职责：展示被授权成员的最新记录、用药确认状态和周报入口。
+@@ -16,7 +25,10 @@ const { markClean } = require('../../../services/core')
+ Page({
+   data: {
+     isLoading: true,
+-    loadError: ''
++    loadError: '',
++    // A6：电话提醒入口（remindAllowed 才渲染；canCall 才可拨号；masked 为脱敏号）
++    phoneReminder: { remindAllowed: false, configured: false, canCall: false, masked: '' },
++    phoneError: ''
+   },
+ 
+   /**
+@@ -107,14 +119,49 @@ Page({
+    * @returns {void} 待确认进入确认页，其他进入用药列表。
+    */
+   handleMedicineTap(event) {
+-    // A3：家属视图只读；代录（medConfirm）入口不开放
++    // A3/A4：家属代确认入口在用药列表（med-list 家属态已服/跳过），本页不直开确认页
+     if (event.currentTarget.dataset.action === 'confirm') {
+-      wx.showToast({ title: '家属视图为只读，代录待开放', icon: 'none' })
++      wx.showToast({ title: '请进入用药列表进行代确认', icon: 'none' })
+       return
+     }
+     goRoute('medList', 'familyView=1')
+   },
+ 
++  /**
++   * A6 电话提醒：点击时经 action 按需取号（不入读缓存、不落 data/storage），
++   * 直接唤起 wx.makePhoneCall；被拒/失败均显式提示，不假设已拨出。
++   * @returns {Promise<void>}
++   */
++  async handleCallReminder() {
++    if (!this.data.phoneReminder || !this.data.phoneReminder.canCall) {
++      wx.showToast({ title: '电话提醒当前不可用', icon: 'none' })
++      return
++    }
++    try {
++      const res = await familyGetReminderPhone()
++      if (res && res.phoneDenied && res.phoneDenied.allowed === false) {
++        const reason = res.phoneDenied.reason || ''
++        this.setData({ phoneError: reason })
++        wx.showToast({ title: PHONE_DENIED_MESSAGES[reason] || '电话提醒当前不可用', icon: 'none' })
++        return
++      }
++      if (!res || !res.phone) {
++        this.setData({ phoneError: 'notConfigured' })
++        wx.showToast({ title: PHONE_DENIED_MESSAGES.notConfigured, icon: 'none' })
++        return
++      }
++      // 完整号码仅用于本次拨号，不写入 this.data、不写入本地存储
++      wx.makePhoneCall({
++        phoneNumber: res.phone,
++        fail: () => {
++          wx.showToast({ title: '拨号未接通，请重试或手动拨打', icon: 'none' })
++        }
++      })
++    } catch (err) {
++      wx.showToast({ title: err && err.message ? err.message : '获取号码失败，请稍后重试', icon: 'none' })
++    }
++  },
++
+   /**
+    * A4 家属代录入口：携带 familyView 进入记录页（写路由由服务端闸口鉴权）。
+    * @param {Object} event 组件事件；detail.route 为路由键。
+@@ -129,9 +176,9 @@ Page({
+     goRoute('family')
+   },
+ 
+-  /** @returns {void} 进入用药确认页（家属视图只读，不开放）。 */
++  /** @returns {void} 进入用药确认页（家属代确认入口在用药列表）。 */
+   goMedConfirm() {
+-    wx.showToast({ title: '家属视图为只读，代录待开放', icon: 'none' })
++    wx.showToast({ title: '请进入用药列表进行代确认', icon: 'none' })
+   },
+ 
+   /** @returns {void} 进入历史记录页（家属视图）。 */
+diff --git a/pages/family-sub/home-family/index.wxml b/pages/family-sub/home-family/index.wxml
+index bd4e2b6..c8c3707 100644
+--- a/pages/family-sub/home-family/index.wxml
++++ b/pages/family-sub/home-family/index.wxml
+@@ -21,7 +21,19 @@
+   </view>
+   <view class="subtitle">已授权：{{member.scopeText}}</view>
+ 
+-  <view class="alert-panel">
++  <!-- A6：电话提醒（remind=true 才渲染；read=false+remind=true 时本页仅保留此入口） -->
++  <view class="section" wx:if="{{phoneReminder.remindAllowed}}">
++    <view class="section-title">电话提醒</view>
++    <view class="phone-panel">
++      <block wx:if="{{phoneReminder.canCall}}">
++        <view class="phone-meta">提醒电话 {{phoneReminder.masked}} · 拨打后系统拨号盘会显示完整号码</view>
++        <button class="phone-button" bindtap="handleCallReminder" aria-label="拨打提醒电话">电话提醒</button>
++      </block>
++      <view wx:else class="phone-meta">家人尚未配置提醒电话，可提醒 TA 在授权管理页填写。</view>
++    </view>
++  </view>
++
++  <view class="alert-panel" wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose || readPermissions.medicine}}">
+     <view>
+       <view class="alert-label">今日关注</view>
+       <view class="alert-title">{{todayAlert.title}}</view>
+@@ -30,11 +42,11 @@
+     <button class="alert-button" bindtap="goMedConfirm" aria-label="查看今日关注详情">查看</button>
+   </view>
+ 
+-  <view class="section">
++  <view class="section" wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose || readPermissions.medicine}}">
+     <view class="section-title">快捷查看</view>
+     <view class="quick-grid">
+-      <quick-action icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
+-      <quick-action icon="用药" icon-src="/assets/icons/icon-medication.png" title="用药" route="medList" bindactiontap="handleQuickAction" />
++      <quick-action wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose}}" icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
++      <quick-action wx:if="{{readPermissions.medicine}}" icon="用药" icon-src="/assets/icons/icon-medication.png" title="用药" route="medList" bindactiontap="handleQuickAction" />
+     </view>
+   </view>
+ 
+@@ -46,7 +58,7 @@
+     </view>
+   </view>
+ 
+-  <view class="section">
++  <view class="section" wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose}}">
+     <view class="section-head">
+       <view class="section-title">最新记录</view>
+       <button class="link-button" bindtap="goRecordList" aria-label="查看全部记录">全部</button>
+@@ -67,7 +79,7 @@
+     </view>
+   </view>
+ 
+-  <view class="section">
++  <view class="section" wx:if="{{readPermissions.medicine}}">
+     <view class="section-title">今日用药</view>
+     <view class="medicine-panel">
+       <block wx:if="{{medicineLogs && medicineLogs.length}}">
+@@ -87,7 +99,7 @@
+     </view>
+   </view>
+ 
+-  <view class="section report-panel">
++  <view class="section report-panel" wx:if="{{readPermissions.report}}">
+     <view>
+       <view class="section-title">本周周报</view>
+       <view class="report-meta">{{reportSummary}}</view>
+diff --git a/pages/family-sub/home-family/index.wxss b/pages/family-sub/home-family/index.wxss
+index 5667bca..162909b 100644
+--- a/pages/family-sub/home-family/index.wxss
++++ b/pages/family-sub/home-family/index.wxss
+@@ -177,3 +177,34 @@
+ .family-home.ui-scale-elder .report-button {
+   align-self: flex-start;
+ }
++
++/* A6 电话提醒入口 */
++.phone-panel {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 24rpx;
++  padding: 28rpx;
++  border-radius: 16rpx;
++  border: 1rpx solid #d8e6de;
++  background: #fff;
++}
++
++.phone-meta {
++  flex: 1;
++  color: #65756d;
++  font-size: 25rpx;
++  line-height: 1.45;
++}
++
++.phone-button {
++  flex: 0 0 auto;
++  margin: 0;
++  padding: 0 32rpx;
++  height: 72rpx;
++  line-height: 72rpx;
++  border-radius: 999rpx;
++  background: #168957;
++  color: #fff;
++  font-size: 28rpx;
++}
+diff --git a/scripts/health-api-regression.js b/scripts/health-api-regression.js
+index 57d9876..95ddcbe 100644
+--- a/scripts/health-api-regression.js
++++ b/scripts/health-api-regression.js
+@@ -25,6 +25,9 @@ const {
+   normalizeFamilyAuthPayloadV2,
+   normalizeFamilyInvitePayloadV2,
+   canPerformScopeAction,
++  normalizeContactPhone,
++  maskContactPhone,
++  canCallReminderPhone,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+   createFamilyAccessContext
+@@ -357,6 +360,9 @@ async function testFamilyService() {
+     normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2,
+     canPerformScopeAction,
++    normalizeContactPhone,
++    maskContactPhone,
++    canCallReminderPhone,
+     validateInviteCodePayload,
+     getLimitedString,
+     // 确定性测试替身：固定邀请码以便断言；不是业务逻辑的复制。
+diff --git a/services/family.js b/services/family.js
+index 140ae06..3c34e81 100644
+--- a/services/family.js
++++ b/services/family.js
+@@ -470,6 +470,17 @@ function familyRecordBloodGlucose(payload) { return withFamilyInvalidation(resol
+ function familyConfirmMedication(payload) { return withFamilyInvalidation(resolveRemote('familyConfirmMedication', payload)) }
+ function familyRevokeProxyConfirmation(payload) { return withFamilyInvalidation(resolveRemote('familyRevokeProxyConfirmation', payload)) }
+ 
++// A6 电话提醒（decisions #4/#12）：
++// - setFamilyContactPhone：owner 设置/修改/清空提醒电话（action，成功后失效家族页缓存）；
++// - familyGetReminderPhone：家属拨号时按需取完整号码——action 路由不入读缓存，
++//   调用方只用于本次 wx.makePhoneCall，不得写入 data/storage（完整号码不进长期本地缓存）。
++function setFamilyContactPhone(payload) {
++  return resolveRemote('setFamilyContactPhone', payload).then((res) => { invalidateFamilyCaches(); return res })
++}
++function familyGetReminderPhone() {
++  return resolveRemote('familyGetReminderPhone', {})
++}
++
+ module.exports = {
+   FAMILY_PAGE_KEYS,
+   FAMILY_RELATIONS,
+@@ -480,6 +491,8 @@ module.exports = {
+   familyRecordBloodGlucose,
+   familyConfirmMedication,
+   familyRevokeProxyConfirmation,
++  familyGetReminderPhone,
++  setFamilyContactPhone,
+   enforceHomeFamilyAccess,
+   getDefaultInviteScopes,
+   getFamilyAuthData,
+diff --git a/tests/unit/a0-contract-integration.test.js b/tests/unit/a0-contract-integration.test.js
+index a6186a4..f1b02b6 100644
+--- a/tests/unit/a0-contract-integration.test.js
++++ b/tests/unit/a0-contract-integration.test.js
+@@ -133,6 +133,9 @@ function createService(db) {
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
+     canPerformScopeAction: policy.canPerformScopeAction,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+diff --git a/tests/unit/a1-member-isolation.test.js b/tests/unit/a1-member-isolation.test.js
+index 0eac1b6..cfa5ce6 100644
+--- a/tests/unit/a1-member-isolation.test.js
++++ b/tests/unit/a1-member-isolation.test.js
+@@ -135,6 +135,9 @@ function createService(db, inviteSeq = { n: 0 }) {
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
+     canPerformScopeAction: policy.canPerformScopeAction,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+diff --git a/tests/unit/a2-followup.test.js b/tests/unit/a2-followup.test.js
+index c62b55a..32ae1f2 100644
+--- a/tests/unit/a2-followup.test.js
++++ b/tests/unit/a2-followup.test.js
+@@ -184,6 +184,9 @@ function createService(db, inviteCodes) {
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
+     validateInviteCodePayload: policy.validateInviteCodePayload,
+     getLimitedString: helpers.getLimitedString,
+     createInviteCode: queue ? () => queue.shift() : () => `KXJGEN${String(++n).padStart(6, '0')}`
+diff --git a/tests/unit/a2-invite-security.test.js b/tests/unit/a2-invite-security.test.js
+index 5a3da3d..f8170f1 100644
+--- a/tests/unit/a2-invite-security.test.js
++++ b/tests/unit/a2-invite-security.test.js
+@@ -131,6 +131,9 @@ function createService(db, codes) {
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
+     validateInviteCodePayload: policy.validateInviteCodePayload,
+     getLimitedString: helpers.getLimitedString,
+     createInviteCode: queue ? () => queue.shift() : () => `KXJGEN${String(++n).padStart(6, '0')}`
+diff --git a/tests/unit/a3-family-readonly.test.js b/tests/unit/a3-family-readonly.test.js
+index 84b018c..3559903 100644
+--- a/tests/unit/a3-family-readonly.test.js
++++ b/tests/unit/a3-family-readonly.test.js
+@@ -154,6 +154,9 @@ function buildServices(seed) {
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
+     canPerformScopeAction: policy.canPerformScopeAction,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+diff --git a/tests/unit/a4-family-write.test.js b/tests/unit/a4-family-write.test.js
+index d72a3a7..54ab72b 100644
+--- a/tests/unit/a4-family-write.test.js
++++ b/tests/unit/a4-family-write.test.js
+@@ -150,6 +150,9 @@ function build(seed = {}) {
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
+     canPerformScopeAction: policy.canPerformScopeAction,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+diff --git a/tests/unit/a5-cache-revocation.test.js b/tests/unit/a5-cache-revocation.test.js
+index 9ff55e8..5f1fab4 100644
+--- a/tests/unit/a5-cache-revocation.test.js
++++ b/tests/unit/a5-cache-revocation.test.js
+@@ -191,6 +191,9 @@ function build(seed = {}) {
+     normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
+     canViewScope: policy.canViewScope,
+     canPerformScopeAction: policy.canPerformScopeAction,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
+     getScopeTextV2: policy.getScopeTextV2,
+     normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
+     normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
+diff --git a/tests/unit/a6-phone-reminder.test.js b/tests/unit/a6-phone-reminder.test.js
+new file mode 100644
+index 0000000..bb504f1
+--- /dev/null
++++ b/tests/unit/a6-phone-reminder.test.js
+@@ -0,0 +1,637 @@
++/**
++ * A6 电话提醒（先失败后实现）。
++ * 契约来源：decisions.md #4/#12/4.3（电话提醒替代订阅推送；remind=true 才回传号码；
++ * 列表/卡片脱敏；拨号时按需取号；完整号码不入长期缓存与日志；不实现 wx.getPhoneNumber；
++ * 不新增订阅消息；不修改 sendDueReminders）。
++ * 存储/网络替身只模拟存取与传输；权限规则走真实 family-policy / family-service。
++ */
++
++const { createRecordService } = require('../../cloudfunctions/healthApi/record-service')
++const { createMedicationService } = require('../../cloudfunctions/healthApi/medication-service')
++const { createFamilyService } = require('../../cloudfunctions/healthApi/family-service')
++const policy = require('../../cloudfunctions/healthApi/family-policy')
++const helpers = require('../../cloudfunctions/healthApi/payload-helpers')
++
++// ─── 服务端存储替身（与 A4/A5 同构） ───
++
++const COLLECTIONS = {
++  records: 'health_records',
++  medicationPlans: 'medication_plans',
++  medicationConfirmations: 'medication_confirmations',
++  familyAuth: 'family_auth',
++  familyMembers: 'family_members',
++  inviteAttempts: 'family_invite_attempts',
++  dailyStats: 'health_daily_stats',
++  recordStats: 'health_record_stats',
++  profiles: 'profiles'
++}
++
++function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)) }
++
++class StoreQuery {
++  constructor(store, query = {}) {
++    this.store = store; this.query = query
++    this.orderField = ''; this.orderDir = 'asc'; this.max = Infinity; this.skipN = 0
++    this.docId = ''; this.hasDocId = false
++  }
++  where(c) { return new StoreQuery(this.store, c) }
++  orderBy(f, d) { const q = new StoreQuery(this.store, this.query); q.orderField = f; q.orderDir = d; q.max = this.max; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  limit(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = n; q.skipN = this.skipN; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  skip(n) { const q = new StoreQuery(this.store, this.query); q.orderField = this.orderField; q.orderDir = this.orderDir; q.max = this.max; q.skipN = n; q.docId = this.docId; q.hasDocId = this.hasDocId; return q }
++  doc(id) { const q = new StoreQuery(this.store, this.query); q.docId = id; q.hasDocId = true; q.max = this.max; q.skipN = this.skipN; return q }
++  field() { return this }
++  _matchOne(doc, q) {
++    return Object.entries(q).every(([k, v]) => {
++      if (v && v.__op === 'in') return v.values.includes(doc[k])
++      if (v && v.__op === 'lt') return doc[k] !== undefined && doc[k] < v.value
++      if (v && v.__op === 'gt') return doc[k] !== undefined && doc[k] > v.value
++      if (v && v.__op === 'or') return v.clauses.some(c => this._matchOne(doc, c))
++      if (v && v.__op === 'range') {
++        const val = doc[k]
++        if (val === undefined) return false
++        if (v.gte !== undefined && !(val >= v.gte)) return false
++        if (v.lte !== undefined && !(val <= v.lte)) return false
++        return true
++      }
++      return doc[k] === v
++    })
++  }
++  _targets() {
++    if (this.hasDocId) return this.store.rows.filter(d => d._id === this.docId)
++    return this.store.rows.filter(d => this._matchOne(d, this.query))
++  }
++  async get() {
++    let rows = this._targets().map(clone)
++    if (this.orderField) {
++      rows.sort((a, b) => {
++        const x = a[this.orderField], y = b[this.orderField]
++        if (x === y) return 0
++        return this.orderDir === 'desc' ? (x < y ? 1 : -1) : (x > y ? 1 : -1)
++      })
++    }
++    if (this.skipN) rows = rows.slice(this.skipN)
++    return { data: this.max === Infinity ? rows : rows.slice(0, this.max) }
++  }
++  async count() { return { total: this._targets().length } }
++  async add({ data }) {
++    const _id = data._id || `doc-${this.store.seq++}`
++    if (this.store.rows.some(d => d._id === _id)) { const e = new Error('E11000 duplicate key error'); e.errCode = -502005; throw e }
++    this.store.rows.push({ _id, ...clone(data) })
++    return { _id }
++  }
++  async set({ data }) {
++    const existing = this.store.rows.find(d => d._id === this.docId)
++    if (existing) { Object.assign(existing, clone(data)); return { _id: this.docId } }
++    this.store.rows.push({ _id: this.docId, ...clone(data) })
++    return { _id: this.docId }
++  }
++  async update({ data }) {
++    const t = this._targets()
++    t.forEach((d) => {
++      Object.entries(data).forEach(([k, v]) => {
++        if (v && v.__op === 'inc') d[k] = (typeof d[k] === 'number' ? d[k] : 0) + v.value
++        else d[k] = clone(v)
++      })
++    })
++    return { stats: { updated: t.length } }
++  }
++  async remove() {
++    const ids = new Set(this._targets().map(d => d._id))
++    const before = this.store.rows.length
++    this.store.rows = this.store.rows.filter(d => !ids.has(d._id))
++    return { stats: { removed: before - this.store.rows.length } }
++  }
++}
++
++function createStoreDb(initial = {}) {
++  const stores = {}
++  Object.keys(COLLECTIONS).forEach((a) => { stores[COLLECTIONS[a]] = { rows: Array.isArray(initial[a]) ? clone(initial[a]) : [], seq: 1 } })
++  return {
++    collection(n) { if (!stores[n]) stores[n] = { rows: [], seq: 1 }; return new StoreQuery(stores[n]) },
++    serverDate() { return 'SERVER_DATE' },
++    _stores: stores
++  }
++}
++
++function rangeOp(op, v) { const m = { __op: 'range' }; m[op] = v; m.and = (o) => { m[op === 'gte' ? 'lte' : 'gte'] = o.value; return m }; return m }
++const commands = {
++  in: values => ({ __op: 'in', values }),
++  lt: v => ({ __op: 'lt', value: v }),
++  gt: v => ({ __op: 'gt', value: v }),
++  gte: v => rangeOp('gte', v),
++  lte: v => rangeOp('lte', v),
++  or: clauses => ({ __op: 'or', clauses }),
++  inc: v => ({ __op: 'inc', value: v })
++}
++
++function scopesWithRemind(bp, bg, med, remind) {
++  return [
++    { key: 'bloodPressure', title: '血压记录', meta: 'm', read: bp.read, write: bp.write, remind },
++    { key: 'bloodGlucose', title: '血糖记录', meta: 'm', read: bg.read, write: bg.write, remind },
++    { key: 'medicine', title: '用药确认', meta: 'm', read: med.read, write: med.write, remind },
++    { key: 'report', title: '健康记录周报', meta: 'm', read: false, write: false, remind }
++  ]
++}
++const RW = { read: true, write: true }
++const RO = { read: true, write: false }
++const NONE = { read: false, write: false }
++
++function build(seed = {}) {
++  const db = createStoreDb(seed)
++  const withPerfLog = (m, fn) => fn()
++  const recordService = createRecordService({ db, _: commands, collections: COLLECTIONS, getRecordStatus: helpers.getRecordStatus, withPerfLog })
++  const medicationService = createMedicationService({
++    db, _: commands, collections: COLLECTIONS,
++    assertOwnedDocument: async (coll, openId, id, label) => {
++      const { data } = await db.collection(coll).where({ _id: id, _openid: openId }).limit(1).get()
++      if (!data.length) throw new Error(`${label}不存在或无权操作`)
++      return data[0]
++    },
++    validateMedicationPlanPayload: p => p,
++    validateMedicationConfirmationPayload: p => p,
++    withPerfLog
++  })
++  const familyService = createFamilyService({
++    db, _: commands, collections: COLLECTIONS, withPerfLog,
++    getProfileDisplayName: policy.createProfileDisplayName({ db, collections: COLLECTIONS }),
++    getFamilyAccessContext: policy.createFamilyAccessContext({ db, collections: COLLECTIONS }),
++    getRecordStatus: helpers.getRecordStatus,
++    getDefaultFamilyMember: policy.getDefaultFamilyMember,
++    getFamilyRelationV2: policy.getFamilyRelationV2,
++    getDefaultInviteScopesV2: policy.getDefaultInviteScopesV2,
++    getDefaultInviteNoticeRulesV2: policy.getDefaultInviteNoticeRulesV2,
++    normalizeFamilyScopesV2: policy.normalizeFamilyScopesV2,
++    normalizeNoticeRulesV2: policy.normalizeNoticeRulesV2,
++    canViewScope: policy.canViewScope,
++    canPerformScopeAction: policy.canPerformScopeAction,
++    normalizeContactPhone: policy.normalizeContactPhone,
++    maskContactPhone: policy.maskContactPhone,
++    canCallReminderPhone: policy.canCallReminderPhone,
++    getScopeTextV2: policy.getScopeTextV2,
++    normalizeFamilyAuthPayloadV2: policy.normalizeFamilyAuthPayloadV2,
++    normalizeFamilyInvitePayloadV2: policy.normalizeFamilyInvitePayloadV2,
++    validateInviteCodePayload: policy.validateInviteCodePayload,
++    getLimitedString: helpers.getLimitedString,
++    createInviteCode: () => 'KXJTEST00001',
++    getRecordService: () => recordService,
++    getMedicationService: () => medicationService,
++    getDailyStatsService: () => ({
++      async updateRecordStats() { return { updated: 0 } },
++      async getHomeStats() { return { dailyStats: {}, recordStats: {} } }
++    })
++  })
++  return { db, recordService, medicationService, familyService }
++}
++
++const PHONE = '13800001234'
++const MASKED = '138****1234'
++
++function authDoc(overrides = {}) {
++  return {
++    _id: 'auth-a', _openid: 'A', ownerOpenId: 'A', ownerName: '王阿姨',
++    contactPhone: PHONE, status: 'pending', memberOpenId: '',
++    inviteCode: 'KXJTEST00001', expiresAt: '2026-09-24T00:00:00.000Z',
++    ...overrides
++  }
++}
++function memberRowB(scopes, overrides = {}) {
++  return {
++    _id: 'active-B', _openid: 'B', ownerOpenId: 'A', ownerName: '王阿姨',
++    memberOpenId: 'B', memberName: '女儿', scopes, status: 'active',
++    noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: false },
++    updatedAt: '2026-09-23T01:00:00Z', ...overrides
++  }
++}
++
++// ─── 1. policy 单元 ───
++
++describe('A6 · family-policy 电话规则', () => {
++  it('normalizeContactPhone：合法通过、空串清空、非法拒绝且错误信息不回显号码', () => {
++    expect(policy.normalizeContactPhone(PHONE)).toBe(PHONE)
++    expect(policy.normalizeContactPhone('')).toBe('')
++    expect(policy.normalizeContactPhone(undefined)).toBeNull()
++    const badInputs = ['123', '138000012345', '23800001234', 'abcdefghijk', '1380000123a', 13800001234, {}, null]
++    badInputs.forEach((bad) => {
++      let threw = false
++      try { policy.normalizeContactPhone(bad) } catch (err) {
++        threw = true
++        expect(err.message).not.toContain('13800001234')
++        expect(err.message).not.toContain('138000012345')
++      }
++      if (bad !== null) expect(threw).toBe(true) // null 与 undefined 同义：未提供
++    })
++  })
++
++  it('maskContactPhone：138****1234；非法输入返回空串', () => {
++    expect(policy.maskContactPhone(PHONE)).toBe(MASKED)
++    expect(policy.maskContactPhone('')).toBe('')
++    expect(policy.maskContactPhone('123')).toBe('')
++    expect(policy.maskContactPhone(undefined)).toBe('')
++  })
++
++  it('canCallReminderPhone：任一 scope.remind=true 即可；全 false 不可', () => {
++    expect(policy.canCallReminderPhone(scopesWithRemind(NONE, NONE, NONE, true))).toBe(true)
++    expect(policy.canCallReminderPhone(scopesWithRemind(RO, RO, RO, false))).toBe(false)
++    expect(policy.canCallReminderPhone([])).toBe(false)
++    expect(policy.canCallReminderPhone(undefined)).toBe(false)
++  })
++})
++
++// ─── 2. 服务端 ───
++
++describe('A6 · 服务端电话提醒', () => {
++  it('owner 设置电话：落 family_auth；owner 授权页回读完整号+脱敏号；家庭页不因纯电话文档造预览卡', async () => {
++    const { familyService, db } = build({ familyAuth: [], familyMembers: [], profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }] })
++    const res = await familyService.setFamilyContactPhone('A', { contactPhone: PHONE })
++    expect(res.updated).toBe(true)
++    expect(res.contactPhoneMasked).toBe(MASKED)
++    expect(res.contactPhone).toBeUndefined() // 动作响应不回显完整号码
++    const stored = db._stores.family_auth.rows
++    expect(stored.length).toBe(1)
++    expect(stored[0].contactPhone).toBe(PHONE)
++
++    const authData = await familyService.getFamilyAuthData('A')
++    expect(authData.contactPhone).toBe(PHONE) // owner 本人可回读完整号（编辑用）
++    expect(authData.contactPhoneMasked).toBe(MASKED)
++
++    const familyData = await familyService.getFamilyData('A')
++    expect(familyData.familyCount).toBe(0)
++    expect(familyData.members).toEqual([])
++  })
++
++  it('非法号码：拒绝且零写入；错误信息不含完整输入', async () => {
++    const { familyService, db } = build({ familyAuth: [], familyMembers: [] })
++    await expect(familyService.setFamilyContactPhone('A', { contactPhone: '138000012345' }))
++      .rejects.toThrow(/电话|格式/)
++    try {
++      await familyService.setFamilyContactPhone('A', { contactPhone: '138000012345' })
++    } catch (err) {
++      expect(err.message).not.toContain('138000012345')
++    }
++    expect(db._stores.family_auth.rows.length).toBe(0)
++  })
++
++  it('清空电话后：家属端为未配置状态，取号接口 notConfigured', async () => {
++    const { familyService } = build({
++      familyAuth: [authDoc()],
++      familyMembers: [memberRowB(scopesWithRemind(RO, RO, RO, true))],
++      records: [], profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    await familyService.setFamilyContactPhone('A', { contactPhone: '' })
++    const home = await familyService.getHomeFamilyData('B')
++    expect(home.phoneReminder.configured).toBe(false)
++    expect(home.phoneReminder.canCall).toBe(false)
++    expect(home.phoneReminder.masked).toBe('')
++    const dial = await familyService.familyGetReminderPhone('B')
++    expect(dial.phoneDenied).toMatchObject({ allowed: false, reason: 'notConfigured' })
++    expect(dial.phone).toBeUndefined()
++  })
++
++  it('remind=true 家属：homeFamily 只回脱敏号；完整号不出现在任何响应字段', async () => {
++    const { familyService } = build({
++      familyAuth: [authDoc()],
++      familyMembers: [memberRowB(scopesWithRemind(RO, RO, RO, true))],
++      records: [{ _id: 'r1', _openid: 'A', type: 'bp', systolic: 128, diastolic: 78, measuredAt: '08:00', tag: '晨起', createdAt: '2026-09-23T00:00:00Z' }],
++      profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    const home = await familyService.getHomeFamilyData('B')
++    expect(home.phoneReminder).toMatchObject({ remindAllowed: true, canCall: true, configured: true, masked: MASKED })
++    expect(JSON.stringify(home)).not.toContain(PHONE)
++  })
++
++  it('remind=false 家属：无电话入口，接口不回传号码（脱敏也不给）', async () => {
++    const { familyService } = build({
++      familyAuth: [authDoc()],
++      familyMembers: [memberRowB(scopesWithRemind(RO, RO, RO, false))],
++      records: [], profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    const home = await familyService.getHomeFamilyData('B')
++    expect(home.phoneReminder).toMatchObject({ remindAllowed: false, canCall: false, masked: '', configured: false })
++    expect(JSON.stringify(home)).not.toContain(PHONE)
++    expect(JSON.stringify(home)).not.toContain(MASKED)
++    const dial = await familyService.familyGetReminderPhone('B')
++    expect(dial.phoneDenied).toMatchObject({ allowed: false, reason: 'remindDenied' })
++  })
++
++  it('read=false、remind=true：只允许电话提醒——无健康数据、无提醒明细、二级页拒绝', async () => {
++    const { familyService } = build({
++      familyAuth: [authDoc()],
++      familyMembers: [memberRowB(scopesWithRemind(NONE, NONE, NONE, true))],
++      records: [{ _id: 'r1', _openid: 'A', type: 'bp', systolic: 128, diastolic: 78, measuredAt: '08:00', tag: '晨起', createdAt: '2026-09-23T00:00:00Z' }],
++      profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    const home = await familyService.getHomeFamilyData('B')
++    expect(home.readPermissions).toEqual({ bloodPressure: false, bloodGlucose: false, medicine: false, report: false })
++    expect(home.latestMetrics).toEqual([])
++    expect(home.medicineLogs).toEqual([])
++    expect(home.phoneReminder.canCall).toBe(true)
++    expect(JSON.stringify(home)).not.toContain('128')
++    const list = await familyService.getFamilyRecordListData('B', { familyView: true })
++    expect(list.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++    const trend = await familyService.getFamilyTrendData('B', { familyView: true })
++    expect(trend.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++    const med = await familyService.getFamilyMedListData('B', { familyView: true })
++    expect(med.familyView).toMatchObject({ allowed: false, reason: 'scopeDenied' })
++    // 拨号仍可用（remind=true）
++    const dial = await familyService.familyGetReminderPhone('B')
++    expect(dial.phone).toBe(PHONE)
++  })
++
++  it('拨号按需取号：active+remind 返回完整号；撤销后立即不再返回', async () => {
++    const { familyService } = build({
++      familyAuth: [authDoc()],
++      familyMembers: [memberRowB(scopesWithRemind(RO, RO, RO, true))],
++      records: [], profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    const dial = await familyService.familyGetReminderPhone('B')
++    expect(dial.phone).toBe(PHONE)
++    expect(dial.masked).toBe(MASKED)
++
++    await familyService.revokeFamilyMember('A', { memberId: 'active-B' })
++    const after = await familyService.familyGetReminderPhone('B')
++    expect(after.phoneDenied).toMatchObject({ allowed: false, reason: 'revoked' })
++    expect(JSON.stringify(after)).not.toContain(PHONE)
++  })
++
++  it('无绑定成员取号：noBinding 拒绝', async () => {
++    const { familyService } = build({ familyAuth: [authDoc()], familyMembers: [] })
++    const dial = await familyService.familyGetReminderPhone('C')
++    expect(dial.phoneDenied).toMatchObject({ allowed: false, reason: 'noBinding' })
++  })
++
++  it('member 设置电话只写自己的配置，不能污染所拨号码（owner 文档权威）', async () => {
++    const { familyService } = build({
++      familyAuth: [authDoc()],
++      familyMembers: [memberRowB(scopesWithRemind(RO, RO, RO, true))],
++      records: [], profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }]
++    })
++    await familyService.setFamilyContactPhone('B', { contactPhone: '13900009999' })
++    const dial = await familyService.familyGetReminderPhone('B')
++    expect(dial.phone).toBe(PHONE) // 仍是 owner A 配置的号码
++  })
++
++  it('createFamilyInvite 可携带 contactPhone：合法落库；非法拒绝且零写入', async () => {
++    const { familyService, db } = build({ familyAuth: [], familyMembers: [], profiles: [{ _id: 'p', _openid: 'A', name: '王阿姨' }] })
++    await familyService.createFamilyInvite('A', {
++      selectedRelation: 'daughter',
++      scopes: scopesWithRemind(RO, RO, RO, true),
++      contactPhone: PHONE
++    })
++    expect(db._stores.family_auth.rows[0].contactPhone).toBe(PHONE)
++
++    const before = JSON.stringify(db._stores.family_auth.rows)
++    await expect(familyService.createFamilyInvite('A', {
++      selectedRelation: 'daughter',
++      scopes: scopesWithRemind(RO, RO, RO, true),
++      contactPhone: '12345'
++    })).rejects.toThrow(/电话|格式/)
++    expect(JSON.stringify(db._stores.family_auth.rows)).toBe(before) // 零写入（含邀请码不变化）
++  })
++
++  it('不修改 sendDueReminders：无家属推送分支（契约固定）', () => {
++    // A6 约束：不新增订阅消息、不修改 sendDueReminders（独立云函数，维持只推 owner 本人）。
++    const fs = require('fs')
++    const path = require('path')
++    const target = path.join(__dirname, '../../cloudfunctions/sendDueReminders/index.js')
++    const src = fs.readFileSync(target, 'utf8')
++    expect(src).not.toMatch(/familyMembers|memberOpenId|familyGetReminderPhone/)
++    // healthApi 内如有引用 sendDueReminders 的文件，同样不得混入家属推送逻辑
++    const dir = path.join(__dirname, '../../cloudfunctions/healthApi')
++    fs.readdirSync(dir).filter(f => f.endsWith('.js')).forEach((f) => {
++      const s = fs.readFileSync(path.join(dir, f), 'utf8')
++      if (/sendDueReminders/.test(s)) {
++        expect(s).not.toMatch(/familyMembers|memberOpenId/)
++      }
++    })
++  })
++})
++
++// ─── 3. 客户端服务层 ───
++
++const storageMap = {}
++let cloudRouter = null
++const actionCalls = []
++global.wx = {
++  getStorageSync: (k) => (k in storageMap ? storageMap[k] : ''),
++  setStorageSync: (k, v) => { storageMap[k] = v },
++  removeStorageSync: (k) => { delete storageMap[k] },
++  showToast: jest.fn(),
++  showModal: jest.fn((opt) => opt && opt.success && opt.success({ confirm: true })),
++  makePhoneCall: jest.fn(),
++  setNavigationBarTitle: jest.fn(),
++  setClipboardData: jest.fn(),
++  showActionSheet: jest.fn(),
++  cloud: {
++    callFunction: jest.fn((opts) => {
++      const d = opts.data || {}
++      if (d.action) actionCalls.push({ action: d.action, payload: d.payload })
++      const result = cloudRouter ? cloudRouter(d) : (d.key ? { ok: true, echo: d.key } : { ok: 1 })
++      opts.success({ result })
++    })
++  }
++}
++global.getApp = () => ({ globalData: {} })
++
++function freshServices() {
++  jest.resetModules()
++  let core, family
++  jest.isolateModules(() => {
++    core = require('../../services/core')
++    family = require('../../services/family')
++  })
++  return { core, family }
++}
++
++describe('A6 · 客户端服务层', () => {
++  beforeEach(() => {
++    Object.keys(storageMap).forEach(k => delete storageMap[k])
++    actionCalls.length = 0
++    cloudRouter = null
++    jest.clearAllMocks()
++  })
++
++  it('setFamilyContactPhone 走 action（不入读缓存），成功后家族页失效置脏', async () => {
++    const { core, family } = freshServices()
++    expect(typeof family.setFamilyContactPhone).toBe('function')
++    await family.setFamilyContactPhone({ contactPhone: PHONE })
++    expect(actionCalls.some(c => c.action === 'setFamilyContactPhone' && c.payload.contactPhone === PHONE)).toBe(true)
++    expect(core.isDirty('homeFamily')).toBe(true)
++  })
++
++  it('familyGetReminderPhone 走 action 按需取号；完整号码不写入任何本地存储', async () => {
++    cloudRouter = (d) => (d.action === 'familyGetReminderPhone' ? { phone: PHONE, masked: MASKED } : { ok: 1 })
++    const { family } = freshServices()
++    expect(typeof family.familyGetReminderPhone).toBe('function')
++    const res = await family.familyGetReminderPhone()
++    expect(res.phone).toBe(PHONE)
++    expect(JSON.stringify(storageMap)).not.toContain(PHONE)
++    expect(actionCalls.some(c => c.action === 'familyGetReminderPhone')).toBe(true)
++  })
++})
++
++// ─── 4. 页面层 ───
++
++const mockApi = {
++  getHomeFamilyData: jest.fn(),
++  getFamilyAuthData: jest.fn(),
++  getFamilyInviteData: jest.fn(),
++  createFamilyInvite: jest.fn(),
++  updateFamilyAuth: jest.fn(),
++  revokeFamilyMember: jest.fn(),
++  setFamilyContactPhone: jest.fn(),
++  familyGetReminderPhone: jest.fn()
++}
++const mockFactory = {
++  autoPreCheck: jest.fn(),
++  bindAdaptiveResize: jest.fn(),
++  unbindAdaptiveResize: jest.fn(),
++  goRoute: jest.fn(),
++  clearPageLoadState: jest.fn(),
++  safeNavigateBack: jest.fn(),
++  safeNavigateTo: jest.fn(),
++  loadPageData: jest.fn()
++}
++jest.mock('../../utils/api', () => mockApi)
++jest.mock('../../utils/page-factory', () => mockFactory)
++jest.mock('../../services/snooze', () => ({ removeSnoozeReminderByLogId: jest.fn() }))
++jest.mock('../../utils/subscribe-prompt', () => ({ promptSubscribeAfterAction: jest.fn(() => Promise.resolve({ ok: false })) }))
++
++const pageConfigs = []
++global.Page = (cfg) => { pageConfigs.push(cfg); return cfg }
++require('../../pages/family-sub/home-family/index.js')   // pageConfigs[0]
++require('../../pages/family-sub/family-auth/index.js')   // pageConfigs[1]
++require('../../pages/family-sub/family-invite/index.js') // pageConfigs[2]
++
++function makePage(cfg) {
++  return Object.assign({}, cfg, {
++    data: JSON.parse(JSON.stringify(cfg.data)),
++    route: 'x',
++    setData(patch) { Object.assign(this.data, patch) }
++  })
++}
++
++describe('A6 · 页面电话提醒', () => {
++  beforeEach(() => {
++    jest.clearAllMocks()
++    Object.keys(storageMap).forEach(k => delete storageMap[k])
++    mockFactory.loadPageData.mockImplementation(async (page, loader) => {
++      const d = await loader()
++      Object.assign(page.data, d)
++      page.data._loaded = true
++      return d
++    })
++  })
++
++  it('home-family 点击电话提醒：按需取号→makePhoneCall；完整号不进 data/存储', async () => {
++    mockApi.getHomeFamilyData.mockResolvedValue({
++      member: { name: '王阿姨', scopeText: '血压记录' },
++      latestMetrics: [], medicineLogs: [],
++      phoneReminder: { remindAllowed: true, canCall: true, configured: true, masked: MASKED }
++    })
++    mockApi.familyGetReminderPhone.mockResolvedValue({ phone: PHONE, masked: MASKED })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    expect(page.data.phoneReminder.canCall).toBe(true)
++    await page.handleCallReminder()
++    expect(mockApi.familyGetReminderPhone).toHaveBeenCalled()
++    expect(global.wx.makePhoneCall).toHaveBeenCalledWith(expect.objectContaining({ phoneNumber: PHONE }))
++    expect(JSON.stringify(page.data)).not.toContain(PHONE)
++    expect(JSON.stringify(storageMap)).not.toContain(PHONE)
++  })
++
++  it('home-family 取号被拒（revoked）：不拨号、显式提示、记录 phoneError', async () => {
++    mockApi.getHomeFamilyData.mockResolvedValue({ member: {}, latestMetrics: [], medicineLogs: [], phoneReminder: { remindAllowed: true, canCall: true, configured: true, masked: MASKED } })
++    mockApi.familyGetReminderPhone.mockResolvedValue({ phoneDenied: { allowed: false, reason: 'revoked' } })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    await page.handleCallReminder()
++    expect(global.wx.makePhoneCall).not.toHaveBeenCalled()
++    expect(page.data.phoneError).toBe('revoked')
++    expect(global.wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ icon: 'none' }))
++  })
++
++  it('makePhoneCall 失败：明确提示未拨出，不假设成功', async () => {
++    mockApi.getHomeFamilyData.mockResolvedValue({ member: {}, latestMetrics: [], medicineLogs: [], phoneReminder: { remindAllowed: true, canCall: true, configured: true, masked: MASKED } })
++    mockApi.familyGetReminderPhone.mockResolvedValue({ phone: PHONE })
++    let callOpts = null
++    global.wx.makePhoneCall.mockImplementation((opts) => { callOpts = opts })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    global.wx.showToast.mockClear()
++    await page.handleCallReminder()
++    expect(callOpts).toBeTruthy()
++    callOpts.fail({ errMsg: 'makePhoneCall:fail cancel' })
++    const toasted = global.wx.showToast.mock.calls.map(c => c[0].title).join('|')
++    expect(toasted).toContain('拨号未接通')
++    expect(toasted).not.toContain('已拨出')
++  })
++
++  it('read=false+remind=true：home-family 数据无健康明细、无写入口、有电话入口', async () => {
++    mockApi.getHomeFamilyData.mockResolvedValue({
++      member: { name: '王阿姨', scopeText: '暂未授权' },
++      latestMetrics: [], medicineLogs: [], reportSummary: '暂未授权查看周报。',
++      readPermissions: { bloodPressure: false, bloodGlucose: false, medicine: false, report: false },
++      writePermissions: { bloodPressure: false, bloodGlucose: false, medicine: false, report: false },
++      phoneReminder: { remindAllowed: true, canCall: true, configured: true, masked: MASKED }
++    })
++    const page = makePage(pageConfigs[0])
++    await page.onLoad()
++    expect(page.data.readPermissions.bloodPressure).toBe(false)
++    expect(page.data.phoneReminder.canCall).toBe(true)
++    expect(page.data.latestMetrics).toEqual([])
++    expect(page.data.writePermissions.medicine).toBe(false)
++  })
++
++  it('family-auth：加载回显电话；保存合法号走接口；非法号客户端拦截不出网', async () => {
++    mockApi.getFamilyAuthData.mockResolvedValue({
++      eyebrow: '授权管理', memberId: 'M1',
++      member: { name: '女儿', relation: '女儿', role: '主要照护人', status: '已授权' },
++      scopes: scopesWithRemind(RO, RO, RO, true),
++      noticeRules: { missedMedicine: true, missingRecord: false, weeklyReport: false },
++      activities: [],
++      contactPhone: PHONE, contactPhoneMasked: MASKED
++    })
++    mockApi.setFamilyContactPhone.mockResolvedValue({ updated: true, contactPhoneMasked: '139****9999' })
++    const page = makePage(pageConfigs[1])
++    await page.onLoad({ id: 'M1' })
++    expect(page.data.contactPhone).toBe(PHONE)
++    expect(page.data.contactPhoneMasked).toBe(MASKED)
++
++    // 非法号：客户端拦截，不调接口
++    page.setData({ contactPhoneInput: '12345' })
++    await page.saveContactPhone()
++    expect(mockApi.setFamilyContactPhone).not.toHaveBeenCalled()
++    expect(page.data.contactPhoneError).toBeTruthy()
++
++    // 合法号：调接口保存
++    page.setData({ contactPhoneInput: '13900009999' })
++    await page.saveContactPhone()
++    expect(mockApi.setFamilyContactPhone).toHaveBeenCalledWith({ contactPhone: '13900009999' })
++
++    // 清空
++    await page.clearContactPhone()
++    expect(mockApi.setFamilyContactPhone).toHaveBeenLastCalledWith({ contactPhone: '' })
++  })
++
++  it('family-invite：未勾选电话授权时携带号码生成被拦截；勾选后号码随邀请提交', async () => {
++    mockApi.getFamilyInviteData.mockResolvedValue({
++      selectedRelation: 'daughter',
++      relations: [{ key: 'daughter', label: '女儿', meta: '主要照护人' }],
++      scopes: scopesWithRemind(RO, RO, RO, true),
++      invitePreview: { title: 't', meta: 'm', expire: '24 小时' }
++    })
++    mockApi.createFamilyInvite.mockResolvedValue({ inviteCode: 'KXJTEST00001', inviteId: 'KXJTEST00001', sharePath: '/p', invitePreview: {} })
++    const page = makePage(pageConfigs[2])
++    await page.onLoad()
++
++    page.setData({ contactPhoneInput: PHONE, phoneAgreed: false })
++    await page.generateInvite()
++    expect(mockApi.createFamilyInvite).not.toHaveBeenCalled()
++    expect(global.wx.showToast).toHaveBeenCalled()
++
++    global.wx.showToast.mockClear()
++    page.setData({ phoneAgreed: true })
++    await page.generateInvite()
++    expect(mockApi.createFamilyInvite).toHaveBeenCalledWith(expect.objectContaining({ contactPhone: PHONE }))
++  })
++})
+diff --git a/utils/api.js b/utils/api.js
+index 79313fe..3429303 100644
+--- a/utils/api.js
++++ b/utils/api.js
+@@ -361,6 +361,8 @@ module.exports = {
+   familyRecordBloodGlucose: family.familyRecordBloodGlucose,
+   familyConfirmMedication: family.familyConfirmMedication,
+   familyRevokeProxyConfirmation: family.familyRevokeProxyConfirmation,
++  setFamilyContactPhone: family.setFamilyContactPhone,
++  familyGetReminderPhone: family.familyGetReminderPhone,
+   exportUserData: dataRights.exportUserData,
+   deleteUserData: dataRights.deleteUserData,
+   clearUserAccount: dataRights.clearUserAccount,

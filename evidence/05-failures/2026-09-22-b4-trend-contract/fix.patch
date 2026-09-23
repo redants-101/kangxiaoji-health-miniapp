@@ -1,0 +1,33 @@
+diff --git a/tests/unit/page-data-consistency.test.js b/tests/unit/page-data-consistency.test.js
+index 7e6fd69..f0ce79a 100644
+--- a/tests/unit/page-data-consistency.test.js
++++ b/tests/unit/page-data-consistency.test.js
+@@ -31,11 +31,12 @@ describe('DEFAULT_PAGE_DATA 一致性验证（合并后）', () => {
+     expect(trend).toHaveProperty('chartSeries')
+   })
+ 
+-  it('trend.metricOptions 包含三个指标', () => {
++  it('trend.metricOptions 包含血压血糖复合指标和用药指标', () => {
+     const trend = DEFAULT_PAGE_DATA.trend
+-    expect(trend.metricOptions).toHaveLength(3)
+-    const keys = trend.metricOptions.map(o => o.key)
+-    expect(keys).toEqual(['bloodPressure', 'bloodGlucose', 'medication'])
++    expect(trend.metricOptions).toEqual([
++      { key: 'bpBg', label: '血压血糖' },
++      { key: 'medication', label: '用药' }
++    ])
+   })
+ 
+   it('trend.rangeOptions 包含三档时间', () => {
+@@ -45,9 +46,9 @@ describe('DEFAULT_PAGE_DATA 一致性验证（合并后）', () => {
+     expect(keys).toEqual(['7d', '30d', '90d'])
+   })
+ 
+-  it('trend 默认值为 7天+血压', () => {
++  it('trend 默认值为 7天+血压血糖', () => {
+     const trend = DEFAULT_PAGE_DATA.trend
+-    expect(trend.activeMetric).toBe('bloodPressure')
++    expect(trend.activeMetric).toBe('bpBg')
+     expect(trend.activeRange).toBe('7d')
+   })
+ 

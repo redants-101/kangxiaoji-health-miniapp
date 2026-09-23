@@ -1,0 +1,211 @@
+jest-haste-map: Haste module naming collision: sendDueReminders
+  The following files share their name; please adjust your hasteImpl:
+    * <rootDir>\cloudfunctions\sendDueReminders\package.json
+    * <rootDir>\.nightly\pre-a5\cloudfunctions\sendDueReminders\package.json
+
+jest-haste-map: Haste module naming collision: healthApi
+  The following files share their name; please adjust your hasteImpl:
+    * <rootDir>\cloudfunctions\healthApi\package.json
+    * <rootDir>\.nightly\pre-a5\cloudfunctions\healthApi\package.json
+
+FAIL tests/unit/a5-page-staleness.test.js
+  ● A5 · 旧请求晚返回不得覆盖新状态 › 同毫秒双加载：先发的旧请求（owner 数据）晚归，不得覆盖已到的拒绝态
+
+    expect(received).toBeUndefined()
+
+    Received: [{"id": "owner-r1"}]
+
+    [0m [90m 189 |[39m       releaseFirst()
+     [90m 190 |[39m       [36mawait[39m pOld
+    [31m[1m>[22m[39m[90m 191 |[39m       expect(page[33m.[39mdata[33m.[39mrecords)[33m.[39mtoBeUndefined()
+     [90m     |[39m                                 [31m[1m^[22m[39m
+     [90m 192 |[39m       expect(page[33m.[39mdata[33m.[39mfamilyView)[33m.[39mtoBeUndefined()
+     [90m 193 |[39m
+     [90m 194 |[39m       [90m// 新请求归：写入拒绝态[39m[0m
+
+      at Object.toBeUndefined (tests/unit/a5-page-staleness.test.js:191:33)
+
+FAIL tests/unit/a5-cache-revocation.test.js
+  ● Console
+
+    console.warn
+      [Cloud] homeFamily 失败，使用缓存 Error: busy
+          at buildCloudError (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\core.js:71:17)
+          at buildCloudError (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\core.js:243:59)
+          at processTicksAndRejections (node:internal/process/task_queues:104:5)
+          at Object.<anonymous> (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\tests\unit\a5-cache-revocation.test.js:260:7)
+
+    [0m [90m 247 |[39m     [33m.[39m[36mcatch[39m(err [33m=>[39m {
+     [90m 248 |[39m       [36mconst[39m stale [33m=[39m getCloudReadCache(cacheKey[33m,[39m [36mtrue[39m)
+    [31m[1m>[22m[39m[90m 249 |[39m       [36mif[39m (stale) { console[33m.[39mwarn([32m`[Cloud] ${key} 失败，使用缓存`[39m[33m,[39m err)[33m;[39m [36mreturn[39m stale }
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 250 |[39m       [36mthrow[39m err
+     [90m 251 |[39m     })
+     [90m 252 |[39m     [33m.[39m[36mfinally[39m(() [33m=>[39m [36mdelete[39m inFlightCloudReads[cacheKey])[0m
+
+      at warn (services/core.js:249:28)
+      at Object.<anonymous> (tests/unit/a5-cache-revocation.test.js:260:7)
+
+    console.warn
+      [Cloud] home 失败，使用缓存 Error: no permission
+          at buildCloudError (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\core.js:71:17)
+          at buildCloudError (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\core.js:243:59)
+          at processTicksAndRejections (node:internal/process/task_queues:104:5)
+          at Object.<anonymous> (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\tests\unit\a5-cache-revocation.test.js:281:7) {
+        code: 'DENIED'
+      }
+
+    [0m [90m 247 |[39m     [33m.[39m[36mcatch[39m(err [33m=>[39m {
+     [90m 248 |[39m       [36mconst[39m stale [33m=[39m getCloudReadCache(cacheKey[33m,[39m [36mtrue[39m)
+    [31m[1m>[22m[39m[90m 249 |[39m       [36mif[39m (stale) { console[33m.[39mwarn([32m`[Cloud] ${key} 失败，使用缓存`[39m[33m,[39m err)[33m;[39m [36mreturn[39m stale }
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 250 |[39m       [36mthrow[39m err
+     [90m 251 |[39m     })
+     [90m 252 |[39m     [33m.[39m[36mfinally[39m(() [33m=>[39m [36mdelete[39m inFlightCloudReads[cacheKey])[0m
+
+      at warn (services/core.js:249:28)
+      at Object.<anonymous> (tests/unit/a5-cache-revocation.test.js:281:7)
+
+  ● A5 · 云读缓存策略（services/core） › 家族敏感读键每次回源不缓存；owner 读键 TTL 内复用
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 1
+
+    [0m [90m 226 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'homeFamily'[39m)
+     [90m 227 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'homeFamily'[39m)
+    [31m[1m>[22m[39m[90m 228 |[39m     expect(env[33m.[39mcalls[33m.[39mkeys[33m.[39mhomeFamily)[33m.[39mtoBe([35m2[39m)
+     [90m     |[39m                                       [31m[1m^[22m[39m
+     [90m 229 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'family'[39m)
+     [90m 230 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'family'[39m)
+     [90m 231 |[39m     expect(env[33m.[39mcalls[33m.[39mkeys[33m.[39mfamily)[33m.[39mtoBe([35m2[39m)[0m
+
+      at Object.toBe (tests/unit/a5-cache-revocation.test.js:228:39)
+
+  ● A5 · 云读缓存策略（services/core） › familyView 载荷读取不落缓存；同键 owner 读取保持缓存
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 1
+
+    [0m [90m 239 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'recordList'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m 240 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'recordList'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+    [31m[1m>[22m[39m[90m 241 |[39m     expect(env[33m.[39mcalls[33m.[39mkeys[33m.[39mrecordList)[33m.[39mtoBe([35m2[39m)
+     [90m     |[39m                                       [31m[1m^[22m[39m
+     [90m 242 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'recordList'[39m)
+     [90m 243 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'recordList'[39m)
+     [90m 244 |[39m     expect(env[33m.[39mcalls[33m.[39mkeys[33m.[39mrecordList)[33m.[39mtoBe([35m3[39m)[0m
+
+      at Object.toBe (tests/unit/a5-cache-revocation.test.js:241:39)
+
+  ● A5 · 云读缓存策略（services/core） › TTL 过期+云端失败：家族读不旧缓存回填（抛错），owner 读网络性失败可回退
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"echo": "homeFamily", "ok": true}
+
+    [0m [90m 258 |[39m       nowSpy[33m.[39mmockImplementation(() [33m=>[39m t0 [33m+[39m [35m61000[39m)
+     [90m 259 |[39m       failMode [33m=[39m [36mtrue[39m
+    [31m[1m>[22m[39m[90m 260 |[39m       [36mawait[39m expect(env[33m.[39mcore[33m.[39mresolveMockData([32m'homeFamily'[39m))[33m.[39mrejects[33m.[39mtoThrow([32m'busy'[39m)
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 261 |[39m       [36mconst[39m stale [33m=[39m [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'home'[39m)
+     [90m 262 |[39m       expect(stale)[33m.[39mtoEqual({ ok[33m:[39m [36mtrue[39m[33m,[39m echo[33m:[39m [32m'home'[39m })
+     [90m 263 |[39m       expect(env[33m.[39mcalls[33m.[39mkeys[33m.[39mhome)[33m.[39mtoBe([35m2[39m) [90m// 过期后确实回源过（失败→回退）[39m[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.expect (tests/unit/a5-cache-revocation.test.js:260:13)
+
+  ● A5 · 云读缓存策略（services/core） › 服务端显式拒绝（errCode）对 owner 键也不回填旧缓存
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"echo": "home", "ok": true}
+
+    [0m [90m 279 |[39m       nowSpy[33m.[39mmockImplementation(() [33m=>[39m t0 [33m+[39m [35m61000[39m)
+     [90m 280 |[39m       failMode [33m=[39m [36mtrue[39m
+    [31m[1m>[22m[39m[90m 281 |[39m       [36mawait[39m expect(env[33m.[39mcore[33m.[39mresolveMockData([32m'home'[39m))[33m.[39mrejects[33m.[39mtoMatchObject({ code[33m:[39m [32m'DENIED'[39m })
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 282 |[39m     } [36mfinally[39m {
+     [90m 283 |[39m       nowSpy[33m.[39mmockRestore()
+     [90m 284 |[39m     }[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.expect (tests/unit/a5-cache-revocation.test.js:281:13)
+
+  ● A5 · 家族缓存精准失效（services/family） › invalidateFamilyCaches：清七个家族页面键并置脏；不波及 home/me
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "function"
+    Received: "undefined"
+
+    [0m [90m 299 |[39m     [36mconst[39m ownerCached [33m=[39m [[32m'recordList'[39m[33m,[39m [32m'recordDetail'[39m[33m,[39m [32m'trend'[39m[33m,[39m [32m'medList'[39m[33m,[39m [32m'medHistory'[39m]
+     [90m 300 |[39m     [36mfor[39m ([36mconst[39m k [36mof[39m [[33m...[39mownerCached[33m,[39m [32m'home'[39m[33m,[39m [32m'me'[39m]) [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData(k)
+    [31m[1m>[22m[39m[90m 301 |[39m     expect([36mtypeof[39m env[33m.[39mfamily[33m.[39minvalidateFamilyCaches)[33m.[39mtoBe([32m'function'[39m)
+     [90m     |[39m                                                      [31m[1m^[22m[39m
+     [90m 302 |[39m     env[33m.[39mfamily[33m.[39minvalidateFamilyCaches()
+     [90m 303 |[39m     [36mfor[39m ([36mconst[39m k [36mof[39m [[33m...[39mownerCached[33m,[39m [32m'homeFamily'[39m[33m,[39m [32m'family'[39m]) [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData(k)
+     [90m 304 |[39m     [36mfor[39m ([36mconst[39m k [36mof[39m ownerCached) expect(env[33m.[39mcalls[33m.[39mkeys[k])[33m.[39mtoBe([35m2[39m)[0m
+
+      at Object.toBe (tests/unit/a5-cache-revocation.test.js:301:54)
+
+  ● A5 · 家族缓存精准失效（services/family） › 撤销成功后：镜像精确移除 M1 保留 M2；家族页缓存失效并置脏
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    [0m [90m 324 |[39m     expect(mirror[33m.[39mcurrentMemberId)[33m.[39mtoBe([32m'M2'[39m)
+     [90m 325 |[39m     expect(env[33m.[39mcore[33m.[39misDirty([32m'homeFamily'[39m))[33m.[39mtoBe([36mtrue[39m)
+    [31m[1m>[22m[39m[90m 326 |[39m     expect(env[33m.[39mcore[33m.[39misDirty([32m'trend'[39m))[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                       [31m[1m^[22m[39m
+     [90m 327 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'recordList'[39m)
+     [90m 328 |[39m     expect(env[33m.[39mcalls[33m.[39mkeys[33m.[39mrecordList)[33m.[39mtoBe([35m2[39m)
+     [90m 329 |[39m   })[0m
+
+      at Object.toBe (tests/unit/a5-cache-revocation.test.js:326:39)
+
+  ● A5 · 家族缓存精准失效（services/family） › 改权成功后：家族页缓存失效并置脏
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    [0m [90m 342 |[39m       noticeRules[33m:[39m { missedMedicine[33m:[39m [36mtrue[39m[33m,[39m missingRecord[33m:[39m [36mfalse[39m[33m,[39m weeklyReport[33m:[39m [36mfalse[39m }
+     [90m 343 |[39m     })
+    [31m[1m>[22m[39m[90m 344 |[39m     expect(env[33m.[39mcore[33m.[39misDirty([32m'medList'[39m))[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                         [31m[1m^[22m[39m
+     [90m 345 |[39m     expect(env[33m.[39mcore[33m.[39misDirty([32m'homeFamily'[39m))[33m.[39mtoBe([36mtrue[39m)
+     [90m 346 |[39m     [36mawait[39m env[33m.[39mcore[33m.[39mresolveMockData([32m'medList'[39m)
+     [90m 347 |[39m     expect(env[33m.[39mcalls[33m.[39mkeys[33m.[39mmedList)[33m.[39mtoBe([35m2[39m)[0m
+
+      at Object.toBe (tests/unit/a5-cache-revocation.test.js:344:41)
+
+  ● A5 · 家族缓存精准失效（services/family） › 家属代录成功后：七个家族页全部置脏（onShow 重载拉取 owner 新数据）
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    [0m [90m 353 |[39m       [33m:[39m (d[33m.[39mkey [33m?[39m { ok[33m:[39m [36mtrue[39m[33m,[39m echo[33m:[39m d[33m.[39mkey } [33m:[39m { ok[33m:[39m [35m1[39m })))
+     [90m 354 |[39m     [36mawait[39m env[33m.[39mfamily[33m.[39mfamilyRecordBloodPressure({ systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m[33m,[39m measuredAt[33m:[39m [32m'08:00'[39m })
+    [31m[1m>[22m[39m[90m 355 |[39m     [36mfor[39m ([36mconst[39m p [36mof[39m [33mFAMILY_PAGE_KEYS[39m) expect(env[33m.[39mcore[33m.[39misDirty(p))[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                                                   [31m[1m^[22m[39m
+     [90m 356 |[39m   })
+     [90m 357 |[39m
+     [90m 358 |[39m   it([32m'加入成功后：B 端镜像置 active 且家族页缓存失效置脏'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toBe (tests/unit/a5-cache-revocation.test.js:355:67)
+
+Test Suites: 2 failed, 2 total
+Tests:       9 failed, 13 passed, 22 total
+Snapshots:   0 total
+Time:        1.533 s
+Ran all test suites matching /tests\\unit\\a5-cache-revocation.test.js|tests\\unit\\a5-page-staleness.test.js/i.

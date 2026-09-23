@@ -1,0 +1,1094 @@
+2026-09-23 15:50 +0800
+Test Suites: 6 passed, 6 total
+Tests:       93 passed, 93 total
+Snapshots:   0 total
+Time:        11.16 s
+Ran all test suites matching /tests\\unit\\a3-family-readonly.test.js|tests\\unit\\a4-family-write.test.js|tests\\unit\\a5-cache-revocation.test.js|tests\\unit\\a5-page-staleness.test.js|tests\\unit\\a6-phone-reminder.test.js|tests\\unit\\a7-tab-release.test.js/i.
+target-exit=0
+
+> test
+> jest --verbose --runInBand
+
+  console.warn
+    [Cloud] home 失败，使用缓存 Error: busy
+        at buildCloudError (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\core.js:71:17)
+        at buildCloudError (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\core.js:266:59)
+        at Object.<anonymous> (D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\tests\unit\a5-cache-revocation.test.js:264:21)
+
+    [0m [90m 275 |[39m       [36mif[39m (familySensitive [33m||[39m (err [33m&&[39m err[33m.[39mcode)) [36mthrow[39m err
+     [90m 276 |[39m       [36mconst[39m stale [33m=[39m getCloudReadCache(cacheKey[33m,[39m [36mtrue[39m)
+    [31m[1m>[22m[39m[90m 277 |[39m       [36mif[39m (stale) { console[33m.[39mwarn([32m`[Cloud] ${key} 失败，使用缓存`[39m[33m,[39m err)[33m;[39m [36mreturn[39m stale }
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 278 |[39m       [36mthrow[39m err
+     [90m 279 |[39m     })
+     [90m 280 |[39m     [33m.[39m[36mfinally[39m(() [33m=>[39m [36mdelete[39m inFlightCloudReads[cacheKey])[0m
+
+      at warn (services/core.js:277:28)
+      at Object.<anonymous> (tests/unit/a5-cache-revocation.test.js:264:21)
+
+PASS tests/unit/a5-cache-revocation.test.js
+  A5 · 云读缓存策略（services/core）
+    √ 家族敏感读键每次回源不缓存；owner 读键 TTL 内复用 (39 ms)
+    √ familyView 载荷读取不落缓存；同键 owner 读取保持缓存 (5 ms)
+    √ TTL 过期+云端失败：家族读不旧缓存回填（抛错），owner 读网络性失败可回退 (70 ms)
+    √ 服务端显式拒绝（errCode）对 owner 键也不回填旧缓存 (3 ms)
+    √ action 成功后全局清读缓存（现状 fail-safe 保留） (6 ms)
+  A5 · 家族缓存精准失效（services/family）
+    √ invalidateFamilyCaches：清七个家族页面键并置脏；不波及 home/me (4 ms)
+    √ 撤销成功后：镜像精确移除 M1 保留 M2；家族页缓存失效并置脏 (4 ms)
+    √ 改权成功后：家族页缓存失效并置脏 (2 ms)
+    √ 家属代录成功后：七个家族页全部置脏（onShow 重载拉取 owner 新数据） (3 ms)
+    √ 加入成功后：B 端镜像置 active 且家族页缓存失效置脏 (4 ms)
+    √ 镜像只收窄不放行：active 镜像不能回填服务端未授权数据；revoked 镜像清空数据 (4 ms)
+    √ 家属注销：只清本人本地存储与读缓存（服务端连带由 A1 测试覆盖） (4 ms)
+  A5 · 服务端撤销实时生效（family-service，存储替身）
+    √ 撤销 M1 后：M1 家族读全拒绝，M2 不受影响，owner 自读不受影响 (3 ms)
+    √ 改权（关闭 bloodPressure read）后：下一次读取立即按新 scopes 过滤，无需任何缓存操作 (1 ms)
+
+PASS tests/unit/a6-phone-reminder.test.js
+  A6 · family-policy 电话规则
+    √ normalizeContactPhone：合法通过、空串清空、非法拒绝且错误信息不回显号码 (2 ms)
+    √ maskContactPhone：138****1234；非法输入返回空串 (1 ms)
+    √ canCallReminderPhone：任一 scope.remind=true 即可；全 false 不可
+  A6 · 服务端电话提醒
+    √ owner 设置电话：落 family_auth；owner 授权页回读完整号+脱敏号；家庭页不因纯电话文档造预览卡 (4 ms)
+    √ 非法号码：拒绝且零写入；错误信息不含完整输入 (38 ms)
+    √ 清空电话后：家属端为未配置状态，取号接口 notConfigured (1 ms)
+    √ remind=true 家属：homeFamily 只回脱敏号；完整号不出现在任何响应字段 (1 ms)
+    √ remind=false 家属：无电话入口，接口不回传号码（脱敏也不给） (1 ms)
+    √ read=false、remind=true：只允许电话提醒——无健康数据、无提醒明细、二级页拒绝 (1 ms)
+    √ 拨号按需取号：active+remind 返回完整号；撤销后立即不再返回 (1 ms)
+    √ 无绑定成员取号：noBinding 拒绝
+    √ member 设置电话只写自己的配置，不能污染所拨号码（owner 文档权威） (1 ms)
+    √ createFamilyInvite 可携带 contactPhone：合法落库；非法拒绝且零写入 (2 ms)
+    √ 不修改 sendDueReminders：无家属推送分支（契约固定） (3 ms)
+  A6 · 客户端服务层
+    √ setFamilyContactPhone 走 action（不入读缓存），成功后家族页失效置脏 (3 ms)
+    √ familyGetReminderPhone 走 action 按需取号；完整号码不写入任何本地存储 (4 ms)
+  A6 · 页面电话提醒
+    √ home-family 点击电话提醒：按需取号→makePhoneCall；完整号不进 data/存储 (3 ms)
+    √ home-family 取号被拒（revoked）：不拨号、显式提示、记录 phoneError (10 ms)
+    √ makePhoneCall 失败：明确提示未拨出，不假设成功
+    √ read=false+remind=true：home-family 数据无健康明细、无写入口、有电话入口
+    √ family-auth：加载回显电话；保存合法号走接口；非法号客户端拦截不出网 (1 ms)
+    √ family-invite：未勾选电话授权时携带号码生成被拦截；勾选后号码随邀请提交 (1 ms)
+
+PASS tests/unit/a7-tab-release.test.js
+  A7 · 运行时开关（utils/feature-flags）
+    √ 端侧默认值：正式发布=关；体验版/开发版=开（明确区分） (1 ms)
+    √ 远程配置布尔值覆盖端侧默认；非布尔忽略
+    √ envVersion 获取异常按 release 处理（保守关闭）
+  A7 · 家庭页开关行为
+    √ 开关打开（体验版默认）：显示真实家庭页并加载成员数据 (12 ms)
+    √ 开关关闭（正式版默认）：占位态、不加载家庭数据、isLoading 复位 (15 ms)
+    √ 远程配置覆盖：正式版远程开 → 打开并加载；体验版远程关 → 回到占位 (46 ms)
+    √ 远程配置获取失败：回退端侧默认，不阻塞页面 (31 ms)
+    √ 加载失败展示错误并可重载 (1 ms)
+    √ 空成员 / pending / active / revoked 状态数据渲染
+    √ 邀请/管理/撤销入口行为（含 A1 预览卡守卫） (30 ms)
+    √ owner 与 member 页面不混淆：家庭页不置 familyView 全局标记、不调家属接口 (16 ms)
+  A7 · 死页删除与路由一致性
+    √ pages/family-sub/index 四文件已删除，app.json 不再注册 (2 ms)
+    √ 全仓无 pages/family-sub/index 入口引用；routes 键完整 (6 ms)
+    √ 回滚开关只作用于家庭 Tab：其他页面不引用 feature-flags (8 ms)
+
+PASS tests/unit/a4-family-write.test.js
+  A4 · 身份与关系
+    √ B 为 A 的 active 家属且 bp read+write：代录成功并带审计字段 (2 ms)
+    √ 无关系 / revoked / 跨 owner 伪造：拒绝且零写入 (1 ms)
+    √ payload 伪造审计字段被忽略 (1 ms)
+    √ owner 自己不走家属代录路由（行为不变由 owner 路由承担）
+    √ owner 查询能看到代录记录（按 ownerOpenId 归属） (1 ms)
+    √ revoked 后新写入立即拒绝
+  A4 · 权限矩阵
+    √ bp read+write 允许；read-only / write-only / remind-only 拒绝 (1 ms)
+    √ bg read+write 允许血糖代录
+    √ medicine read+write 允许已服/跳过代确认 (1 ms)
+    √ read-only / write-only medicine 拒绝代确认 (1 ms)
+    √ report write、计划管理、记录删除：无家属写路由
+  A4 · 代确认撤销
+    √ B 可撤销自己本次代确认 (1 ms)
+    √ B 不能撤销 owner 创建的确认
+    √ B 不能撤销其他 member 的确认
+    √ 重复撤销：第二次明确拒绝且不异常 (1 ms)
+  A4 · homeFamily 写权限下发
+    √ homeFamily 响应携带 writePermissions（read+write 才为 true）
+  A4 · 页面家属态写入口
+    √ med-list 家属态：medicine write 时显示代确认入口；计划增删改入口仍隐藏 (1 ms)
+    √ med-list 家属态 medicine 只读：代确认入口不开放
+    √ record-bp 家属态：提交走家属代录路由；云端拒绝不本地假成功 (1 ms)
+    √ record-bg 家属态：提交走家属代录路由；云端拒绝不本地假成功 (1 ms)
+
+PASS tests/unit/subscribe.test.js
+  utils/subscribe
+    SUBSCRIBE_TEMPLATES
+      √ 包含三类提醒模板 (1 ms)
+    isPlaceholderTemplateId
+      √ 占位符返回 true (1 ms)
+      √ 真实 ID 返回 false
+      √ 空值或非字符串返回 true
+    isTemplateConfigured
+      √ 已配置的模板返回 true
+    isAllTemplatesConfigured
+      √ 所有模板都已配置时返回 true (1 ms)
+    getStoredSubscriptionStatus
+      √ 无记录时返回空对象
+      √ 有记录时返回存储数据 (1 ms)
+    saveSubscriptionStatusLocal
+      √ 保存授权状态并添加 updatedAt
+    updateSubscriptionRecord
+      √ 更新指定模板的授权状态
+      √ 无效模板 key 不更新 (1 ms)
+      √ 多次更新保留所有模板状态
+    isSubscribed
+      √ 未授权时返回 false
+      √ 已授权时返回 true (1 ms)
+      √ 被拒绝时返回 false
+    isAllSubscribed
+      √ 全部未授权时返回 false
+      √ 部分授权时返回 false
+      √ 全部授权时返回 true (1 ms)
+    buildSubscriptionDisplay
+      √ 无授权时返回未开启状态
+      √ 全部授权时返回已全部开启
+      √ 部分授权时返回部分开启
+      √ 有拒绝记录时返回未全部开启 (1 ms)
+    requestSubscription
+      √ 无效模板 key 时返回 no-valid-template
+      √ 空模板数组时返回 no-valid-template
+      √ 所有模板都已配置时不再返回 template-not-configured
+      √ DEV_MODE 为布尔值 (1 ms)
+    订阅次数管理
+      √ getSubscriptionQuota 无记录时返回空对象
+      √ addSubscriptionQuota 增加指定模板次数
+      √ addSubscriptionQuota 无效模板不增加
+      √ addSubscriptionQuotaBatch 批量增加 accept 的模板次数 (1 ms)
+      √ consumeSubscriptionQuota 消耗次数成功
+      √ consumeSubscriptionQuota 次数不足时返回 false
+      √ consumeSubscriptionQuota 无效模板返回 false
+      √ getRemainingQuota 返回剩余次数
+      √ getRemainingQuota 无记录时返回 0 (1 ms)
+
+PASS tests/unit/snooze.test.js
+  services/snooze
+    DEFAULT_SNOOZE_MINUTES
+      √ 默认延时为 15 分钟 (1 ms)
+    getStoredSnoozeReminders
+      √ 无记录时返回空数组
+    createSnoozeReminder
+      √ 创建 snooze 任务并写入存储 (1 ms)
+      √ 使用自定义延时分钟数 (1 ms)
+      √ 同 logId 只保留最新一条
+      √ 不同 logId 保留多条
+      √ dueAt 为未来时间 (1 ms)
+    getPendingSnoozeReminders
+      √ 未到期任务返回
+      √ 已到期任务不返回
+    getDueSnoozeReminders
+      √ 未到期任务不返回
+      √ 已到期任务返回 (1 ms)
+      √ 按到期时间升序排列
+    removeSnoozeReminder
+      √ 按 ID 移除任务
+      √ 不存在的 ID 返回 null (1 ms)
+    removeSnoozeReminderByLogId
+      √ 按 logId 移除任务
+      √ 空 logId 返回 null
+      √ 不存在的 logId 返回 null
+    rescheduleSnoozeReminder
+      √ 重新调度任务并更新 dueAt (1 ms)
+      √ 使用默认延时 15 分钟
+      √ 不存在的 ID 返回 null
+    cleanupExpiredSnoozeReminders
+      √ 清理超过 24 小时的过期任务
+      √ 无过期任务时返回 0 (1 ms)
+      √ 空列表时返回 0
+
+PASS tests/unit/a3-family-readonly.test.js
+  A3 · 家属视图闸口：read 决定数据可见性
+    √ recordList：read=true 的块返回 owner 数据，read=false 的块被服务端剔除 (2 ms)
+    √ recordList：请求 read=false 的块（参数切换）被拒绝 (1 ms)
+    √ trend：bpBg 需血压+血糖双 read；缺其一拒绝
+    √ trend：medication 指标按 medicine.read 放行
+    √ trend：medicine read=false 的成员请求 medication 被拒绝
+    √ medList/medHistory：medicine read=true 返回 owner 数据；read=false 拒绝 (1 ms)
+  A3 · 身份与数据主体：参数不能切换 owner
+    √ payload 携带 ownerOpenId 被忽略，数据主体仍为绑定 owner (1 ms)
+    √ 无绑定成员：denied noBinding；已撤销成员：denied revoked
+    √ owner 本人带 familyView：按 self 处理，行为与原路由一致
+    √ 空数据不等于权限验证：owner 无记录时 allowed=true 且列表为空，与 denied 形态可区分
+  A3 · record-service allowedTypes 服务端过滤
+    √ allowedTypes 限制查询类型，filter 参数不能越权 (1 ms)
+  A3 · 页面只读守卫
+    √ med-list familyView：editPlan/goMedEdit/确认/撤销 均被守卫拦截 (2 ms)
+    √ med-list 非 familyView：编辑入口正常可用
+    √ record-detail familyView：删除入口被守卫拦截 (1 ms)
+  A3 · trend tabBar 切换重判家属上下文
+    √ onShow 检测到全局家属标记后以 familyView 重载 (1 ms)
+
+PASS tests/unit/a5-page-staleness.test.js
+  A5 · 撤销后重开所有家属页面（服务端拒绝即渲染，本地 active 镜像不回填）
+    √ record-list 家属态：revoked 拒绝渲染 familyDenied，records 为空 (1 ms)
+    √ record-detail 家属态：read 关闭后 scopeDenied，不泄露 owner 记录字段
+    √ med-list 家属态：revoked 拒绝渲染，代确认入口关闭 (1 ms)
+    √ med-history 家属态：revoked 拒绝渲染 familyDenied (15 ms)
+    √ home-family：服务端未授权空数据渲染，镜像 active 不回填、不下发写入口
+    √ trend 家属态（全局标记进入）：revoked 拒绝渲染 familyDenied
+    √ owner 模式（无 familyView）正常渲染本人数据，不受家族态失效影响 (1 ms)
+  A5 · 旧请求晚返回不得覆盖新状态
+    √ 同毫秒双加载：先发的旧请求（owner 数据）晚归，不得覆盖已到的拒绝态
+
+PASS tests/unit/a2-followup.test.js
+  A2 收尾 · 无邀请码说明态
+    √ 缺码：noInvite 说明态——无有效期、无可查看范围、无有效标志、不计数 (1 ms)
+    √ 空串与纯空白串同缺码处理，不计数
+    √ 非字符串输入（数字）按 INVALID 计数，不冒充缺码 (1 ms)
+    √ 非字符串输入（对象）按 INVALID 计数，不冒充缺码
+    √ 非字符串输入（布尔）按 INVALID 计数，不冒充缺码
+    √ 非字符串输入（数组）按 INVALID 计数，不冒充缺码
+    √ 本地镜像：无邀请码加入不假成功 (29 ms)
+  A2 收尾 · 有效期边界
+    √ expiresAt 不可解析：查询与加入均按 INVALID 拒绝，不产生 NaN 剩余时间 (2 ms)
+    √ 刚好到期（expiresAt == now）：按已过期拒绝 (2 ms)
+    √ 未来有效期：正常预览，remainHours 为有限正数 (1 ms)
+  A2 收尾 · 重邀/加入交错（事务分支控制流）
+    √ 事务路径 happy path：锚点文档创建、邀请转 active (2 ms)
+    √ 交错：外层读到旧码 A，事务开始前 owner 重邀换码 B——旧码请求被拒，新邀请不被消耗 (1 ms)
+    √ 事务内锚点读取发生基础设施异常：原样上抛，零写入（不吞异常继续写） (14 ms)
+  A2 收尾 · 原子频控（预留-核销-退还）
+    √ 失败累计到计数文档：第 20 次失败后额度用尽，第 21 次拒绝且不再探测
+    √ 计数文档为每 (openId, 北京日) 单文档，含 day 键，不含邀请码明文
+    √ 成功查询退还额度：失败 19 次后一次成功，计数回到 19 (1 ms)
+    √ 自绑/已绑定他人属业务拒绝但非枚举失败：退还额度 (1 ms)
+    √ join 与查询共用额度：查询失败 20 次后 join 直接被拒
+    √ 自然日切换：昨日计数满额不影响今日（key 内嵌北京日）
+    √ 并发建计数文档冲突（add 撞 _id）：重试条件更新后正常计 1 (1 ms)
+    √ add 发生非重复键的基础设施异常：原样上抛，不得伪装成频控拒绝 (1 ms)
+  A2 收尾 · 重邀必须发新码
+    √ 候选码与 owner 自己当前码相同：不复用，重新生成 (1 ms)
+    √ 连续 3 次候选码均被占用（含自己旧码）：抛冲突且零写入 (1 ms)
+
+PASS tests/unit/a1-member-isolation.test.js
+  A1 · 一位老人关联多位家属
+    √ O1 先后绑定 M1、M2：两行 active 关系互不影响 (3 ms)
+  A1 · 重新邀请：清空绑定但不动已有成员
+    √ 重邀后 family_auth memberOpenId 清空、status=pending，M1 关系行原样保留 (1 ms)
+  A1 · 精准改权
+    √ 修改 M1 后：M2 权限与无关待加入邀请保持不变 (1 ms)
+    √ memberId 缺失：拒绝且 family_auth 与 family_members 零写入 (28 ms)
+    √ memberId 伪造：拒绝且 family_auth 与 family_members 零写入 (2 ms)
+    √ memberId 空字符串：拒绝且 family_auth 与 family_members 零写入 (2 ms)
+    √ 其他 owner 的 memberId：拒绝且零写入 (2 ms)
+    √ getFamilyAuthData 预览分支不得回填 family_auth id 充当 memberId
+    √ getFamilyData 预览卡不得携带 family_auth id 作为成员 id (1 ms)
+  A1 · 精准撤销
+    √ 撤销 M1 后：M1 新请求被拒（空数据），M2 新请求仍允许 (1 ms)
+    √ 重复撤销：幂等返回且零写入，不触碰无关邀请与其他成员 (1 ms)
+    √ 撤销要求 memberId：缺失时拒绝且不清 family_auth (2 ms)
+    √ 撤销只重置确实绑定该成员的 family_auth，不动他人绑定
+  A1 · 加入家庭：1:1、幂等与自绑
+    √ 已绑定 O1 的成员加入 O2 被拒，零新行、O2 邀请保持 pending (1 ms)
+    √ 同 owner 重复加入：幂等，不增行、不重置已调整权限 (1 ms)
+    √ 拒绝本人自绑定 (1 ms)
+    √ 同一邀请码顺序竞争：先到者绑定，后到者被拒（并发原子性属云端待验证）
+    √ 被撤销的成员可重新加入（新邀请），锚点复活为新关系 (1 ms)
+  A1 · 注销关联清理
+    √ 家属 M1 注销：只删本人关系行，M2 与 O1 数据不受影响 (1 ms)
+    √ 注销者是当前绑定成员时，才重置对应 family_auth；绑定他人则不动 (1 ms)
+  A1 · 客户端镜像：memberId 精确更新，无假成功
+    √ 无 memberId 的改权结果：不镜像、不造卡，返回远端结果 (1 ms)
+    √ 带 memberId 的改权：只更新对应成员卡
+    √ 撤销镜像：只移除目标成员
+
+PASS tests/unit/a2-explicit-invite.test.js
+  打开与刷新：只读不生成
+    √ onLoad 读取数据且零生成请求 (2 ms)
+    √ reloadPage 零生成请求 (1 ms)
+  编辑配置：只更新草稿不写云端
+    √ selectRelation / toggleScope / selectAllScopes 均零生成请求
+  显式生成：点击才提交
+    √ 点击生成一次：提交草稿并落状态 (1 ms)
+    √ 请求在途时重复点击：仅提交一次
+    √ 已有码时重新生成需确认（说明旧码失效） (1 ms)
+  失败态：旧码不得冒充新配置生效
+    √ 生成失败：submitting 复位、错误提示、无码时不展示生效态
+    √ 已有旧码时生成失败：旧码保留但标记脏草稿，禁止复制分享 (1 ms)
+  脏草稿：禁止“新文案+旧码”组合
+    √ 编辑后复制被拦截并提示重新生成
+    √ 编辑后分享回退为无码路径（不携带旧码） (1 ms)
+    √ 未生成时分享回退为无码路径
+  重新生成成功后：文案、权限与分享链接一致
+    √ 改草稿后重新生成：preview/sharePath/code 均对应新配置 (1 ms)
+
+PASS tests/unit/a0-contract-integration.test.js
+  A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权）
+    √ scopes 缺失：服务入口拒绝，不写数据库 (29 ms)
+    √ scopes null：服务入口拒绝，不写数据库
+    √ scopes 字符串：服务入口拒绝，不写数据库
+    √ scopes 对象：服务入口拒绝，不写数据库
+    √ scopes=[]：邀请可生成但落库四块 read/write/remind 全部 false，不恢复授权 (1 ms)
+    √ 部分 scopes：仅提交的块按值归一化，未提交块全部 false（不补开） (1 ms)
+    √ 显式合法的完整授权：按提交值正确保存（write 仅 BP/BG/medicine）
+    √ 未知关系在入口被拒绝，不写入
+    √ report write=true、非布尔、未知/重复 scope 在创建入口被拒绝 (1 ms)
+    √ 8 种关系可往返，提交的关系名称写入邀请成员 (1 ms)
+  A0-2 集成 · 加入家庭
+    √ 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active (1 ms)
+  A0-2 集成 · 家属首页按 read 输出受控明细
+    √ 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏） (1 ms)
+    √ 全块 read：血压血糖均输出，用药与周报可见 (1 ms)
+    √ 血糖块开、血压块关：只输出血糖
+  A0-2 集成 · 授权保存/回显
+    √ updateFamilyAuth：新 scopes 同步到 family_members，绑定的 family_auth 同步 (1 ms)
+    √ updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key（A1 后须带有效 memberId） (1 ms)
+    √ getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules (1 ms)
+  A0-2 集成 · owner 本人功能不被误伤
+    √ getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成
+
+PASS tests/unit/shared-policy.test.js
+  payload-helpers · 北京时间日期函数（跨日边界，固定系统时间）
+    √ UTC 16:30（北京次日 00:30）取北京日期，发生跨日 (3 ms)
+    √ UTC 15:59:59（北京当天 23:59:59）仍为北京当天 (1 ms)
+    √ UTC 16:00:00 整（北京次日 00:00）取次日 (1 ms)
+    √ 年初边界：UTC 上一年 12-31T16:00 取北京 1-1，月份补零
+    √ 偏移常量为 8 小时毫秒数
+  payload-helpers · 纯断言与格式化
+    √ buildLogId 去掉时间中的冒号 (1 ms)
+    √ getRecordStatus：warn 返回建议复测，其余返回正常
+    √ assertPayloadObject：接受普通对象，拒绝空值/数组/原始值 (24 ms)
+    √ getLimitedString：trim 空白；超长抛错；必填为空抛错；非字符串返回空串 (2 ms)
+    √ getRequiredNumber：数值转换与范围边界；非法/越界抛错 (2 ms)
+    √ getOptionalNumber：空值返回 null，有值走范围校验 (1 ms)
+    √ isValidTime：HH:mm 合法边界；24:00/格式错非法 (1 ms)
+    √ getEnumValue：白名单内通过，之外抛错
+  payload-validation · 用药计划与确认校验（B3 既有，行为未变）
+    √ 用药计划：合法入参归一化（times 去重、subscribe 布尔、startDate 默认今天）
+    √ 用药计划：名称必填；times 至少一个且不超过 8 个；时间格式校验 (6 ms)
+    √ 用药计划：endDate 格式校验，合法 endDate 保留 (1 ms)
+    √ 用药确认：合法 taken，缺省状态文案为已服
+    √ 用药确认：skipped/snoozed 默认文案；自定义文案保留
+    √ 用药确认：非法 status 抛错；logId/time/name 必填 (3 ms)
+  family-policy · 关系目录与默认成员（新契约）
+    √ 默认成员五字段
+    √ 关系目录恰好 8 项，键序固定 (1 ms)
+    √ getFamilyRelationV2 命中返回；未知返回 null
+    √ 邀请默认 scopes：四块 read/remind 开、write 关 (1 ms)
+    √ 邀请默认 noticeRules：漏服开、连续未记录关、周报开 (1 ms)
+  family-policy · 三级权限归一化与动作判断（新契约）
+    √ normalizeFamilyScopesV2：缺字段默认 false；旧 enabled 忽略
+    √ 非布尔、未知/重复 key、report.write 被拒绝 (10 ms)
+    √ normalizeNoticeRulesV2：缺失 false；数组（旧页面形态）拒绝 (1 ms)
+    √ canViewScope / canShowPhoneReminder：read 看数据、remind 出按钮
+    √ getScopeTextV2：按 read 标题连接
+    √ normalizeFamilyInvitePayloadV2：缺失 scopes 拒绝；空数组四块全关；未知关系拒绝 (2 ms)
+    √ normalizeFamilyAuthPayloadV2：缺省全最小授权；noticeRules 对象 (1 ms)
+    √ validateInviteCodePayload：对象+必填 (9 ms)
+  db 工厂 · 归属校验（本人/非本人/不存在/空ID）
+    √ 文档属于本人：返回文档
+    √ 文档属于他人：查不到，抛无权操作 (1 ms)
+    √ 文档不存在：抛同样错误；空 ID 先拦截
+  db 工厂 · 名称查询与访问上下文（新契约）
+    √ createProfileDisplayName：命中返回 name；无档案回落家人
+    √ 有效成员关系：member 模式 (1 ms)
+    √ ownerPreview：无关系但有本人有效 family_auth，scopes 与 noticeRules 归一化 (1 ms)
+    √ 无关系无授权、或授权已撤销：null
+
+PASS tests/unit/a0-permission-policy.test.js
+  A0 · 八种家属关系
+    √ 恰好 8 项，键名与顺序固定 (1 ms)
+    √ 名称与用途按确认文案字面匹配 (1 ms)
+    √ getFamilyRelationV2：命中返回；未知 key 返回 null（不静默回退）
+  A0 · normalizeFamilyScopesV2 · 合法输入
+    √ 完整授权归一化为规范四 scope（固定顺序、固定标题与用途）
+    √ 每项只给 key：read/write/remind 全部缺失默认 false
+    √ 显式 false 被保留为 false
+  A0 · normalizeFamilyScopesV2 · 拒绝非法输入
+    √ 非数组（undefined/null/对象）抛错 (16 ms)
+    √ 未知 scope key 抛错，不落库 (1 ms)
+    √ 非对象元素、缺 key 元素抛错
+    √ 重复 scope key 抛错 (1 ms)
+    √ read 为非布尔值 "false" 抛错，不做强制转换
+    √ write 为非布尔值 "true" 抛错，不做强制转换
+    √ remind 为非布尔值 1 抛错，不做强制转换
+    √ read 为非布尔值 0 抛错，不做强制转换 (1 ms)
+    √ write 为非布尔值 "yes" 抛错，不做强制转换
+    √ remind 为非布尔值 "TRUE" 抛错，不做强制转换
+    √ 旧字段 enabled=true 不映射任何新权限 (1 ms)
+    √ report 不接受 write=true（周报无代录能力）
+  A0 · 纯函数性质
+    √ 不修改输入对象（输入保持原样）
+    √ 重复调用结果不串扰 (1 ms)
+  A0 · canPerformScopeAction · 允许与禁止
+    √ 血压代录：read+write 同时具备才允许；只 read 或只 write 拒绝
+    √ 血糖代录：read+write 同时具备才允许
+    √ 用药代确认与撤销本次代确认：medicine read+write
+    √ 用药计划管理：即使所有 write=true 也拒绝 (1 ms)
+    √ 健康记录删除：write=true 也不放行
+    √ 未知动作一律拒绝（不因任何授权放行）
+    √ 未归一化/缺项输入：拒绝而非抛错
+  A0 · canViewScope / 电话提醒按钮
+    √ canViewScope：仅 read=true 可见
+    √ read=false、remind=true：电话按钮可显示，但 scope 数据不可见 (1 ms)
+  A0 · noticeRules 归一化
+    √ 无入参：三项均默认 false
+    √ 逐项布尔归一化；非布尔抛错；多余键不进入结果
+  A0 · canViewReminderInfo · 合取双开关 + read
+    √ 漏服提醒：medicine read+remind 且 missedMedicine，三者齐备可见 (1 ms)
+    √ 连续未记录：血压或血糖块 read+remind，且 missingRecord
+    √ 周报提醒：report read+remind 且 weeklyReport
+    √ read=false、remind=true：只能出电话按钮，提醒明细不可见
+
+PASS tests/unit/core.test.js
+  services/core
+    createRecordId
+      √ 生成带前缀的唯一 ID (1 ms)
+      √ 不同前缀生成不同格式的 ID (1 ms)
+    readStorage / writeStorage
+      √ 写入后可读取相同数据
+      √ 读取不存在的键返回 fallback
+      √ 写入后读取的是深拷贝，修改不影响原存储
+      √ 写入数组后可正确读取
+    writeStorageAndInvalidate
+      √ 写入数据并清除相关缓存 (1 ms)
+    getRelatedCacheKeys
+      √ records 变更影响 home/recordList/trend
+      √ profile 变更影响 home/me
+      √ 未知键返回空数组
+    isTransientError
+      √ 识别超时错误
+      √ 识别网络错误
+      √ 识别连接重置错误
+      √ 非瞬态错误返回 false
+      √ 空错误返回 false (1 ms)
+    getRetryDelay
+      √ 首次重试延迟在合理范围内
+      √ 延迟随重试次数指数增长
+      √ 延迟不超过最大值
+    resolveMockData
+      √ local 模式返回默认 mock 数据 (1 ms)
+      √ 未知 key 返回空对象
+
+PASS tests/unit/data-rights.test.js
+  services/data-rights
+    getLocalDataSnapshot
+      √ 返回所有本地存储数据的快照 (1 ms)
+      √ 无数据时返回空默认值 (1 ms)
+    toExportText
+      √ 生成包含标题和 JSON 的导出文本
+    exportUserDataLocal
+      √ 生成完整的导出数据 (1 ms)
+      √ 无数据时导出空快照
+    deleteUserDataLocal
+      √ scope=health 删除健康记录和确认记录
+      √ scope=medication 删除用药计划和确认记录 (1 ms)
+      √ 默认 scope 为 health
+    clearUserAccountLocal
+      √ 清除所有本地存储数据
+
+PASS tests/unit/a2-invite-security.test.js
+  A2 · getFamilyJoinData 错误态与错误码
+    √ 缺失 inviteCode：noInvite 说明态，无 inviteError、不计失败 (1 ms)
+    √ 格式错误：FAMILY_INVITE_INVALID，失败额度计 1，零成员写入 (2 ms)
+    √ 不存在：FAMILY_INVITE_NOT_FOUND，额度计 1
+    √ expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容 (1 ms)
+    √ 已过期：FAMILY_INVITE_EXPIRED (1 ms)
+    √ 已撤销：FAMILY_INVITE_REVOKED
+    √ 已被其他成员使用：FAMILY_INVITE_USED
+    √ 正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，额度退还为 0
+    √ 任何失败路径：family_members 零写入、family_auth 不被改为 active (1 ms)
+  A2 · 频控（openId + 北京自然日，额度 20，原子预留）
+    √ 第 1 次失败额度计 1；累计到 20 后第 21 次查询被拒且额度不再增长
+    √ 自然日切换：昨日额度用尽不影响今日查询（key 内嵌北京日） (1 ms)
+    √ 频控计数文档不含邀请码明文，字段为 openId/day/count
+    √ 频控按调用者隔离：caller-2 不受 caller-1 的失败影响 (1 ms)
+  A2 · joinFamilyByInvite 错误码与频控防绕过
+    √ 不存在 → FAMILY_INVITE_NOT_FOUND 且计数
+    √ 已过期 → FAMILY_INVITE_EXPIRED
+    √ 已撤销 → FAMILY_INVITE_REVOKED (1 ms)
+    √ 已被他人使用 → FAMILY_INVITE_USED
+    √ expiresAt 缺失 → FAMILY_INVITE_INVALID（不做兼容）
+    √ 自绑 → FAMILY_INVITE_SELF（既有语义补码，不占失败额度）
+    √ 已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码）
+    √ 频控拒绝直接刷 join 接口：RATE_LIMITED，零写入
+  A2 · createFamilyInvite 唯一性前置检查
+    √ 候选码与他人文档冲突时重新生成，落库用新码 (1 ms)
+    √ 连续冲突 3 次：抛错且不写入新邀请 (27 ms)
+    √ 重邀必须发新码：候选码命中自己旧文档同样视为冲突（A2 收尾修订） (1 ms)
+  A2 · 本地镜像过期校验（decisions #15）
+    √ 本地邀请已过期：拒绝且不假成功 (10 ms)
+    √ 本地邀请缺失 expiresAt：一律无效 (1 ms)
+    √ 邀请码与本地记录不一致：按不存在处理 (1 ms)
+    √ 有效本地邀请：正常镜像 joined 状态
+    √ createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验） (1 ms)
+  A2 · 页面消费契约
+    √ normalizeFamilyJoinData 透传 inviteError（页面据 code 渲染状态） (1 ms)
+
+PASS tests/unit/settings.test.js
+  services/settings
+    getStoredReminderSettings
+      √ 无设置时返回 null (1 ms)
+      √ 有设置时返回存储数据 (1 ms)
+    saveReminderSettingsLocal
+      √ 保存提醒设置并添加 updatedAt (1 ms)
+      √ 保存后可通过 getStoredReminderSettings 读取
+    applyReminderSettings
+      √ 无设置时不过滤任务
+      √ 关闭用药提醒后过滤用药任务 (1 ms)
+      √ 关闭测量提醒后过滤测量任务
+      √ 关闭周报提醒后过滤周报任务
+    mergeReminderSettings
+      √ 无本地设置时返回原始数据
+      √ 有本地设置时合并 (1 ms)
+    ensureWeeklyReportTask
+      √ 已有周报任务时不重复添加 (1 ms)
+      √ 无周报任务时自动添加
+      √ 空任务列表时添加周报任务
+    applyReminderSettings - 已完成分组
+      √ 已完成分组任务不受开关影响 (1 ms)
+    ensureUpcomingTasks
+      √ 无今日用药任务时不生成即将到来任务
+      √ 有今日用药任务时生成未来 3 天的即将到来任务 (1 ms)
+      √ 已有即将到来任务时不重复生成 (1 ms)
+    mergeLocalCompletedTasks
+      √ 无本地确认记录时不添加任务
+      √ 有今日已确认记录时添加到已完成分组 (1 ms)
+      √ 跳过状态的确认记录也加入已完成分组
+      √ 不重复添加已存在的已完成任务
+      √ snoozed 状态不加入已完成分组 (1 ms)
+
+PASS tests/unit/report.test.js
+  services/report
+    parseBpValues
+      √ 解析标准血压值 "128/78" (2 ms)
+      √ 解析三位数/两位数 "180/110"
+      √ value 为空字符串时返回 0/0
+      √ value 为 undefined 时返回 0/0
+      √ 非数字部分被过滤，返回 0 (1 ms)
+    parseBgValue
+      √ 解析标准血糖值 "6.1"
+      √ 解析整数血糖 "7"
+      √ value 为空时返回 0
+      √ value 为非数字时返回 0
+    filterWeekRecords
+      √ 筛选本周内的记录 (1 ms)
+      √ 空数组返回空
+    filterRecordsByDays
+      √ 7天时调用 filterWeekRecords (1 ms)
+      √ 30天时筛选近30天记录
+      √ 90天时筛选近90天记录
+    buildReportSummary
+      √ 血压记录生成血压摘要 (1 ms)
+      √ 血糖记录生成血糖摘要 (1 ms)
+      √ 血压+血糖都存在时生成两组摘要
+      √ 都为空时返回空数组 (1 ms)
+    isAbnormalRecord
+      √ statusType=warn 时为异常
+      √ status=建议复测 时为异常
+      √ 收缩压 >= 140 为异常（高血压）
+      √ 舒张压 >= 90 为异常（高血压）
+      √ 收缩压 < 90 为异常（低血压） (1 ms)
+      √ 舒张压 < 60 为异常（低血压）
+      √ 正常血压不为异常
+      √ 收缩压=0 时不判低血压（避免误判空值）
+      √ 血糖 >= 7.0 为异常（高血糖） (1 ms)
+      √ 血糖 <= 3.9 为异常（低血糖）
+      √ 血糖=0 时不判低血糖 (1 ms)
+      √ 正常血糖不为异常
+    buildAbnormalReason
+      √ 有 tip 时优先返回 tip
+      √ 收缩压 >= 180 返回高危提示
+      √ 收缩压 >= 140 返回偏高提示 (1 ms)
+      √ 收缩压 < 90 返回偏低提示
+      √ 血糖 >= 11.1 返回显著偏高提示
+      √ 血糖 >= 7.0 返回偏高提示
+      √ 血糖 <= 3.9 返回偏低提示 (1 ms)
+      √ 无法判断时返回通用异常提示
+    buildReportFocusItems
+      √ 只保留异常记录
+      √ 异常记录的 type 显示中文
+      √ 血糖异常记录 type 显示"血糖"
+      √ 全部正常时返回空数组
+    buildReportChartFromRecords
+      √ 血压+血糖记录生成混合图表
+      √ 无记录时返回空图表 (1 ms)
+      √ 无记录时自定义 periodLabel
+      √ 有记录时自定义 periodLabel
+      √ 同日同类型取最新记录
+    getTrendData
+      √ 7天档位返回 summary/focusItems/summaryMetrics (1 ms)
+      √ 30天档位返回 summary/focusItems/summaryMetrics (1 ms)
+      √ 90天档位返回 summary/focusItems/summaryMetrics
+      √ 返回 metricOptions 包含 bpBg 和 medication (1 ms)
+      √ 返回 rangeOptions 包含三档时间
+      √ 默认参数为 bpBg + 7d
+      √ chartBars 始终为数组
+      √ records 最多 20 条 (1 ms)
+      √ 指标切换到 bloodGlucose 时正常返回
+      √ 指标切换到 bloodPressure 时正常返回 (1 ms)
+      √ 指标切换到 medication 时正常返回 (18 ms)
+      √ bpBg 复合指标返回双图表数据
+    getReportData (deprecated)
+      √ 返回与 getTrendData 一致的核心字段 (2 ms)
+      √ 默认为本周数据 (1 ms)
+      √ 支持传入 metric 和 range 参数 (1 ms)
+
+PASS tests/unit/page-data-consistency.test.js
+  DEFAULT_PAGE_DATA 一致性验证（合并后）
+    √ 不包含 report 键 (1 ms)
+    √ trend 键包含合并后的完整字段 (3 ms)
+    √ trend.metricOptions 包含血压血糖复合指标和用药指标 (1 ms)
+    √ trend.rangeOptions 包含三档时间
+    √ trend 默认值为 7天+血压血糖
+    √ reminder 任务使用 trend 路由 (1 ms)
+    √ reminder 任务标题已更新
+
+  console.warn
+    [PreCheck] 隐私设置数据为空
+
+    [0m [90m 52 |[39m   [90m// 防御性检查：支持多种可能的存储结构[39m
+     [90m 53 |[39m   [36mif[39m ([33m![39mprivacy) {
+    [31m[1m>[22m[39m[90m 54 |[39m     console[33m.[39mwarn([32m'[PreCheck] 隐私设置数据为空'[39m)
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 55 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 56 |[39m   }
+     [90m 57 |[39m   [0m
+
+      at warn (utils/pre-check.js:54:13)
+      at Object.checkPrivacyAgreed (tests/unit/pre-check.test.js:28:14)
+
+  console.warn
+    [PreCheck] 隐私协议未确认或数据格式异常 { privacyKeys: [ 'agreed' ] }
+
+    [0m [90m 66 |[39m   }
+     [90m 67 |[39m   
+    [31m[1m>[22m[39m[90m 68 |[39m   console[33m.[39mwarn([32m'[PreCheck] 隐私协议未确认或数据格式异常'[39m[33m,[39m { privacyKeys[33m:[39m [33mObject[39m[33m.[39mkeys(privacy) })
+     [90m    |[39m           [31m[1m^[22m[39m
+     [90m 69 |[39m   [36mreturn[39m [36mfalse[39m
+     [90m 70 |[39m }
+     [90m 71 |[39m[0m
+
+      at warn (utils/pre-check.js:68:11)
+      at Object.checkPrivacyAgreed (tests/unit/pre-check.test.js:49:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '', profileKeys: [] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:55:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '', profileKeys: [ 'profile' ] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:69:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '   ', profileKeys: [ 'profile' ] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:76:14)
+
+PASS tests/unit/pre-check.test.js
+  utils/pre-check
+    checkPrivacyAgreed
+      √ 无隐私设置时返回 false (15 ms)
+      √ agreed=true 时返回 true (1 ms)
+      √ agreedAt 有值时返回 true (1 ms)
+      √ agreed=false 且无 agreedAt 时返回 false (4 ms)
+    checkProfileSetup
+      √ 无资料时返回 false (4 ms)
+      √ 有姓名时返回 true
+      √ 姓名为空字符串时返回 false (6 ms)
+      √ 姓名为纯空格时返回 false (11 ms)
+      √ 兼容扁平结构 profile.name (1 ms)
+    isProtectedPage
+      √ 首页是受保护页面
+      √ 趋势页是受保护页面
+      √ 隐私页不是受保护页面
+      √ 启动页不是受保护页面
+    isPrivacyFreePage
+      √ 隐私页是免隐私检查页面
+      √ 隐私政策页是免隐私检查页面
+      √ 用户协议页是免隐私检查页面
+      √ 首页不是免隐私检查页面 (1 ms)
+    isProfileFreePage
+      √ 隐私页是免资料检查页面 (1 ms)
+      √ 角色选择页是免资料检查页面
+      √ 资料编辑页是免资料检查页面 (1 ms)
+      √ 首页不是免资料检查页面
+
+PASS tests/unit/chart-adapter.test.js
+  utils/chart-adapter
+    toChartBars
+      √ 将数值数组转为柱状图数据 (2 ms)
+      √ 处理小数值
+      √ 所有值相同时高度一致
+      √ 处理空值和 NaN (1 ms)
+      √ 单值数据
+      √ 血压收缩压偏高标记 status=high (1 ms)
+      √ 血压收缩压偏低标记 status=low
+      √ 血糖偏高标记 status=high (1 ms)
+      √ 血糖偏低标记 status=low
+      √ 返回 yAxis 信息供参考线计算
+      √ 无 minFloor 时 yAxis.minFloor 为 null
+    buildBpBgCharts
+      √ 7天模式：按日聚合，返回血压+血糖双图表 (1 ms)
+      √ 30天模式：按4天聚合
+      √ 90天模式：按周聚合 (1 ms)
+      √ 空记录返回 hasData=false
+      √ 异常血压值标记 high status (1 ms)
+      √ 异常血糖值标记 high status
+      √ 柱状条数不超过 MAX_BARS=14
+      √ 返回动态参考线位置
+      √ 支持云端 chartSeriesMap 直接消费
+      √ 云端数据优先于本地记录 (1 ms)
+      √ 支持云端 bloodPressureDiastolic 序列 (1 ms)
+      √ 云端无舒张压时从本地记录补充
+    calcRefLineTop
+      √ 计算正常范围内的参考线位置（含底部标签区偏移） (1 ms)
+      √ 参考线位置低于 80%（柱状区域上界）
+      √ 参考值超出上限返回空字符串 (1 ms)
+      √ 参考值低于下限返回空字符串
+      √ Y 轴范围为0返回空字符串
+      √ 参数缺失返回空字符串
+    buildTrendChart
+      √ 使用默认数据构建趋势图
+      √ 使用自定义 chartSeriesMap (1 ms)
+      √ 未知指标使用血压默认值
+      √ 未知时间范围使用 7d 默认值
+      √ 血糖指标使用 bg type 和 minFloor (1 ms)
+    buildReportChart
+      √ 使用默认数据构建周报图表
+      √ 使用自定义数据
+    buildRecordDetailChart
+      √ 血压记录生成3日趋势
+      √ 血糖记录生成3日趋势 (1 ms)
+      √ 空记录使用默认值
+
+PASS tests/unit/routes-consistency.test.js
+  路由一致性验证（合并后）
+    √ routes 中不包含 report 键 (1 ms)
+    √ routes 中包含 trend 键
+    √ trend 路由指向正确的页面路径
+    √ 所有 TabBar 路由都存在 (1 ms)
+    √ 核心子页面路由完整
+
+PASS tests/unit/family.test.js
+  services/family
+    normalizeMemberStatus
+      √ active/已授权 映射为 已授权 (2 ms)
+      √ pending/待加入 映射为 待加入 (1 ms)
+      √ revoked/已解除 映射为 已解除
+      √ 未知状态原样返回 (1 ms)
+    getRelationInitial
+      √ 返回关系首字
+      √ 空关系返回 家
+    getRelationMeta
+      √ 女儿 → 主要照护人 (1 ms)
+      √ 儿子 → 紧急联系人
+      √ 配偶 → 共同管理
+      √ 第 8 项 other → 家属/共同管理
+      √ 孙女/孙子 → 主要照护人
+      √ 兄弟姐妹 → 共同管理；护工 → 协助管理
+      √ 未知关系回退首项（女儿/主要照护人）
+    getScopeText
+      √ 返回 read=true 权限的标题
+      √ 无 read 权限返回 fallback；旧 enabled 不产生文案
+      √ 非数组返回 fallback
+      √ 空数组返回 fallback
+    mapFamilyMember
+      √ 映射完整成员数据 (1 ms)
+      √ 使用 fallback 填充缺失字段 (1 ms)
+      √ 无 id 时使用索引生成
+    enforceHomeFamilyAccess
+      √ 无授权数据时返回原始数据
+      √ 已解除授权时返回无权限数据
+    getNoFamilyAccessData
+      √ 返回无权限的标准结构
+
+PASS tests/unit/records.test.js
+  services/records
+    getRecordStatus
+      √ warn 类型返回建议复测 (1 ms)
+      √ 其他类型返回正常 (1 ms)
+    buildBloodPressureRecord
+      √ 构建完整的血压记录 (2 ms)
+      √ 无心率时显示横杠 (1 ms)
+      √ 高血压记录标记为建议复测 (1 ms)
+      √ 使用自定义 recordId
+      √ 云来源记录标记为 cloud (1 ms)
+    buildBloodGlucoseRecord
+      √ 构建完整的血糖记录 (1 ms)
+      √ 高血糖标记为建议复测
+    extractCreatedAtDate
+      √ 从 ISO 字符串提取日期 (1 ms)
+      √ 从 created_at 字段提取日期
+      √ 从 _id 提取日期（MongoDB ObjectId 格式） (1 ms)
+      √ 从 time 字段提取日期
+      √ 空对象返回空字符串 (1 ms)
+      √ 中文日期格式提取日期
+    dedupeRecords
+      √ 按 id 去重 (1 ms)
+      √ 保留首次出现的记录
+      √ 过滤 null 和无 id 的记录
+      √ 空数组返回空数组
+    buildRecordSummary
+      √ 统计本周记录 (2 ms)
+      √ 空记录返回零值
+    mapStoredRecordToListItem
+      √ 映射记录到列表项 (1 ms)
+    mapStoredRecordToDetail
+      √ 映射记录到详情 (1 ms)
+      √ 详情包含创建时间 (1 ms)
+
+PASS tests/unit/page-data.test.js
+  services/page-data
+    clone
+      √ 深拷贝对象 (2 ms)
+      √ 深拷贝数组
+      √ undefined 返回 undefined
+      √ null 返回 null (1 ms)
+    deepMerge
+      √ 基础对象合并 (7 ms)
+      √ 嵌套对象递归合并
+      √ override 为数组时直接替换
+      √ override 为 undefined 时返回 base 的克隆
+      √ 不修改原始对象 (2 ms)
+      √ override 为原始值时直接替换
+    withMockPageData
+      √ 无 transform 函数时执行 deepMerge (1 ms)
+      √ 有 transform 函数时执行自定义合并 (1 ms)
+      √ 未知 key 返回空对象或默认数据
+    mergeArrayItemDefaults
+      √ 按 identityKey 合并默认值 (1 ms)
+      √ override 为非数组时返回 base 克隆
+      √ base 为空数组时返回 override 克隆
+
+PASS tests/unit/medication.test.js
+  services/medication
+    getStoredMedicationPlans
+      √ 无计划时返回空数组 (1 ms)
+      √ 有计划时返回数组
+    getStoredMedicationConfirmations
+      √ 无确认记录时返回空数组
+    upsertMedicationPlan
+      √ 新增计划
+      √ 更新已有计划 (1 ms)
+    appendMedicationConfirmation
+      √ 新增确认记录 (1 ms)
+      √ 同 logId 同日期更新而非新增
+      √ 不同日期新增记录 (1 ms)
+    saveMedicationPlanLocal
+      √ 创建新计划
+      √ 更新已有计划保持状态 (2 ms)
+    deleteMedicationPlanLocal
+      √ 删除指定计划 (1 ms)
+      √ 删除不存在的计划返回 deleted=true (1 ms)
+    toggleMedicationPlanStatusLocal
+      √ 启用→已停用 (1 ms)
+      √ 已停用→启用 (1 ms)
+      √ 不存在的计划返回 null
+    confirmMedicationLocal
+      √ 创建确认记录 (1 ms)
+    revokeMedicationConfirmationLocal
+      √ 撤销今日确认记录 (9 ms)
+      √ 撤销不存在的记录返回 null (1 ms)
+    mapMedicationPlanToListItem
+      √ 映射计划到列表项
+    mergeListByTimestamp
+      √ 合并本地和远程记录，取较新者
+      √ 空数组合并 (1 ms)
+    mergeConfirmationsByLogId
+      √ 按 logId 合并，取较新者
+    parseMedTaskId
+      √ 解析标准格式 task-med-{planId}-{index}
+      √ 解析含多段横线的 planId
+      √ 非 task-med 前缀返回 null
+    findNextPendingTime
+      √ 找到下一个待确认时间点 (1 ms)
+      √ 已停用计划返回 null
+      √ 全部已确认返回 null
+
+PASS tests/unit/date-helper.test.js
+  utils/date-helper
+    getTodayDateValue
+      √ 返回 YYYY-MM-DD 格式 (1 ms)
+      √ 月份和日期补零 (1 ms)
+    getCurrentTimeValue
+      √ 返回 HH:MM 格式 (1 ms)
+    normalizeDateValue
+      √ 合法日期原样返回
+      √ 非法日期返回 fallback
+      √ 空值返回 fallback
+    formatDisplayDate
+      √ 今天显示"今天"
+      √ 非今天显示"月日"格式 (1 ms)
+      √ 空值返回空字符串
+    formatDisplayDateWithYear
+      √ 今天显示"今天"
+      √ 非今天显示"年月日"格式
+    parseDisplayDateTime
+      √ 解析 YYYY-MM-DD HH:MM 格式 (1 ms)
+      √ 解析"今天 HH:MM"格式
+      √ 解析"M月D日 HH:MM"格式
+      √ 空值返回当前日期时间 (1 ms)
+      √ null/undefined 返回当前日期时间
+    getWeekStartDate
+      √ 周一返回本周一
+      √ 周日返回上周一 (1 ms)
+      √ 周三返回本周一
+
+PASS tests/unit/privacy.test.js
+  services/privacy
+    getStoredPrivacySettings
+      √ 无设置时返回 null (1 ms)
+      √ 有设置时返回存储数据 (1 ms)
+    updatePrivacySettingsLocal
+      √ 首次创建隐私设置 (1 ms)
+      √ 部分更新不覆盖已有字段 (1 ms)
+      √ undefined 字段不覆盖已有值 (1 ms)
+    mergePrivacySettings
+      √ 无本地设置时返回原始数据 (1 ms)
+      √ 有本地设置时合并
+
+Test Suites: 29 passed, 29 total
+Tests:       633 passed, 633 total
+Snapshots:   0 total
+Time:        4.04 s, estimated 11 s
+Ran all test suites.
+full-exit=0
+
+> regression
+> node scripts/health-api-regression.js
+
+health-api-regression: ok
+regression-exit=0
+
+> lint
+> eslint services/ utils/ pages/ components/ --ext .js
+
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\data\data\index.js
+   36:3  warning  Async method 'loadData' has no 'await' expression          require-await
+   60:3  warning  Async method 'handleExport' has no 'await' expression      require-await
+  131:3  warning  Async method 'handleDeleteData' has no 'await' expression  require-await
+  159:7  warning  Async method 'success' has no 'await' expression           require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family-sub\family-invite\index.js
+  34:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family-sub\family-join-hint\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family-sub\home-family\index.js
+  38:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\family\index.js
+  65:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\home\index.js
+  36:3  warning  Async method 'loadData' has no 'await' expression  require-await
+  66:7  warning  Unexpected console statement                       no-console
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\me\index.js
+  23:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\medication\med-confirm\index.js
+  23:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\medication\med-history\index.js
+  47:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\medication\med-list\index.js
+   21:3  warning  Async method 'loadData' has no 'await' expression            require-await
+  203:3  warning  Async method 'handleBatchConfirm' has no 'await' expression  require-await
+  314:3  warning  Async method 'handleDeletePlan' has no 'await' expression    require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\reminder\reminder-settings\index.js
+  39:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\feedback\index.js
+  28:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\help\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\privacy-detail\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\privacy-policy\index.js
+  25:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\privacy\index.js
+  26:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\role\index.js
+  24:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\pages\settings\user-agreement\index.js
+  25:3  warning  Async method 'loadData' has no 'await' expression  require-await
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\data-rights.js
+  9:3  error  'writeStorage' is assigned a value but never used  no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\medication-confirm.js
+   12:9   error  'getStoredMedicationPlans' is assigned a value but never used  no-unused-vars
+  117:10  error  'normalizeMedConfirmData' is defined but never used            no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\medication-merge.js
+  1:9   error  'STORAGE_KEYS' is assigned a value but never used  no-unused-vars
+  1:23  error  'readStorage' is assigned a value but never used   no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\records.js
+  8:3  error  'writeStorage' is assigned a value but never used  no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\services\report.js
+    2:9   error  'deepMerge' is assigned a value but never used         no-unused-vars
+    2:20  error  'withMockPageData' is assigned a value but never used  no-unused-vars
+    3:49  error  'dedupeRecords' is assigned a value but never used     no-unused-vars
+  356:9   error  'isWeekly' is assigned a value but never used          no-unused-vars
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\api.js
+  189:5  warning  Unexpected console statement  no-console
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\chart-adapter.js
+  131:26  error  Expected '===' and instead saw '=='  eqeqeq
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\onboarding-state.js
+  46:5  warning  Unexpected console statement  no-console
+  64:5  warning  Unexpected console statement  no-console
+
+D:\data\我的资源\AI航线\约稿\豆包模型约稿\xiaochengxu\utils\pre-check.js
+  162:5  warning  Unexpected console statement  no-console
+  169:7  warning  Unexpected console statement  no-console
+  173:9  warning  Unexpected console statement  no-console
+  185:7  warning  Unexpected console statement  no-console
+  191:7  warning  Unexpected console statement  no-console
+
+✖ 43 problems (11 errors, 32 warnings)
+
+lint-exit=1

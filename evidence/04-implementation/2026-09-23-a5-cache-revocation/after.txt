@@ -1,0 +1,6 @@
+
+Test Suites: 2 passed, 2 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        0.838 s, estimated 2 s
+Ran all test suites matching /tests\\unit\\a5-cache-revocation.test.js|tests\\unit\\a5-page-staleness.test.js/i.

@@ -1,0 +1,39 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a2-followup.test.js
+
+PASS tests/unit/a2-followup.test.js
+  A2 收尾 · 无邀请码说明态
+    √ 缺码：noInvite 说明态——无有效期、无可查看范围、无有效标志、不计数 (4 ms)
+    √ 空串与纯空白串同缺码处理，不计数 (1 ms)
+    √ 非字符串输入（数字）按 INVALID 计数，不冒充缺码 (2 ms)
+    √ 非字符串输入（对象）按 INVALID 计数，不冒充缺码
+    √ 非字符串输入（布尔）按 INVALID 计数，不冒充缺码 (1 ms)
+    √ 非字符串输入（数组）按 INVALID 计数，不冒充缺码
+    √ 本地镜像：无邀请码加入不假成功 (33 ms)
+  A2 收尾 · 有效期边界
+    √ expiresAt 不可解析：查询与加入均按 INVALID 拒绝，不产生 NaN 剩余时间 (1 ms)
+    √ 刚好到期（expiresAt == now）：按已过期拒绝 (2 ms)
+    √ 未来有效期：正常预览，remainHours 为有限正数 (1 ms)
+  A2 收尾 · 重邀/加入交错（事务分支控制流）
+    √ 事务路径 happy path：锚点文档创建、邀请转 active (1 ms)
+    √ 交错：外层读到旧码 A，事务开始前 owner 重邀换码 B——旧码请求被拒，新邀请不被消耗 (1 ms)
+    √ 事务内锚点读取发生基础设施异常：原样上抛，零写入（不吞异常继续写） (8 ms)
+  A2 收尾 · 原子频控（预留-核销-退还）
+    √ 失败累计到计数文档：第 20 次失败后额度用尽，第 21 次拒绝且不再探测 (1 ms)
+    √ 计数文档为每 (openId, 北京日) 单文档，含 day 键，不含邀请码明文
+    √ 成功查询退还额度：失败 19 次后一次成功，计数回到 19
+    √ 自绑/已绑定他人属业务拒绝但非枚举失败：退还额度
+    √ join 与查询共用额度：查询失败 20 次后 join 直接被拒 (1 ms)
+    √ 自然日切换：昨日计数满额不影响今日（key 内嵌北京日）
+    √ 并发建计数文档冲突（add 撞 _id）：重试条件更新后正常计 1 (1 ms)
+    √ add 发生非重复键的基础设施异常：原样上抛，不得伪装成频控拒绝
+  A2 收尾 · 重邀必须发新码
+    √ 候选码与 owner 自己当前码相同：不复用，重新生成 (2 ms)
+    √ 连续 3 次候选码均被占用（含自己旧码）：抛冲突且零写入 (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       23 passed, 23 total
+Snapshots:   0 total
+Time:        0.545 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a2-followup.test.js/i.

@@ -1,0 +1,4 @@
+  191:7  warning  Unexpected console statement  no-console
+
+✖ 43 problems (11 errors, 32 warnings)
+

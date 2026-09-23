@@ -1,0 +1,225 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a3-family-readonly.test.js
+
+FAIL tests/unit/a3-family-readonly.test.js
+  A3 · 家属视图闸口：read 决定数据可见性
+    × recordList：read=true 的块返回 owner 数据，read=false 的块被服务端剔除 (1 ms)
+    × recordList：请求 read=false 的块（参数切换）被拒绝
+    × trend：bpBg 需血压+血糖双 read；缺其一拒绝 (1 ms)
+    × trend：medication 指标按 medicine.read 放行
+    × trend：medicine read=false 的成员请求 medication 被拒绝 (1 ms)
+    × medList/medHistory：medicine read=true 返回 owner 数据；read=false 拒绝
+  A3 · 身份与数据主体：参数不能切换 owner
+    × payload 携带 ownerOpenId 被忽略，数据主体仍为绑定 owner
+    × 无绑定成员：denied noBinding；已撤销成员：denied revoked
+    × owner 本人带 familyView：按 self 处理，行为与原路由一致
+    × 空数据不等于权限验证：owner 无记录时 allowed=true 且列表为空，与 denied 形态可区分
+  A3 · record-service allowedTypes 服务端过滤
+    × allowedTypes 限制查询类型，filter 参数不能越权 (4 ms)
+  A3 · 页面只读守卫
+    × med-list familyView：editPlan/goMedEdit/确认/撤销 均被守卫拦截 (2 ms)
+    √ med-list 非 familyView：编辑入口正常可用 (1 ms)
+    × record-detail familyView：删除入口被守卫拦截 (1 ms)
+
+  ● A3 · 家属视图闸口：read 决定数据可见性 › recordList：read=true 的块返回 owner 数据，read=false 的块被服务端剔除
+
+    TypeError: familyService.getFamilyRecordListData is not a function
+
+    [0m [90m 170 |[39m   it([32m'recordList：read=true 的块返回 owner 数据，read=false 的块被服务端剔除'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 171 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 172 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'member-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 173 |[39m     expect(data[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mtrue[39m[33m,[39m readOnly[33m:[39m [36mtrue[39m })
+     [90m 174 |[39m     [36mconst[39m types [33m=[39m data[33m.[39mrecords[33m.[39mmap(r [33m=>[39m r[33m.[39mtype)
+     [90m 175 |[39m     expect(types)[33m.[39mtoContain([32m'bp'[39m)[0m
+
+      at Object.getFamilyRecordListData (tests/unit/a3-family-readonly.test.js:172:38)
+
+  ● A3 · 家属视图闸口：read 决定数据可见性 › recordList：请求 read=false 的块（参数切换）被拒绝
+
+    TypeError: familyService.getFamilyRecordListData is not a function
+
+    [0m [90m 179 |[39m   it([32m'recordList：请求 read=false 的块（参数切换）被拒绝'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 180 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 181 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'member-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m[33m,[39m type[33m:[39m [32m'bg'[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 182 |[39m     expect(data[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'scopeDenied'[39m })
+     [90m 183 |[39m     expect(data[33m.[39mrecords)[33m.[39mtoBeUndefined()
+     [90m 184 |[39m   })[0m
+
+      at Object.getFamilyRecordListData (tests/unit/a3-family-readonly.test.js:181:38)
+
+  ● A3 · 家属视图闸口：read 决定数据可见性 › trend：bpBg 需血压+血糖双 read；缺其一拒绝
+
+    TypeError: familyService.getFamilyTrendData is not a function
+
+    [0m [90m 186 |[39m   it([32m'trend：bpBg 需血压+血糖双 read；缺其一拒绝'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 187 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 188 |[39m     [36mconst[39m denied [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyTrendData([32m'member-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m     |[39m                                        [31m[1m^[22m[39m
+     [90m 189 |[39m     expect(denied[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'scopeDenied'[39m })
+     [90m 190 |[39m   })
+     [90m 191 |[39m[0m
+
+      at Object.getFamilyTrendData (tests/unit/a3-family-readonly.test.js:188:40)
+
+  ● A3 · 家属视图闸口：read 决定数据可见性 › trend：medication 指标按 medicine.read 放行
+
+    TypeError: familyService.getFamilyTrendData is not a function
+
+    [0m [90m 192 |[39m   it([32m'trend：medication 指标按 medicine.read 放行'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 193 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 194 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyTrendData([32m'member-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m[33m,[39m metric[33m:[39m [32m'medication'[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 195 |[39m     expect(data[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mtrue[39m[33m,[39m readOnly[33m:[39m [36mtrue[39m })
+     [90m 196 |[39m   })
+     [90m 197 |[39m[0m
+
+      at Object.getFamilyTrendData (tests/unit/a3-family-readonly.test.js:194:38)
+
+  ● A3 · 家属视图闸口：read 决定数据可见性 › trend：medicine read=false 的成员请求 medication 被拒绝
+
+    TypeError: familyService.getFamilyTrendData is not a function
+
+    [0m [90m 198 |[39m   it([32m'trend：medicine read=false 的成员请求 medication 被拒绝'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 199 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 200 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyTrendData([32m'member-3'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m[33m,[39m metric[33m:[39m [32m'medication'[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 201 |[39m     expect(data[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'scopeDenied'[39m })
+     [90m 202 |[39m   })
+     [90m 203 |[39m[0m
+
+      at Object.getFamilyTrendData (tests/unit/a3-family-readonly.test.js:200:38)
+
+  ● A3 · 家属视图闸口：read 决定数据可见性 › medList/medHistory：medicine read=true 返回 owner 数据；read=false 拒绝
+
+    TypeError: familyService.getFamilyMedListData is not a function
+
+    [0m [90m 204 |[39m   it([32m'medList/medHistory：medicine read=true 返回 owner 数据；read=false 拒绝'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 205 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 206 |[39m     [36mconst[39m list [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyMedListData([32m'member-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 207 |[39m     expect(list[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mtrue[39m[33m,[39m readOnly[33m:[39m [36mtrue[39m })
+     [90m 208 |[39m     expect(list[33m.[39mplans[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)
+     [90m 209 |[39m     [36mconst[39m history [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyMedHistoryData([32m'member-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })[0m
+
+      at Object.getFamilyMedListData (tests/unit/a3-family-readonly.test.js:206:38)
+
+  ● A3 · 身份与数据主体：参数不能切换 owner › payload 携带 ownerOpenId 被忽略，数据主体仍为绑定 owner
+
+    TypeError: familyService.getFamilyRecordListData is not a function
+
+    [0m [90m 217 |[39m   it([32m'payload 携带 ownerOpenId 被忽略，数据主体仍为绑定 owner'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 218 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 219 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'member-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m[33m,[39m ownerOpenId[33m:[39m [32m'victim-1'[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 220 |[39m     expect(data[33m.[39mfamilyView[33m.[39mallowed)[33m.[39mtoBe([36mtrue[39m)
+     [90m 221 |[39m     [36mconst[39m ids [33m=[39m data[33m.[39mrecords[33m.[39mmap(r [33m=>[39m r[33m.[39mid [33m||[39m r[33m.[39m_id)
+     [90m 222 |[39m     expect(ids)[33m.[39mnot[33m.[39mtoContain([32m'r-victim'[39m)[0m
+
+      at Object.getFamilyRecordListData (tests/unit/a3-family-readonly.test.js:219:38)
+
+  ● A3 · 身份与数据主体：参数不能切换 owner › 无绑定成员：denied noBinding；已撤销成员：denied revoked
+
+    TypeError: familyService.getFamilyRecordListData is not a function
+
+    [0m [90m 226 |[39m   it([32m'无绑定成员：denied noBinding；已撤销成员：denied revoked'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 227 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 228 |[39m     [36mconst[39m noBinding [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'member-9'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m     |[39m                                           [31m[1m^[22m[39m
+     [90m 229 |[39m     expect(noBinding[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'noBinding'[39m })
+     [90m 230 |[39m     [36mconst[39m revoked [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'member-2'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m 231 |[39m     expect(revoked[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'revoked'[39m })[0m
+
+      at Object.getFamilyRecordListData (tests/unit/a3-family-readonly.test.js:228:43)
+
+  ● A3 · 身份与数据主体：参数不能切换 owner › owner 本人带 familyView：按 self 处理，行为与原路由一致
+
+    TypeError: familyService.getFamilyRecordListData is not a function
+
+    [0m [90m 234 |[39m   it([32m'owner 本人带 familyView：按 self 处理，行为与原路由一致'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 235 |[39m     [36mconst[39m { familyService[33m,[39m recordService } [33m=[39m buildServices([33mSEED[39m)
+    [31m[1m>[22m[39m[90m 236 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'owner-1'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 237 |[39m     [36mconst[39m normal [33m=[39m [36mawait[39m recordService[33m.[39mgetRecordListData([32m'owner-1'[39m[33m,[39m {})
+     [90m 238 |[39m     expect(data[33m.[39mrecords[33m.[39mlength)[33m.[39mtoBe(normal[33m.[39mrecords[33m.[39mlength)
+     [90m 239 |[39m     expect(data[33m.[39mfamilyView)[33m.[39mtoBeUndefined()[0m
+
+      at Object.getFamilyRecordListData (tests/unit/a3-family-readonly.test.js:236:38)
+
+  ● A3 · 身份与数据主体：参数不能切换 owner › 空数据不等于权限验证：owner 无记录时 allowed=true 且列表为空，与 denied 形态可区分
+
+    TypeError: familyService.getFamilyRecordListData is not a function
+
+    [0m [90m 244 |[39m     seed[33m.[39mrecords [33m=[39m []
+     [90m 245 |[39m     [36mconst[39m { familyService } [33m=[39m buildServices(seed)
+    [31m[1m>[22m[39m[90m 246 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'member-3'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 247 |[39m     expect(data[33m.[39mfamilyView)[33m.[39mtoMatchObject({ allowed[33m:[39m [36mtrue[39m[33m,[39m readOnly[33m:[39m [36mtrue[39m })
+     [90m 248 |[39m     expect(data[33m.[39mrecords)[33m.[39mtoEqual([])
+     [90m 249 |[39m     [36mconst[39m denied [33m=[39m [36mawait[39m familyService[33m.[39mgetFamilyRecordListData([32m'member-9'[39m[33m,[39m { familyView[33m:[39m [36mtrue[39m })[0m
+
+      at Object.getFamilyRecordListData (tests/unit/a3-family-readonly.test.js:246:38)
+
+  ● A3 · record-service allowedTypes 服务端过滤 › allowedTypes 限制查询类型，filter 参数不能越权
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+      Array [
+    +   "bg",
+        "bp",
+      ]
+
+    [0m [90m 257 |[39m     [36mconst[39m { recordService } [33m=[39m buildServices([33mSEED[39m)
+     [90m 258 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m recordService[33m.[39mgetRecordListData([32m'owner-1'[39m[33m,[39m {}[33m,[39m { allowedTypes[33m:[39m [[32m'bp'[39m] })
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(data[33m.[39mrecords[33m.[39mmap(r [33m=>[39m r[33m.[39mtype))[33m.[39mtoEqual([[32m'bp'[39m])
+     [90m     |[39m                                           [31m[1m^[22m[39m
+     [90m 260 |[39m   })
+     [90m 261 |[39m })
+     [90m 262 |[39m[0m
+
+      at Object.toEqual (tests/unit/a3-family-readonly.test.js:259:43)
+
+  ● A3 · 页面只读守卫 › med-list familyView：editPlan/goMedEdit/确认/撤销 均被守卫拦截
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: {"allowed": true, "readOnly": true}
+
+    [0m [90m 319 |[39m     [36mconst[39m page [33m=[39m makePage(pageConfigs[[35m0[39m])
+     [90m 320 |[39m     [36mawait[39m page[33m.[39monLoad({ familyView[33m:[39m [32m'1'[39m })
+    [31m[1m>[22m[39m[90m 321 |[39m     expect(page[33m.[39mdata[33m.[39mfamilyView)[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 322 |[39m     page[33m.[39meditPlan({ currentTarget[33m:[39m { dataset[33m:[39m { planId[33m:[39m [32m'plan-1'[39m } } })
+     [90m 323 |[39m     page[33m.[39mgoMedEdit()
+     [90m 324 |[39m     page[33m.[39mhandleConfirmTap({ currentTarget[33m:[39m { dataset[33m:[39m { planId[33m:[39m [32m'plan-1'[39m[33m,[39m logId[33m:[39m [32m'log-1'[39m } } })[0m
+
+      at Object.toBe (tests/unit/a3-family-readonly.test.js:321:34)
+
+  ● A3 · 页面只读守卫 › record-detail familyView：删除入口被守卫拦截
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: undefined
+
+    [0m [90m 341 |[39m     [36mconst[39m page [33m=[39m makePage(pageConfigs[[35m1[39m])
+     [90m 342 |[39m     [36mawait[39m page[33m.[39monLoad({ id[33m:[39m [32m'r-bp'[39m[33m,[39m familyView[33m:[39m [32m'1'[39m })
+    [31m[1m>[22m[39m[90m 343 |[39m     expect(page[33m.[39mdata[33m.[39mfamilyView)[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 344 |[39m     page[33m.[39mhandleDelete()
+     [90m 345 |[39m     expect(mockApi[33m.[39mdeleteRecord)[33m.[39mnot[33m.[39mtoHaveBeenCalled()
+     [90m 346 |[39m   })[0m
+
+      at Object.toBe (tests/unit/a3-family-readonly.test.js:343:34)
+
+Test Suites: 1 failed, 1 total
+Tests:       13 failed, 1 passed, 14 total
+Snapshots:   0 total
+Time:        1.767 s
+Ran all test suites matching /tests\\unit\\a3-family-readonly.test.js/i.

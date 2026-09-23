@@ -1,0 +1,63 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a3-family-readonly.test.js
+
+FAIL tests/unit/a3-family-readonly.test.js
+  A3 · 家属视图闸口：read 决定数据可见性
+    √ recordList：read=true 的块返回 owner 数据，read=false 的块被服务端剔除 (4 ms)
+    √ recordList：请求 read=false 的块（参数切换）被拒绝 (1 ms)
+    √ trend：bpBg 需血压+血糖双 read；缺其一拒绝 (1 ms)
+    √ trend：medication 指标按 medicine.read 放行 (1 ms)
+    √ trend：medicine read=false 的成员请求 medication 被拒绝 (1 ms)
+    √ medList/medHistory：medicine read=true 返回 owner 数据；read=false 拒绝 (2 ms)
+  A3 · 身份与数据主体：参数不能切换 owner
+    √ payload 携带 ownerOpenId 被忽略，数据主体仍为绑定 owner
+    √ 无绑定成员：denied noBinding；已撤销成员：denied revoked
+    √ owner 本人带 familyView：按 self 处理，行为与原路由一致 (1 ms)
+    √ 空数据不等于权限验证：owner 无记录时 allowed=true 且列表为空，与 denied 形态可区分 (1 ms)
+  A3 · record-service allowedTypes 服务端过滤
+    √ allowedTypes 限制查询类型，filter 参数不能越权
+  A3 · 页面只读守卫
+    × med-list familyView：editPlan/goMedEdit/确认/撤销 均被守卫拦截 (2 ms)
+    × med-list 非 familyView：编辑入口正常可用
+    √ record-detail familyView：删除入口被守卫拦截 (1 ms)
+
+  ● A3 · 页面只读守卫 › med-list familyView：editPlan/goMedEdit/确认/撤销 均被守卫拦截
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: {"allowed": true, "readOnly": true}
+
+    [0m [90m 335 |[39m     [36mconst[39m page [33m=[39m makePage(pageConfigs[[35m0[39m])
+     [90m 336 |[39m     [36mawait[39m page[33m.[39monLoad({ familyView[33m:[39m [32m'1'[39m })
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(page[33m.[39mdata[33m.[39mfamilyView)[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 338 |[39m     page[33m.[39meditPlan({ currentTarget[33m:[39m { dataset[33m:[39m { planId[33m:[39m [32m'plan-1'[39m } } })
+     [90m 339 |[39m     page[33m.[39mgoMedEdit()
+     [90m 340 |[39m     page[33m.[39mhandleConfirmTap({ currentTarget[33m:[39m { dataset[33m:[39m { planId[33m:[39m [32m'plan-1'[39m[33m,[39m logId[33m:[39m [32m'log-1'[39m } } })[0m
+
+      at Object.toBe (tests/unit/a3-family-readonly.test.js:337:34)
+
+  ● A3 · 页面只读守卫 › med-list 非 familyView：编辑入口正常可用
+
+    expect(jest.fn()).toHaveBeenCalled()
+
+    Expected number of calls: >= 1
+    Received number of calls:    0
+
+    [0m [90m 351 |[39m     [36mawait[39m page[33m.[39monLoad({})
+     [90m 352 |[39m     page[33m.[39mgoMedEdit()
+    [31m[1m>[22m[39m[90m 353 |[39m     expect(mockFactory[33m.[39mgoRoute)[33m.[39mtoHaveBeenCalled()
+     [90m     |[39m                                 [31m[1m^[22m[39m
+     [90m 354 |[39m   })
+     [90m 355 |[39m
+     [90m 356 |[39m   it([32m'record-detail familyView：删除入口被守卫拦截'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toHaveBeenCalled (tests/unit/a3-family-readonly.test.js:353:33)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 12 passed, 14 total
+Snapshots:   0 total
+Time:        0.65 s, estimated 1 s
+Ran all test suites matching /tests\\unit\\a3-family-readonly.test.js/i.

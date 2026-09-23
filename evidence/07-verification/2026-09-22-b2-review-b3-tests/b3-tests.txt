@@ -1,0 +1,60 @@
+
+> test
+> jest --verbose --runInBand tests/unit/shared-policy.test.js
+
+PASS tests/unit/shared-policy.test.js
+  payload-helpers · 北京时间日期函数（跨日边界，固定系统时间）
+    √ UTC 16:30（北京次日 00:30）取北京日期，发生跨日 (3 ms)
+    √ UTC 15:59:59（北京当天 23:59:59）仍为北京当天 (1 ms)
+    √ UTC 16:00:00 整（北京次日 00:00）取次日
+    √ 年初边界：UTC 上一年 12-31T16:00 取北京 1-1，月份补零
+    √ 偏移常量为 8 小时毫秒数 (1 ms)
+  payload-helpers · 纯断言与格式化
+    √ buildLogId 去掉时间中的冒号
+    √ getRecordStatus：warn 返回建议复测，其余返回正常 (1 ms)
+    √ assertPayloadObject：接受普通对象，拒绝空值/数组/原始值 (16 ms)
+    √ getLimitedString：trim 空白；超长抛错；必填为空抛错；非字符串返回空串 (1 ms)
+    √ getRequiredNumber：数值转换与范围边界；非法/越界抛错 (3 ms)
+    √ getOptionalNumber：空值返回 null，有值走范围校验
+    √ isValidTime：HH:mm 合法边界；24:00/格式错非法 (1 ms)
+    √ getEnumValue：白名单内通过，之外抛错
+  family-policy · 默认结构（按 HEAD 契约字面断言）
+    √ 默认 scopes：四项、键名与默认全开
+    √ 默认 noticeRules：三项，missingRecord 默认关、其余开 (1 ms)
+    √ 默认关系白名单：旧四项（A0 前的现行为）
+    √ getInviteRelation：命中返回该项；未知 key 回退首项
+    √ 默认成员：含名称/关系/角色/状态/说明
+  family-policy · enabled 权限判断与展示文案（当前模型）
+    √ isScopeEnabled：匹配键且 enabled 才允许；关闭/缺失拒绝 (1 ms)
+    √ isRelationScopeEnabled：关系文档 scopes 形态判断
+    √ getScopeText：已授权标题顿号连接；无授权返回暂未授权
+  family-policy · 归一化与邀请码校验
+    √ normalizeFamilyAuthPayload：空入参回落默认成员/scopes/规则，status active (1 ms)
+    √ member 入参覆盖默认字段；非数组 scopes/规则回落默认；数组原样保留 (1 ms)
+    √ normalizeFamilyInvitePayload：空入参为女儿关系+默认 scopes+待加入成员
+    √ selectedRelation 切换关系；无效 scope 项被过滤
+    √ 全部 scopes 关闭时抛错：至少选择一个授权范围 (3 ms)
+    √ validateInviteCodePayload：接受 inviteCode 与 inviteId 别名；对象/必填校验 (1 ms)
+  payload-validation · 用药计划与确认校验
+    √ 用药计划：合法入参归一化（times 去重、subscribe 布尔、startDate 默认今天） (1 ms)
+    √ 用药计划：名称必填；times 至少一个且不超过 8 个；时间格式校验 (3 ms)
+    √ 用药计划：endDate 格式校验，合法 endDate 保留
+    √ 用药确认：合法 taken，缺省状态文案为已服 (1 ms)
+    √ 用药确认：skipped/snoozed 默认文案；自定义文案保留
+    √ 用药确认：非法 status 抛错；logId/time/name 必填 (1 ms)
+  db 工厂 · 归属校验（本人/非本人/不存在/空ID）
+    √ 文档属于本人：返回文档
+    √ 文档属于他人：查不到，抛无权操作 (1 ms)
+    √ 文档不存在：抛同样错误；空 ID 先拦截
+  db 工厂 · 名称查询与访问上下文
+    √ createProfileDisplayName：命中返回 name；无档案回落家人 (1 ms)
+    √ 有效成员关系：返回 member 模式与 ownerOpenId
+    √ 无 active 关系但有本人有效 family_auth：返回 ownerPreview
+    √ 无关系且无授权：返回 null
+    √ 无关系且授权已撤销：返回 null
+
+Test Suites: 1 passed, 1 total
+Tests:       41 passed, 41 total
+Snapshots:   0 total
+Time:        4.257 s
+Ran all test suites matching /tests\\unit\\shared-policy.test.js/i.

@@ -1,0 +1,532 @@
+diff --git a/cloudfunctions/healthApi/family-policy.js b/cloudfunctions/healthApi/family-policy.js
+index 59297e3..7c93c5b 100644
+--- a/cloudfunctions/healthApi/family-policy.js
++++ b/cloudfunctions/healthApi/family-policy.js
+@@ -261,6 +261,208 @@ function createFamilyAccessContext({ db, collections }) {
+   }
+ }
+ 
++// ============================================================================
++// A0：三级权限规则（新契约）
++// 与上方 enabled 旧模型并存：旧入口仍用旧函数，A0-2 再整体切换调用链。
++// 规则来源：2026-09-22 decisions.md 第 1/4.1 节与用户三项确认：
++// - write 动作要求同 scope read+write；
++// - read=false、remind=true 仅出电话提醒按钮；
++// - 提醒明细可见 = read && remind && noticeRules 对应项。
++// ============================================================================
++
++// 四种 scope 的固定展示信息（标题与用途不接受前端改写）
++const SCOPE_CATALOG_V2 = {
++  bloodPressure: { title: '血压记录', meta: '数值、测量时间、场景标签和趋势' },
++  bloodGlucose: { title: '血糖记录', meta: '数值、测量时间、测量场景和趋势' },
++  medicine: { title: '用药确认', meta: '用药计划、确认状态和未确认记录' },
++  report: { title: '健康记录周报', meta: '每周记录汇总和趋势回顾' }
++}
++
++const SCOPE_KEYS_V2 = Object.keys(SCOPE_CATALOG_V2)
++
++// 八种家属关系（decisions.md 第 1 节第 6 项）
++const FAMILY_RELATIONS_V2 = [
++  { key: 'daughter', label: '女儿', meta: '主要照护人' },
++  { key: 'son', label: '儿子', meta: '紧急联系人' },
++  { key: 'spouse', label: '配偶', meta: '共同管理' },
++  { key: 'granddaughter', label: '孙女', meta: '主要照护人' },
++  { key: 'grandson', label: '孙子', meta: '主要照护人' },
++  { key: 'sibling', label: '兄弟姐妹', meta: '共同管理' },
++  { key: 'caregiver', label: '护工', meta: '协助管理' },
++  { key: 'other', label: '家属', meta: '共同管理' }
++]
++
++function getFamilyRelationV2(relationKey) {
++  return FAMILY_RELATIONS_V2.find(item => item.key === relationKey) || null
++}
++
++// 读取严格布尔字段：undefined 默认 false；true/false 原样；其余类型拒绝
++function readBooleanField(item, field) {
++  const value = item[field]
++  if (value === undefined) return false
++  if (typeof value !== 'boolean') {
++    throw new Error(`授权${field}必须是布尔值`)
++  }
++  return value
++}
++
++/**
++ * 归一化三级权限 scopes（新契约）。
++ * - 必须为数组；四 key 白名单，未知/重复 key 拒绝；
++ * - read/write/remind 只认真布尔，缺失默认 false，旧 enabled 字段忽略；
++ * - report 不接受 write（周报无代录动作）；
++ * - 输出按 bloodPressure/bloodGlucose/medicine/report 固定顺序；不修改输入。
++ * @param {Array<Object>} rawScopes 页面提交的 scopes。
++ * @returns {Array<Object>} 归一化 scopes。
++ */
++function normalizeFamilyScopesV2(rawScopes) {
++  if (!Array.isArray(rawScopes)) {
++    throw new Error('授权范围格式不正确')
++  }
++
++  const seen = new Set()
++  const byKey = {}
++  rawScopes.forEach((item) => {
++    if (!item || typeof item !== 'object' || Array.isArray(item) || !item.key) {
++      throw new Error('授权项格式不正确')
++    }
++    if (!SCOPE_CATALOG_V2[item.key]) {
++      throw new Error(`未知授权项：${item.key}`)
++    }
++    if (seen.has(item.key)) {
++      throw new Error(`授权范围不能重复：${item.key}`)
++    }
++    seen.add(item.key)
++    byKey[item.key] = item
++  })
++
++  return SCOPE_KEYS_V2.map((key) => {
++    const item = byKey[key] || { key }
++    const write = readBooleanField(item, 'write')
++    if (key === 'report' && write) {
++      throw new Error('健康记录周报不支持代录权限')
++    }
++    return {
++      key,
++      title: SCOPE_CATALOG_V2[key].title,
++      meta: SCOPE_CATALOG_V2[key].meta,
++      read: readBooleanField(item, 'read'),
++      write,
++      remind: readBooleanField(item, 'remind')
++    }
++  })
++}
++
++const NOTICE_RULE_KEYS_V2 = ['missedMedicine', 'missingRecord', 'weeklyReport']
++
++/**
++ * 归一化提醒规则：三维布尔，缺失默认 false，非布尔拒绝，多余键剔除。
++ * @param {Object} [rawRules] 页面提交的 noticeRules。
++ * @returns {Object} 三维 noticeRules。
++ */
++function normalizeNoticeRulesV2(rawRules = {}) {
++  const source = rawRules && typeof rawRules === 'object' && !Array.isArray(rawRules) ? rawRules : {}
++  const result = {}
++  NOTICE_RULE_KEYS_V2.forEach((key) => {
++    const value = source[key]
++    if (value === undefined) {
++      result[key] = false
++    } else if (typeof value !== 'boolean') {
++      throw new Error(`提醒规则${key}必须是布尔值`)
++    } else {
++      result[key] = value
++    }
++  })
++  return result
++}
++
++// 将 scopes 数组转为 key→scope 映射；非数组安全返回空映射
++function toScopeMap(scopes) {
++  const map = {}
++  if (Array.isArray(scopes)) {
++    scopes.forEach((scope) => {
++      if (scope && scope.key) map[scope.key] = scope
++    })
++  }
++  return map
++}
++
++/**
++ * 判断 scope 数据是否可读。
++ * @param {Array<Object>} scopes 归一化 scopes。
++ * @param {string} key scope key。
++ * @returns {boolean}
++ */
++function canViewScope(scopes, key) {
++  const scope = toScopeMap(scopes)[key]
++  return !!(scope && scope.read === true)
++}
++
++/**
++ * 判断是否显示“电话提醒”按钮（号码在任一 scope.remind=true 时由接口返回）。
++ * read=false 不影响按钮显示——按确认语义，此时仅出按钮、不出提醒明细。
++ * @param {Array<Object>} scopes 归一化 scopes。
++ * @param {string} key scope key。
++ * @returns {boolean}
++ */
++function canShowPhoneReminder(scopes, key) {
++  const scope = toScopeMap(scopes)[key]
++  return !!(scope && scope.remind === true)
++}
++
++/**
++ * 动作白名单：返回动作所需的 scope 条件；不支持的动作无条目（恒拒绝）。
++ * 用药计划管理、健康记录删除对家属永远不开放。
++ */
++const SCOPE_ACTIONS_V2 = {
++  recordBloodPressure: key => key === 'bloodPressure',
++  recordBloodGlucose: key => key === 'bloodGlucose',
++  confirmMedication: key => key === 'medicine',
++  revokeMedicationConfirmation: key => key === 'medicine'
++}
++
++/**
++ * 判断家属能否执行某动作。要求动作受支持、对应 scope read+write 同时为 true。
++ * 未知动作或输入缺失一律返回 false（不抛错）。
++ * @param {Array<Object>} scopes 归一化 scopes。
++ * @param {string} action 动作标识。
++ * @returns {boolean}
++ */
++function canPerformScopeAction(scopes, action) {
++  const matchKey = SCOPE_ACTIONS_V2[action]
++  if (typeof matchKey !== 'function') return false
++  const map = toScopeMap(scopes)
++  const key = SCOPE_KEYS_V2.find(k => matchKey(k))
++  const scope = key ? map[key] : null
++  return !!(scope && scope.read === true && scope.write === true)
++}
++
++// 提醒类型 → 需要满足的 scope 块（read+remind 合取）
++const REMINDER_SCOPE_GATES_V2 = {
++  missedMedicine: ['medicine'],
++  missingRecord: ['bloodPressure', 'bloodGlucose'],
++  weeklyReport: ['report']
++}
++
++/**
++ * 判断某类提醒的明细是否对家属可见。
++ * 合取：noticeRules 对应项为 true，且对应 scope 块 read+remind 同时为 true
++ * （多块时任一块满足即可，如连续未记录看血压或血糖块）。
++ * @param {Array<Object>} scopes 归一化 scopes。
++ * @param {Object} rules 归一化 noticeRules。
++ * @param {string} reminderKey 提醒类型 key。
++ * @returns {boolean}
++ */
++function canViewReminderInfo(scopes, rules, reminderKey) {
++  const gates = REMINDER_SCOPE_GATES_V2[reminderKey]
++  if (!gates || !rules || rules[reminderKey] !== true) return false
++  const map = toScopeMap(scopes)
++  return gates.some((key) => {
++    const scope = map[key]
++    return scope && scope.read === true && scope.remind === true
++  })
++}
++
+ module.exports = {
+   getDefaultFamilyMember,
+   getDefaultFamilyScopes,
+@@ -274,5 +476,14 @@ module.exports = {
+   normalizeFamilyInvitePayload,
+   validateInviteCodePayload,
+   createProfileDisplayName,
+-  createFamilyAccessContext
++  createFamilyAccessContext,
++  // A0 三级权限
++  FAMILY_RELATIONS_V2,
++  getFamilyRelationV2,
++  normalizeFamilyScopesV2,
++  normalizeNoticeRulesV2,
++  canViewScope,
++  canShowPhoneReminder,
++  canPerformScopeAction,
++  canViewReminderInfo
+ }
+diff --git a/tests/unit/a0-permission-policy.test.js b/tests/unit/a0-permission-policy.test.js
+new file mode 100644
+index 0000000..add348b
+--- /dev/null
++++ b/tests/unit/a0-permission-policy.test.js
+@@ -0,0 +1,297 @@
++/**
++ * A0-1：三级权限规则直接测试（新契约）。
++ * 直接 require 真实实现；预期值按 decisions.md 与用户三项确认字面填写，
++ * 不由被测函数生成。本批测试只验证规则函数，不代表已接入生产调用链。
++ *
++ * 已确认补充语义：
++ * - write 动作要求同 scope read+write；
++ * - read=false、remind=true 仅出电话提醒按钮，不展示提醒明细；
++ * - 提醒明细可见 = scope.read && scope.remind && noticeRules 对应项（合取）。
++ */
++
++const {
++  FAMILY_RELATIONS_V2,
++  getFamilyRelationV2,
++  normalizeFamilyScopesV2,
++  normalizeNoticeRulesV2,
++  canViewScope,
++  canShowPhoneReminder,
++  canPerformScopeAction,
++  canViewReminderInfo
++} = require('../../cloudfunctions/healthApi/family-policy')
++
++describe('A0 · 八种家属关系', () => {
++  it('恰好 8 项，键名与顺序固定', () => {
++    expect(FAMILY_RELATIONS_V2.map(r => r.key)).toEqual([
++      'daughter', 'son', 'spouse', 'granddaughter',
++      'grandson', 'sibling', 'caregiver', 'other'
++    ])
++  })
++
++  it('名称与用途按确认文案字面匹配', () => {
++    expect(FAMILY_RELATIONS_V2).toEqual([
++      { key: 'daughter', label: '女儿', meta: '主要照护人' },
++      { key: 'son', label: '儿子', meta: '紧急联系人' },
++      { key: 'spouse', label: '配偶', meta: '共同管理' },
++      { key: 'granddaughter', label: '孙女', meta: '主要照护人' },
++      { key: 'grandson', label: '孙子', meta: '主要照护人' },
++      { key: 'sibling', label: '兄弟姐妹', meta: '共同管理' },
++      { key: 'caregiver', label: '护工', meta: '协助管理' },
++      { key: 'other', label: '家属', meta: '共同管理' }
++    ])
++  })
++
++  it('getFamilyRelationV2：命中返回；未知 key 返回 null（不静默回退）', () => {
++    expect(getFamilyRelationV2('granddaughter').label).toBe('孙女')
++    expect(getFamilyRelationV2('not-exist')).toBeNull()
++  })
++})
++
++describe('A0 · normalizeFamilyScopesV2 · 合法输入', () => {
++  it('完整授权归一化为规范四 scope（固定顺序、固定标题与用途）', () => {
++    const result = normalizeFamilyScopesV2([
++      { key: 'medicine', read: true, write: true, remind: false },
++      { key: 'bloodPressure', read: true, write: false, remind: true },
++      { key: 'report', read: true, remind: true },
++      { key: 'bloodGlucose', read: false, write: false, remind: false }
++    ])
++    expect(result).toEqual([
++      { key: 'bloodPressure', title: '血压记录', meta: '数值、测量时间、场景标签和趋势', read: true, write: false, remind: true },
++      { key: 'bloodGlucose', title: '血糖记录', meta: '数值、测量时间、测量场景和趋势', read: false, write: false, remind: false },
++      { key: 'medicine', title: '用药确认', meta: '用药计划、确认状态和未确认记录', read: true, write: true, remind: false },
++      { key: 'report', title: '健康记录周报', meta: '每周记录汇总和趋势回顾', read: true, write: false, remind: true }
++    ])
++  })
++
++  it('每项只给 key：read/write/remind 全部缺失默认 false', () => {
++    const result = normalizeFamilyScopesV2([
++      { key: 'bloodPressure' },
++      { key: 'bloodGlucose' },
++      { key: 'medicine' },
++      { key: 'report' }
++    ])
++    expect(result.every(s => s.read === false && s.write === false && s.remind === false)).toBe(true)
++  })
++
++  it('显式 false 被保留为 false', () => {
++    const result = normalizeFamilyScopesV2([
++      { key: 'bloodPressure', read: false, write: false, remind: false }
++    ])
++    expect(result[0]).toMatchObject({ read: false, write: false, remind: false })
++  })
++})
++
++describe('A0 · normalizeFamilyScopesV2 · 拒绝非法输入', () => {
++  it('非数组（undefined/null/对象）抛错', () => {
++    expect(() => normalizeFamilyScopesV2(undefined)).toThrow('授权范围')
++    expect(() => normalizeFamilyScopesV2(null)).toThrow('授权范围')
++    expect(() => normalizeFamilyScopesV2({})).toThrow('授权范围')
++  })
++
++  it('未知 scope key 抛错，不落库', () => {
++    expect(() => normalizeFamilyScopesV2([{ key: 'unknown', read: true }]))
++      .toThrow('未知授权项')
++  })
++
++  it('非对象元素、缺 key 元素抛错', () => {
++    expect(() => normalizeFamilyScopesV2(['bloodPressure'])).toThrow('授权项')
++    expect(() => normalizeFamilyScopesV2([{ read: true }])).toThrow('授权项')
++  })
++
++  it('重复 scope key 抛错', () => {
++    expect(() => normalizeFamilyScopesV2([
++      { key: 'bloodPressure', read: true },
++      { key: 'bloodPressure', read: false }
++    ])).toThrow('不能重复')
++  })
++
++  it.each([
++    ['read', 'false'], ['write', 'true'], ['remind', 1],
++    ['read', 0], ['write', 'yes'], ['remind', 'TRUE']
++  ])('%s 为非布尔值 %p 抛错，不做强制转换', (field, value) => {
++    expect(() => normalizeFamilyScopesV2([{ key: 'bloodPressure', [field]: value }]))
++      .toThrow('必须是布尔值')
++  })
++
++  it('旧字段 enabled=true 不映射任何新权限', () => {
++    const result = normalizeFamilyScopesV2([
++      { key: 'bloodPressure', enabled: true },
++      { key: 'bloodGlucose', enabled: true },
++      { key: 'medicine', enabled: true },
++      { key: 'report', enabled: true }
++    ])
++    expect(result.every(s => !s.read && !s.write && !s.remind)).toBe(true)
++  })
++
++  it('report 不接受 write=true（周报无代录能力）', () => {
++    expect(() => normalizeFamilyScopesV2([{ key: 'report', read: true, write: true }]))
++      .toThrow('周报')
++  })
++})
++
++describe('A0 · 纯函数性质', () => {
++  it('不修改输入对象（输入保持原样）', () => {
++    const input = [{ key: 'bloodPressure', read: true, custom: 'x' }]
++    const snapshot = JSON.parse(JSON.stringify(input))
++    normalizeFamilyScopesV2(input)
++    expect(input).toEqual(snapshot)
++  })
++
++  it('重复调用结果不串扰', () => {
++    const first = normalizeFamilyScopesV2([{ key: 'bloodPressure', read: true }])
++    const second = normalizeFamilyScopesV2([{ key: 'bloodPressure' }])
++    expect(first[0].read).toBe(true)
++    expect(second[0].read).toBe(false)
++    expect(first).not.toBe(second)
++  })
++})
++
++describe('A0 · canPerformScopeAction · 允许与禁止', () => {
++  function scopes(flags) {
++    return normalizeFamilyScopesV2(flags)
++  }
++
++  it('血压代录：read+write 同时具备才允许；只 read 或只 write 拒绝', () => {
++    const allow = scopes([{ key: 'bloodPressure', read: true, write: true }])
++    const readOnly = scopes([{ key: 'bloodPressure', read: true }])
++    const writeOnly = scopes([{ key: 'bloodPressure', write: true }])
++    expect(canPerformScopeAction(allow, 'recordBloodPressure')).toBe(true)
++    expect(canPerformScopeAction(readOnly, 'recordBloodPressure')).toBe(false)
++    expect(canPerformScopeAction(writeOnly, 'recordBloodPressure')).toBe(false)
++  })
++
++  it('血糖代录：read+write 同时具备才允许', () => {
++    const allow = scopes([{ key: 'bloodGlucose', read: true, write: true }])
++    expect(canPerformScopeAction(allow, 'recordBloodGlucose')).toBe(true)
++    expect(canPerformScopeAction(scopes([{ key: 'bloodGlucose', write: true }]), 'recordBloodGlucose')).toBe(false)
++  })
++
++  it('用药代确认与撤销本次代确认：medicine read+write', () => {
++    const allow = scopes([{ key: 'medicine', read: true, write: true }])
++    expect(canPerformScopeAction(allow, 'confirmMedication')).toBe(true)
++    expect(canPerformScopeAction(allow, 'revokeMedicationConfirmation')).toBe(true)
++    expect(canPerformScopeAction(scopes([{ key: 'medicine', write: true }]), 'confirmMedication')).toBe(false)
++  })
++
++  it('用药计划管理：即使所有 write=true 也拒绝', () => {
++    const all = scopes([
++      { key: 'bloodPressure', read: true, write: true },
++      { key: 'bloodGlucose', read: true, write: true },
++      { key: 'medicine', read: true, write: true },
++      { key: 'report', read: true }
++    ])
++    expect(canPerformScopeAction(all, 'createMedicationPlan')).toBe(false)
++    expect(canPerformScopeAction(all, 'updateMedicationPlan')).toBe(false)
++    expect(canPerformScopeAction(all, 'deleteMedicationPlan')).toBe(false)
++  })
++
++  it('健康记录删除：write=true 也不放行', () => {
++    const all = scopes([
++      { key: 'bloodPressure', read: true, write: true },
++      { key: 'bloodGlucose', read: true, write: true }
++    ])
++    expect(canPerformScopeAction(all, 'deleteBloodPressureRecord')).toBe(false)
++    expect(canPerformScopeAction(all, 'deleteBloodGlucoseRecord')).toBe(false)
++  })
++
++  it('未知动作一律拒绝（不因任何授权放行）', () => {
++    const all = scopes([
++      { key: 'bloodPressure', read: true, write: true, remind: true },
++      { key: 'bloodGlucose', read: true, write: true, remind: true },
++      { key: 'medicine', read: true, write: true, remind: true },
++      { key: 'report', read: true, remind: true }
++    ])
++    expect(canPerformScopeAction(all, 'anythingElse')).toBe(false)
++  })
++
++  it('未归一化/缺项输入：拒绝而非抛错', () => {
++    expect(canPerformScopeAction([], 'recordBloodPressure')).toBe(false)
++    expect(canPerformScopeAction(undefined, 'recordBloodPressure')).toBe(false)
++  })
++})
++
++describe('A0 · canViewScope / 电话提醒按钮', () => {
++  it('canViewScope：仅 read=true 可见', () => {
++    const s = normalizeFamilyScopesV2([{ key: 'bloodPressure', read: true, remind: true }])
++    expect(canViewScope(s, 'bloodPressure')).toBe(true)
++    expect(canViewScope(s, 'medicine')).toBe(false)
++  })
++
++  it('read=false、remind=true：电话按钮可显示，但 scope 数据不可见', () => {
++    const s = normalizeFamilyScopesV2([{ key: 'medicine', remind: true }])
++    expect(canShowPhoneReminder(s, 'medicine')).toBe(true)
++    expect(canViewScope(s, 'medicine')).toBe(false)
++  })
++})
++
++describe('A0 · noticeRules 归一化', () => {
++  it('无入参：三项均默认 false', () => {
++    expect(normalizeNoticeRulesV2()).toEqual({
++      missedMedicine: false,
++      missingRecord: false,
++      weeklyReport: false
++    })
++  })
++
++  it('逐项布尔归一化；非布尔抛错；多余键不进入结果', () => {
++    expect(normalizeNoticeRulesV2({ missedMedicine: true, weeklyReport: false, extra: true }))
++      .toEqual({ missedMedicine: true, missingRecord: false, weeklyReport: false })
++    expect(() => normalizeNoticeRulesV2({ missedMedicine: 'true' })).toThrow('必须是布尔值')
++  })
++})
++
++describe('A0 · canViewReminderInfo · 合取双开关 + read', () => {
++  function build(scopeFlags, rules) {
++    return {
++      scopes: normalizeFamilyScopesV2(scopeFlags),
++      rules: normalizeNoticeRulesV2(rules)
++    }
++  }
++
++  it('漏服提醒：medicine read+remind 且 missedMedicine，三者齐备可见', () => {
++    const ok = build(
++      [{ key: 'medicine', read: true, remind: true }],
++      { missedMedicine: true }
++    )
++    expect(canViewReminderInfo(ok.scopes, ok.rules, 'missedMedicine')).toBe(true)
++
++    const noRead = build([{ key: 'medicine', remind: true }], { missedMedicine: true })
++    expect(canViewReminderInfo(noRead.scopes, noRead.rules, 'missedMedicine')).toBe(false)
++
++    const ruleOff = build(
++      [{ key: 'medicine', read: true, remind: true }],
++      { missedMedicine: false }
++    )
++    expect(canViewReminderInfo(ruleOff.scopes, ruleOff.rules, 'missedMedicine')).toBe(false)
++  })
++
++  it('连续未记录：血压或血糖块 read+remind，且 missingRecord', () => {
++    const bp = build([{ key: 'bloodPressure', read: true, remind: true }], { missingRecord: true })
++    const bg = build([{ key: 'bloodGlucose', read: true, remind: true }], { missingRecord: true })
++    expect(canViewReminderInfo(bp.scopes, bp.rules, 'missingRecord')).toBe(true)
++    expect(canViewReminderInfo(bg.scopes, bg.rules, 'missingRecord')).toBe(true)
++
++    const neither = build([{ key: 'bloodPressure', remind: true }], { missingRecord: true })
++    expect(canViewReminderInfo(neither.scopes, neither.rules, 'missingRecord')).toBe(false)
++    const ruleOff = build(
++      [{ key: 'bloodPressure', read: true, remind: true }],
++      { missingRecord: false }
++    )
++    expect(canViewReminderInfo(ruleOff.scopes, ruleOff.rules, 'missingRecord')).toBe(false)
++  })
++
++  it('周报提醒：report read+remind 且 weeklyReport', () => {
++    const ok = build([{ key: 'report', read: true, remind: true }], { weeklyReport: true })
++    expect(canViewReminderInfo(ok.scopes, ok.rules, 'weeklyReport')).toBe(true)
++    const noRead = build([{ key: 'report', remind: true }], { weeklyReport: true })
++    expect(canViewReminderInfo(ok.scopes, ok.rules, 'unknown')).toBe(false)
++    expect(canViewReminderInfo(noRead.scopes, noRead.rules, 'weeklyReport')).toBe(false)
++  })
++
++  it('read=false、remind=true：只能出电话按钮，提醒明细不可见', () => {
++    const s = normalizeFamilyScopesV2([{ key: 'medicine', remind: true }])
++    const rules = normalizeNoticeRulesV2({ missedMedicine: true })
++    expect(canShowPhoneReminder(s, 'medicine')).toBe(true)
++    expect(canViewReminderInfo(s, rules, 'missedMedicine')).toBe(false)
++  })
++})

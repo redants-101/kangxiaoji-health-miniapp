@@ -1,0 +1,9 @@
+== S6a trend familyView ==
+✔ [healthApi] call succeeded
+Return result：{"familyView":{"allowed":false,"reason":"noBinding"}}
+== S6b medList familyView ==
+✔ [healthApi] call succeeded
+Return result：{"familyView":{"allowed":false,"reason":"noBinding"}}
+== S6c medHistory familyView ==
+✔ [healthApi] call succeeded
+Return result：{"familyView":{"allowed":false,"reason":"noBinding"}}

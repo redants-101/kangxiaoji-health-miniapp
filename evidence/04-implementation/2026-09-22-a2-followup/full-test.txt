@@ -1,0 +1,810 @@
+
+> test
+> jest --verbose --runInBand
+
+PASS tests/unit/a0-contract-integration.test.js
+  A0-2 集成 · 创建邀请（服务端提交校验，缺失/非法不放权）
+    √ scopes 缺失：服务入口拒绝，不写数据库 (25 ms)
+    √ scopes null：服务入口拒绝，不写数据库
+    √ scopes 字符串：服务入口拒绝，不写数据库
+    √ scopes 对象：服务入口拒绝，不写数据库 (1 ms)
+    √ scopes=[]：邀请可生成但落库四块 read/write/remind 全部 false，不恢复授权 (3 ms)
+    √ 部分 scopes：仅提交的块按值归一化，未提交块全部 false（不补开）
+    √ 显式合法的完整授权：按提交值正确保存（write 仅 BP/BG/medicine）
+    √ 未知关系在入口被拒绝，不写入 (1 ms)
+    √ report write=true、非布尔、未知/重复 scope 在创建入口被拒绝 (1 ms)
+    √ 8 种关系可往返，提交的关系名称写入邀请成员 (1 ms)
+  A0-2 集成 · 加入家庭
+    √ 家属加入：family_members 落三级 scopes 与 noticeRules 对象，family_auth 转 active (2 ms)
+  A0-2 集成 · 家属首页按 read 输出受控明细
+    √ 仅血压块 read：响应只含血压明细，血糖/用药/周报在服务端即缺失（非页面隐藏） (1 ms)
+    √ 全块 read：血压血糖均输出，用药与周报可见
+    √ 血糖块开、血压块关：只输出血糖 (1 ms)
+  A0-2 集成 · 授权保存/回显
+    √ updateFamilyAuth：新 scopes 同步到 family_members，绑定的 family_auth 同步 (1 ms)
+    √ updateFamilyAuth 入口拒绝：report.write、未知 key、非布尔、重复 key（A1 后须带有效 memberId） (1 ms)
+    √ getFamilyAuthData：memberId 命中关系行，回显三级 scopes 与 noticeRules
+  A0-2 集成 · owner 本人功能不被误伤
+    √ getFamilyData：owner 的成员列表正常返回，scope 文案按 read 生成 (1 ms)
+
+PASS tests/unit/a2-followup.test.js
+  A2 收尾 · 无邀请码说明态
+    √ 缺码：noInvite 说明态——无有效期、无可查看范围、无有效标志、不计数 (1 ms)
+    √ 空串与纯空白串同缺码处理，不计数
+    √ 非字符串输入（数字）按 INVALID 计数，不冒充缺码
+    √ 非字符串输入（对象）按 INVALID 计数，不冒充缺码
+    √ 非字符串输入（布尔）按 INVALID 计数，不冒充缺码
+    √ 非字符串输入（数组）按 INVALID 计数，不冒充缺码
+    √ 本地镜像：无邀请码加入不假成功 (26 ms)
+  A2 收尾 · 有效期边界
+    √ expiresAt 不可解析：查询与加入均按 INVALID 拒绝，不产生 NaN 剩余时间 (1 ms)
+    √ 刚好到期（expiresAt == now）：按已过期拒绝 (1 ms)
+    √ 未来有效期：正常预览，remainHours 为有限正数 (1 ms)
+  A2 收尾 · 重邀/加入交错（事务分支控制流）
+    √ 事务路径 happy path：锚点文档创建、邀请转 active (1 ms)
+    √ 交错：外层读到旧码 A，事务开始前 owner 重邀换码 B——旧码请求被拒，新邀请不被消耗
+    √ 事务内锚点读取发生基础设施异常：原样上抛，零写入（不吞异常继续写） (8 ms)
+  A2 收尾 · 原子频控（预留-核销-退还）
+    √ 失败累计到计数文档：第 20 次失败后额度用尽，第 21 次拒绝且不再探测
+    √ 计数文档为每 (openId, 北京日) 单文档，含 day 键，不含邀请码明文
+    √ 成功查询退还额度：失败 19 次后一次成功，计数回到 19
+    √ 自绑/已绑定他人属业务拒绝但非枚举失败：退还额度 (1 ms)
+    √ join 与查询共用额度：查询失败 20 次后 join 直接被拒
+    √ 自然日切换：昨日计数满额不影响今日（key 内嵌北京日） (1 ms)
+    √ 并发建计数文档冲突（add 撞 _id）：重试条件更新后正常计 1
+  A2 收尾 · 重邀必须发新码
+    √ 候选码与 owner 自己当前码相同：不复用，重新生成 (1 ms)
+    √ 连续 3 次候选码均被占用（含自己旧码）：抛冲突且零写入
+
+PASS tests/unit/report.test.js
+  services/report
+    parseBpValues
+      √ 解析标准血压值 "128/78" (1 ms)
+      √ 解析三位数/两位数 "180/110"
+      √ value 为空字符串时返回 0/0
+      √ value 为 undefined 时返回 0/0
+      √ 非数字部分被过滤，返回 0
+    parseBgValue
+      √ 解析标准血糖值 "6.1" (1 ms)
+      √ 解析整数血糖 "7"
+      √ value 为空时返回 0
+      √ value 为非数字时返回 0
+    filterWeekRecords
+      √ 筛选本周内的记录 (1 ms)
+      √ 空数组返回空
+    filterRecordsByDays
+      √ 7天时调用 filterWeekRecords
+      √ 30天时筛选近30天记录
+      √ 90天时筛选近90天记录 (1 ms)
+    buildReportSummary
+      √ 血压记录生成血压摘要
+      √ 血糖记录生成血糖摘要 (1 ms)
+      √ 血压+血糖都存在时生成两组摘要 (1 ms)
+      √ 都为空时返回空数组
+    isAbnormalRecord
+      √ statusType=warn 时为异常
+      √ status=建议复测 时为异常 (1 ms)
+      √ 收缩压 >= 140 为异常（高血压）
+      √ 舒张压 >= 90 为异常（高血压）
+      √ 收缩压 < 90 为异常（低血压）
+      √ 舒张压 < 60 为异常（低血压）
+      √ 正常血压不为异常
+      √ 收缩压=0 时不判低血压（避免误判空值） (1 ms)
+      √ 血糖 >= 7.0 为异常（高血糖）
+      √ 血糖 <= 3.9 为异常（低血糖）
+      √ 血糖=0 时不判低血糖
+      √ 正常血糖不为异常
+    buildAbnormalReason
+      √ 有 tip 时优先返回 tip
+      √ 收缩压 >= 180 返回高危提示
+      √ 收缩压 >= 140 返回偏高提示
+      √ 收缩压 < 90 返回偏低提示
+      √ 血糖 >= 11.1 返回显著偏高提示
+      √ 血糖 >= 7.0 返回偏高提示
+      √ 血糖 <= 3.9 返回偏低提示
+      √ 无法判断时返回通用异常提示
+    buildReportFocusItems
+      √ 只保留异常记录
+      √ 异常记录的 type 显示中文
+      √ 血糖异常记录 type 显示"血糖"
+      √ 全部正常时返回空数组 (1 ms)
+    buildReportChartFromRecords
+      √ 血压+血糖记录生成混合图表
+      √ 无记录时返回空图表 (1 ms)
+      √ 无记录时自定义 periodLabel
+      √ 有记录时自定义 periodLabel
+      √ 同日同类型取最新记录 (1 ms)
+    getTrendData
+      √ 7天档位返回 summary/focusItems/summaryMetrics (1 ms)
+      √ 30天档位返回 summary/focusItems/summaryMetrics (1 ms)
+      √ 90天档位返回 summary/focusItems/summaryMetrics
+      √ 返回 metricOptions 包含 bpBg 和 medication
+      √ 返回 rangeOptions 包含三档时间 (1 ms)
+      √ 默认参数为 bpBg + 7d
+      √ chartBars 始终为数组
+      √ records 最多 20 条 (1 ms)
+      √ 指标切换到 bloodGlucose 时正常返回
+      √ 指标切换到 bloodPressure 时正常返回 (1 ms)
+      √ 指标切换到 medication 时正常返回 (9 ms)
+      √ bpBg 复合指标返回双图表数据 (1 ms)
+    getReportData (deprecated)
+      √ 返回与 getTrendData 一致的核心字段 (1 ms)
+      √ 默认为本周数据 (1 ms)
+      √ 支持传入 metric 和 range 参数
+
+PASS tests/unit/shared-policy.test.js
+  payload-helpers · 北京时间日期函数（跨日边界，固定系统时间）
+    √ UTC 16:30（北京次日 00:30）取北京日期，发生跨日 (1 ms)
+    √ UTC 15:59:59（北京当天 23:59:59）仍为北京当天 (1 ms)
+    √ UTC 16:00:00 整（北京次日 00:00）取次日
+    √ 年初边界：UTC 上一年 12-31T16:00 取北京 1-1，月份补零 (1 ms)
+    √ 偏移常量为 8 小时毫秒数
+  payload-helpers · 纯断言与格式化
+    √ buildLogId 去掉时间中的冒号
+    √ getRecordStatus：warn 返回建议复测，其余返回正常
+    √ assertPayloadObject：接受普通对象，拒绝空值/数组/原始值 (13 ms)
+    √ getLimitedString：trim 空白；超长抛错；必填为空抛错；非字符串返回空串
+    √ getRequiredNumber：数值转换与范围边界；非法/越界抛错 (1 ms)
+    √ getOptionalNumber：空值返回 null，有值走范围校验
+    √ isValidTime：HH:mm 合法边界；24:00/格式错非法 (1 ms)
+    √ getEnumValue：白名单内通过，之外抛错
+  payload-validation · 用药计划与确认校验（B3 既有，行为未变）
+    √ 用药计划：合法入参归一化（times 去重、subscribe 布尔、startDate 默认今天） (1 ms)
+    √ 用药计划：名称必填；times 至少一个且不超过 8 个；时间格式校验 (4 ms)
+    √ 用药计划：endDate 格式校验，合法 endDate 保留
+    √ 用药确认：合法 taken，缺省状态文案为已服 (1 ms)
+    √ 用药确认：skipped/snoozed 默认文案；自定义文案保留
+    √ 用药确认：非法 status 抛错；logId/time/name 必填 (2 ms)
+  family-policy · 关系目录与默认成员（新契约）
+    √ 默认成员五字段
+    √ 关系目录恰好 8 项，键序固定
+    √ getFamilyRelationV2 命中返回；未知返回 null
+    √ 邀请默认 scopes：四块 read/remind 开、write 关
+    √ 邀请默认 noticeRules：漏服开、连续未记录关、周报开
+  family-policy · 三级权限归一化与动作判断（新契约）
+    √ normalizeFamilyScopesV2：缺字段默认 false；旧 enabled 忽略
+    √ 非布尔、未知/重复 key、report.write 被拒绝 (8 ms)
+    √ normalizeNoticeRulesV2：缺失 false；数组（旧页面形态）拒绝
+    √ canViewScope / canShowPhoneReminder：read 看数据、remind 出按钮 (1 ms)
+    √ getScopeTextV2：按 read 标题连接
+    √ normalizeFamilyInvitePayloadV2：缺失 scopes 拒绝；空数组四块全关；未知关系拒绝 (1 ms)
+    √ normalizeFamilyAuthPayloadV2：缺省全最小授权；noticeRules 对象
+    √ validateInviteCodePayload：对象+必填
+  db 工厂 · 归属校验（本人/非本人/不存在/空ID）
+    √ 文档属于本人：返回文档 (1 ms)
+    √ 文档属于他人：查不到，抛无权操作
+    √ 文档不存在：抛同样错误；空 ID 先拦截
+  db 工厂 · 名称查询与访问上下文（新契约）
+    √ createProfileDisplayName：命中返回 name；无档案回落家人 (1 ms)
+    √ 有效成员关系：member 模式
+    √ ownerPreview：无关系但有本人有效 family_auth，scopes 与 noticeRules 归一化 (1 ms)
+    √ 无关系无授权、或授权已撤销：null
+
+PASS tests/unit/a2-invite-security.test.js
+  A2 · getFamilyJoinData 错误态与错误码
+    √ 缺失 inviteCode：noInvite 说明态，无 inviteError、不计失败 (1 ms)
+    √ 格式错误：FAMILY_INVITE_INVALID，失败额度计 1，零成员写入 (1 ms)
+    √ 不存在：FAMILY_INVITE_NOT_FOUND，额度计 1
+    √ expiresAt 缺失：一律无效（decisions #15），不做 24h 兼容
+    √ 已过期：FAMILY_INVITE_EXPIRED (1 ms)
+    √ 已撤销：FAMILY_INVITE_REVOKED
+    √ 已被其他成员使用：FAMILY_INVITE_USED
+    √ 正常 pending：无 inviteError，scopes 仅 read 项，remainHours>0，额度退还为 0 (1 ms)
+    √ 任何失败路径：family_members 零写入、family_auth 不被改为 active
+  A2 · 频控（openId + 北京自然日，额度 20，原子预留）
+    √ 第 1 次失败额度计 1；累计到 20 后第 21 次查询被拒且额度不再增长 (1 ms)
+    √ 自然日切换：昨日额度用尽不影响今日查询（key 内嵌北京日）
+    √ 频控计数文档不含邀请码明文，字段为 openId/day/count
+    √ 频控按调用者隔离：caller-2 不受 caller-1 的失败影响
+  A2 · joinFamilyByInvite 错误码与频控防绕过
+    √ 不存在 → FAMILY_INVITE_NOT_FOUND 且计数
+    √ 已过期 → FAMILY_INVITE_EXPIRED
+    √ 已撤销 → FAMILY_INVITE_REVOKED (4 ms)
+    √ 已被他人使用 → FAMILY_INVITE_USED
+    √ expiresAt 缺失 → FAMILY_INVITE_INVALID（不做兼容）
+    √ 自绑 → FAMILY_INVITE_SELF（既有语义补码，不占失败额度）
+    √ 已绑定他人 → FAMILY_MEMBER_BOUND（A1 语义补码）
+    √ 频控拒绝直接刷 join 接口：RATE_LIMITED，零写入 (1 ms)
+  A2 · createFamilyInvite 唯一性前置检查
+    √ 候选码与他人文档冲突时重新生成，落库用新码
+    √ 连续冲突 3 次：抛错且不写入新邀请 (17 ms)
+    √ 重邀必须发新码：候选码命中自己旧文档同样视为冲突（A2 收尾修订） (1 ms)
+  A2 · 本地镜像过期校验（decisions #15）
+    √ 本地邀请已过期：拒绝且不假成功 (5 ms)
+    √ 本地邀请缺失 expiresAt：一律无效 (1 ms)
+    √ 邀请码与本地记录不一致：按不存在处理
+    √ 有效本地邀请：正常镜像 joined 状态
+    √ createFamilyInviteLocal 镜像写入 expiresAt（供本地过期校验） (1 ms)
+  A2 · 页面消费契约
+    √ normalizeFamilyJoinData 透传 inviteError（页面据 code 渲染状态）
+
+  console.warn
+    [PreCheck] 隐私设置数据为空
+
+    [0m [90m 52 |[39m   [90m// 防御性检查：支持多种可能的存储结构[39m
+     [90m 53 |[39m   [36mif[39m ([33m![39mprivacy) {
+    [31m[1m>[22m[39m[90m 54 |[39m     console[33m.[39mwarn([32m'[PreCheck] 隐私设置数据为空'[39m)
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 55 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 56 |[39m   }
+     [90m 57 |[39m   [0m
+
+      at warn (utils/pre-check.js:54:13)
+      at Object.checkPrivacyAgreed (tests/unit/pre-check.test.js:28:14)
+
+  console.warn
+    [PreCheck] 隐私协议未确认或数据格式异常 { privacyKeys: [ 'agreed' ] }
+
+    [0m [90m 66 |[39m   }
+     [90m 67 |[39m   
+    [31m[1m>[22m[39m[90m 68 |[39m   console[33m.[39mwarn([32m'[PreCheck] 隐私协议未确认或数据格式异常'[39m[33m,[39m { privacyKeys[33m:[39m [33mObject[39m[33m.[39mkeys(privacy) })
+     [90m    |[39m           [31m[1m^[22m[39m
+     [90m 69 |[39m   [36mreturn[39m [36mfalse[39m
+     [90m 70 |[39m }
+     [90m 71 |[39m[0m
+
+      at warn (utils/pre-check.js:68:11)
+      at Object.checkPrivacyAgreed (tests/unit/pre-check.test.js:49:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '', profileKeys: [] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:55:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '', profileKeys: [ 'profile' ] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:69:14)
+
+  console.warn
+    [PreCheck] 基础资料未设置或姓名为空 { name: '   ', profileKeys: [ 'profile' ] }
+
+    [0m [90m 87 |[39m   
+     [90m 88 |[39m   [36mif[39m ([33m![39mname [33m||[39m [33m![39mname[33m.[39mtrim()) {
+    [31m[1m>[22m[39m[90m 89 |[39m     console[33m.[39mwarn([32m'[PreCheck] 基础资料未设置或姓名为空'[39m[33m,[39m { name[33m,[39m profileKeys[33m:[39m profile [33m?[39m [33mObject[39m[33m.[39mkeys(profile) [33m:[39m [] })
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m 90 |[39m     [36mreturn[39m [36mfalse[39m
+     [90m 91 |[39m   }
+     [90m 92 |[39m   [36mreturn[39m [36mtrue[39m[0m
+
+      at warn (utils/pre-check.js:89:13)
+      at Object.checkProfileSetup (tests/unit/pre-check.test.js:76:14)
+
+PASS tests/unit/pre-check.test.js
+  utils/pre-check
+    checkPrivacyAgreed
+      √ 无隐私设置时返回 false (22 ms)
+      √ agreed=true 时返回 true
+      √ agreedAt 有值时返回 true
+      √ agreed=false 且无 agreedAt 时返回 false (7 ms)
+    checkProfileSetup
+      √ 无资料时返回 false (2 ms)
+      √ 有姓名时返回 true
+      √ 姓名为空字符串时返回 false (2 ms)
+      √ 姓名为纯空格时返回 false (2 ms)
+      √ 兼容扁平结构 profile.name
+    isProtectedPage
+      √ 首页是受保护页面
+      √ 趋势页是受保护页面
+      √ 隐私页不是受保护页面
+      √ 启动页不是受保护页面
+    isPrivacyFreePage
+      √ 隐私页是免隐私检查页面 (1 ms)
+      √ 隐私政策页是免隐私检查页面
+      √ 用户协议页是免隐私检查页面
+      √ 首页不是免隐私检查页面
+    isProfileFreePage
+      √ 隐私页是免资料检查页面
+      √ 角色选择页是免资料检查页面
+      √ 资料编辑页是免资料检查页面
+      √ 首页不是免资料检查页面
+
+PASS tests/unit/a1-member-isolation.test.js
+  A1 · 一位老人关联多位家属
+    √ O1 先后绑定 M1、M2：两行 active 关系互不影响 (2 ms)
+  A1 · 重新邀请：清空绑定但不动已有成员
+    √ 重邀后 family_auth memberOpenId 清空、status=pending，M1 关系行原样保留 (1 ms)
+  A1 · 精准改权
+    √ 修改 M1 后：M2 权限与无关待加入邀请保持不变 (1 ms)
+    √ memberId 缺失：拒绝且 family_auth 与 family_members 零写入 (24 ms)
+    √ memberId 伪造：拒绝且 family_auth 与 family_members 零写入 (1 ms)
+    √ memberId 空字符串：拒绝且 family_auth 与 family_members 零写入 (1 ms)
+    √ 其他 owner 的 memberId：拒绝且零写入 (2 ms)
+    √ getFamilyAuthData 预览分支不得回填 family_auth id 充当 memberId (1 ms)
+    √ getFamilyData 预览卡不得携带 family_auth id 作为成员 id
+  A1 · 精准撤销
+    √ 撤销 M1 后：M1 新请求被拒（空数据），M2 新请求仍允许 (1 ms)
+    √ 重复撤销：幂等返回且零写入，不触碰无关邀请与其他成员 (2 ms)
+    √ 撤销要求 memberId：缺失时拒绝且不清 family_auth (1 ms)
+    √ 撤销只重置确实绑定该成员的 family_auth，不动他人绑定 (1 ms)
+  A1 · 加入家庭：1:1、幂等与自绑
+    √ 已绑定 O1 的成员加入 O2 被拒，零新行、O2 邀请保持 pending (1 ms)
+    √ 同 owner 重复加入：幂等，不增行、不重置已调整权限 (1 ms)
+    √ 拒绝本人自绑定
+    √ 同一邀请码顺序竞争：先到者绑定，后到者被拒（并发原子性属云端待验证） (1 ms)
+    √ 被撤销的成员可重新加入（新邀请），锚点复活为新关系 (1 ms)
+  A1 · 注销关联清理
+    √ 家属 M1 注销：只删本人关系行，M2 与 O1 数据不受影响 (1 ms)
+    √ 注销者是当前绑定成员时，才重置对应 family_auth；绑定他人则不动 (1 ms)
+  A1 · 客户端镜像：memberId 精确更新，无假成功
+    √ 无 memberId 的改权结果：不镜像、不造卡，返回远端结果
+    √ 带 memberId 的改权：只更新对应成员卡 (1 ms)
+    √ 撤销镜像：只移除目标成员
+
+PASS tests/unit/a0-permission-policy.test.js
+  A0 · 八种家属关系
+    √ 恰好 8 项，键名与顺序固定 (1 ms)
+    √ 名称与用途按确认文案字面匹配 (1 ms)
+    √ getFamilyRelationV2：命中返回；未知 key 返回 null（不静默回退） (1 ms)
+  A0 · normalizeFamilyScopesV2 · 合法输入
+    √ 完整授权归一化为规范四 scope（固定顺序、固定标题与用途）
+    √ 每项只给 key：read/write/remind 全部缺失默认 false
+    √ 显式 false 被保留为 false
+  A0 · normalizeFamilyScopesV2 · 拒绝非法输入
+    √ 非数组（undefined/null/对象）抛错 (13 ms)
+    √ 未知 scope key 抛错，不落库
+    √ 非对象元素、缺 key 元素抛错 (1 ms)
+    √ 重复 scope key 抛错
+    √ read 为非布尔值 "false" 抛错，不做强制转换 (1 ms)
+    √ write 为非布尔值 "true" 抛错，不做强制转换
+    √ remind 为非布尔值 1 抛错，不做强制转换 (1 ms)
+    √ read 为非布尔值 0 抛错，不做强制转换
+    √ write 为非布尔值 "yes" 抛错，不做强制转换 (1 ms)
+    √ remind 为非布尔值 "TRUE" 抛错，不做强制转换
+    √ 旧字段 enabled=true 不映射任何新权限 (4 ms)
+    √ report 不接受 write=true（周报无代录能力） (1 ms)
+  A0 · 纯函数性质
+    √ 不修改输入对象（输入保持原样）
+    √ 重复调用结果不串扰 (1 ms)
+  A0 · canPerformScopeAction · 允许与禁止
+    √ 血压代录：read+write 同时具备才允许；只 read 或只 write 拒绝
+    √ 血糖代录：read+write 同时具备才允许
+    √ 用药代确认与撤销本次代确认：medicine read+write
+    √ 用药计划管理：即使所有 write=true 也拒绝 (1 ms)
+    √ 健康记录删除：write=true 也不放行
+    √ 未知动作一律拒绝（不因任何授权放行）
+    √ 未归一化/缺项输入：拒绝而非抛错
+  A0 · canViewScope / 电话提醒按钮
+    √ canViewScope：仅 read=true 可见
+    √ read=false、remind=true：电话按钮可显示，但 scope 数据不可见 (1 ms)
+  A0 · noticeRules 归一化
+    √ 无入参：三项均默认 false
+    √ 逐项布尔归一化；非布尔抛错；多余键不进入结果
+  A0 · canViewReminderInfo · 合取双开关 + read
+    √ 漏服提醒：medicine read+remind 且 missedMedicine，三者齐备可见 (1 ms)
+    √ 连续未记录：血压或血糖块 read+remind，且 missingRecord
+    √ 周报提醒：report read+remind 且 weeklyReport
+    √ read=false、remind=true：只能出电话按钮，提醒明细不可见 (1 ms)
+
+PASS tests/unit/settings.test.js
+  services/settings
+    getStoredReminderSettings
+      √ 无设置时返回 null (1 ms)
+      √ 有设置时返回存储数据 (1 ms)
+    saveReminderSettingsLocal
+      √ 保存提醒设置并添加 updatedAt
+      √ 保存后可通过 getStoredReminderSettings 读取
+    applyReminderSettings
+      √ 无设置时不过滤任务 (1 ms)
+      √ 关闭用药提醒后过滤用药任务
+      √ 关闭测量提醒后过滤测量任务
+      √ 关闭周报提醒后过滤周报任务 (1 ms)
+    mergeReminderSettings
+      √ 无本地设置时返回原始数据
+      √ 有本地设置时合并
+    ensureWeeklyReportTask
+      √ 已有周报任务时不重复添加
+      √ 无周报任务时自动添加
+      √ 空任务列表时添加周报任务
+    applyReminderSettings - 已完成分组
+      √ 已完成分组任务不受开关影响
+    ensureUpcomingTasks
+      √ 无今日用药任务时不生成即将到来任务 (1 ms)
+      √ 有今日用药任务时生成未来 3 天的即将到来任务 (1 ms)
+      √ 已有即将到来任务时不重复生成
+    mergeLocalCompletedTasks
+      √ 无本地确认记录时不添加任务
+      √ 有今日已确认记录时添加到已完成分组 (1 ms)
+      √ 跳过状态的确认记录也加入已完成分组
+      √ 不重复添加已存在的已完成任务
+      √ snoozed 状态不加入已完成分组 (1 ms)
+
+PASS tests/unit/subscribe.test.js
+  utils/subscribe
+    SUBSCRIBE_TEMPLATES
+      √ 包含三类提醒模板
+    isPlaceholderTemplateId
+      √ 占位符返回 true
+      √ 真实 ID 返回 false
+      √ 空值或非字符串返回 true (1 ms)
+    isTemplateConfigured
+      √ 已配置的模板返回 true
+    isAllTemplatesConfigured
+      √ 所有模板都已配置时返回 true
+    getStoredSubscriptionStatus
+      √ 无记录时返回空对象
+      √ 有记录时返回存储数据 (1 ms)
+    saveSubscriptionStatusLocal
+      √ 保存授权状态并添加 updatedAt
+    updateSubscriptionRecord
+      √ 更新指定模板的授权状态
+      √ 无效模板 key 不更新
+      √ 多次更新保留所有模板状态 (1 ms)
+    isSubscribed
+      √ 未授权时返回 false
+      √ 已授权时返回 true
+      √ 被拒绝时返回 false
+    isAllSubscribed
+      √ 全部未授权时返回 false (1 ms)
+      √ 部分授权时返回 false
+      √ 全部授权时返回 true
+    buildSubscriptionDisplay
+      √ 无授权时返回未开启状态
+      √ 全部授权时返回已全部开启 (1 ms)
+      √ 部分授权时返回部分开启
+      √ 有拒绝记录时返回未全部开启
+    requestSubscription
+      √ 无效模板 key 时返回 no-valid-template
+      √ 空模板数组时返回 no-valid-template (1 ms)
+      √ 所有模板都已配置时不再返回 template-not-configured
+      √ DEV_MODE 为布尔值
+    订阅次数管理
+      √ getSubscriptionQuota 无记录时返回空对象
+      √ addSubscriptionQuota 增加指定模板次数 (1 ms)
+      √ addSubscriptionQuota 无效模板不增加
+      √ addSubscriptionQuotaBatch 批量增加 accept 的模板次数
+      √ consumeSubscriptionQuota 消耗次数成功
+      √ consumeSubscriptionQuota 次数不足时返回 false (1 ms)
+      √ consumeSubscriptionQuota 无效模板返回 false
+      √ getRemainingQuota 返回剩余次数
+      √ getRemainingQuota 无记录时返回 0
+
+PASS tests/unit/medication.test.js
+  services/medication
+    getStoredMedicationPlans
+      √ 无计划时返回空数组 (1 ms)
+      √ 有计划时返回数组
+    getStoredMedicationConfirmations
+      √ 无确认记录时返回空数组
+    upsertMedicationPlan
+      √ 新增计划 (1 ms)
+      √ 更新已有计划
+    appendMedicationConfirmation
+      √ 新增确认记录
+      √ 同 logId 同日期更新而非新增
+      √ 不同日期新增记录 (1 ms)
+    saveMedicationPlanLocal
+      √ 创建新计划
+      √ 更新已有计划保持状态
+    deleteMedicationPlanLocal
+      √ 删除指定计划 (1 ms)
+      √ 删除不存在的计划返回 deleted=true
+    toggleMedicationPlanStatusLocal
+      √ 启用→已停用
+      √ 已停用→启用
+      √ 不存在的计划返回 null
+    confirmMedicationLocal
+      √ 创建确认记录 (1 ms)
+    revokeMedicationConfirmationLocal
+      √ 撤销今日确认记录
+      √ 撤销不存在的记录返回 null
+    mapMedicationPlanToListItem
+      √ 映射计划到列表项 (1 ms)
+    mergeListByTimestamp
+      √ 合并本地和远程记录，取较新者
+      √ 空数组合并
+    mergeConfirmationsByLogId
+      √ 按 logId 合并，取较新者
+    parseMedTaskId
+      √ 解析标准格式 task-med-{planId}-{index} (1 ms)
+      √ 解析含多段横线的 planId
+      √ 非 task-med 前缀返回 null
+    findNextPendingTime
+      √ 找到下一个待确认时间点
+      √ 已停用计划返回 null
+      √ 全部已确认返回 null
+
+PASS tests/unit/chart-adapter.test.js
+  utils/chart-adapter
+    toChartBars
+      √ 将数值数组转为柱状图数据 (1 ms)
+      √ 处理小数值
+      √ 所有值相同时高度一致
+      √ 处理空值和 NaN (1 ms)
+      √ 单值数据
+      √ 血压收缩压偏高标记 status=high
+      √ 血压收缩压偏低标记 status=low
+      √ 血糖偏高标记 status=high
+      √ 血糖偏低标记 status=low
+      √ 返回 yAxis 信息供参考线计算 (1 ms)
+      √ 无 minFloor 时 yAxis.minFloor 为 null
+    buildBpBgCharts
+      √ 7天模式：按日聚合，返回血压+血糖双图表 (1 ms)
+      √ 30天模式：按4天聚合
+      √ 90天模式：按周聚合
+      √ 空记录返回 hasData=false
+      √ 异常血压值标记 high status
+      √ 异常血糖值标记 high status
+      √ 柱状条数不超过 MAX_BARS=14 (1 ms)
+      √ 返回动态参考线位置
+      √ 支持云端 chartSeriesMap 直接消费 (1 ms)
+      √ 云端数据优先于本地记录
+      √ 支持云端 bloodPressureDiastolic 序列 (1 ms)
+      √ 云端无舒张压时从本地记录补充
+    calcRefLineTop
+      √ 计算正常范围内的参考线位置（含底部标签区偏移）
+      √ 参考线位置低于 80%（柱状区域上界） (1 ms)
+      √ 参考值超出上限返回空字符串
+      √ 参考值低于下限返回空字符串
+      √ Y 轴范围为0返回空字符串
+      √ 参数缺失返回空字符串
+    buildTrendChart
+      √ 使用默认数据构建趋势图 (1 ms)
+      √ 使用自定义 chartSeriesMap
+      √ 未知指标使用血压默认值
+      √ 未知时间范围使用 7d 默认值
+      √ 血糖指标使用 bg type 和 minFloor
+    buildReportChart
+      √ 使用默认数据构建周报图表 (1 ms)
+      √ 使用自定义数据
+    buildRecordDetailChart
+      √ 血压记录生成3日趋势
+      √ 血糖记录生成3日趋势
+      √ 空记录使用默认值
+
+PASS tests/unit/family.test.js
+  services/family
+    normalizeMemberStatus
+      √ active/已授权 映射为 已授权 (1 ms)
+      √ pending/待加入 映射为 待加入 (1 ms)
+      √ revoked/已解除 映射为 已解除
+      √ 未知状态原样返回
+    getRelationInitial
+      √ 返回关系首字
+      √ 空关系返回 家 (1 ms)
+    getRelationMeta
+      √ 女儿 → 主要照护人
+      √ 儿子 → 紧急联系人
+      √ 配偶 → 共同管理
+      √ 第 8 项 other → 家属/共同管理
+      √ 孙女/孙子 → 主要照护人
+      √ 兄弟姐妹 → 共同管理；护工 → 协助管理 (1 ms)
+      √ 未知关系回退首项（女儿/主要照护人）
+    getScopeText
+      √ 返回 read=true 权限的标题
+      √ 无 read 权限返回 fallback；旧 enabled 不产生文案
+      √ 非数组返回 fallback
+      √ 空数组返回 fallback
+    mapFamilyMember
+      √ 映射完整成员数据
+      √ 使用 fallback 填充缺失字段
+      √ 无 id 时使用索引生成
+    enforceHomeFamilyAccess
+      √ 无授权数据时返回原始数据
+      √ 已解除授权时返回无权限数据 (1 ms)
+    getNoFamilyAccessData
+      √ 返回无权限的标准结构
+
+PASS tests/unit/snooze.test.js
+  services/snooze
+    DEFAULT_SNOOZE_MINUTES
+      √ 默认延时为 15 分钟 (1 ms)
+    getStoredSnoozeReminders
+      √ 无记录时返回空数组
+    createSnoozeReminder
+      √ 创建 snooze 任务并写入存储 (1 ms)
+      √ 使用自定义延时分钟数
+      √ 同 logId 只保留最新一条
+      √ 不同 logId 保留多条 (1 ms)
+      √ dueAt 为未来时间
+    getPendingSnoozeReminders
+      √ 未到期任务返回
+      √ 已到期任务不返回 (1 ms)
+    getDueSnoozeReminders
+      √ 未到期任务不返回
+      √ 已到期任务返回
+      √ 按到期时间升序排列
+    removeSnoozeReminder
+      √ 按 ID 移除任务 (1 ms)
+      √ 不存在的 ID 返回 null
+    removeSnoozeReminderByLogId
+      √ 按 logId 移除任务
+      √ 空 logId 返回 null
+      √ 不存在的 logId 返回 null (1 ms)
+    rescheduleSnoozeReminder
+      √ 重新调度任务并更新 dueAt
+      √ 使用默认延时 15 分钟
+      √ 不存在的 ID 返回 null
+    cleanupExpiredSnoozeReminders
+      √ 清理超过 24 小时的过期任务 (1 ms)
+      √ 无过期任务时返回 0
+      √ 空列表时返回 0
+
+PASS tests/unit/privacy.test.js
+  services/privacy
+    getStoredPrivacySettings
+      √ 无设置时返回 null (1 ms)
+      √ 有设置时返回存储数据
+    updatePrivacySettingsLocal
+      √ 首次创建隐私设置 (5 ms)
+      √ 部分更新不覆盖已有字段 (1 ms)
+      √ undefined 字段不覆盖已有值
+    mergePrivacySettings
+      √ 无本地设置时返回原始数据
+      √ 有本地设置时合并
+
+PASS tests/unit/page-data.test.js
+  services/page-data
+    clone
+      √ 深拷贝对象 (1 ms)
+      √ 深拷贝数组
+      √ undefined 返回 undefined
+      √ null 返回 null
+    deepMerge
+      √ 基础对象合并
+      √ 嵌套对象递归合并
+      √ override 为数组时直接替换
+      √ override 为 undefined 时返回 base 的克隆 (1 ms)
+      √ 不修改原始对象
+      √ override 为原始值时直接替换
+    withMockPageData
+      √ 无 transform 函数时执行 deepMerge
+      √ 有 transform 函数时执行自定义合并
+      √ 未知 key 返回空对象或默认数据
+    mergeArrayItemDefaults
+      √ 按 identityKey 合并默认值
+      √ override 为非数组时返回 base 克隆
+      √ base 为空数组时返回 override 克隆
+
+PASS tests/unit/data-rights.test.js
+  services/data-rights
+    getLocalDataSnapshot
+      √ 返回所有本地存储数据的快照 (1 ms)
+      √ 无数据时返回空默认值
+    toExportText
+      √ 生成包含标题和 JSON 的导出文本 (1 ms)
+    exportUserDataLocal
+      √ 生成完整的导出数据
+      √ 无数据时导出空快照
+    deleteUserDataLocal
+      √ scope=health 删除健康记录和确认记录 (1 ms)
+      √ scope=medication 删除用药计划和确认记录
+      √ 默认 scope 为 health
+    clearUserAccountLocal
+      √ 清除所有本地存储数据 (1 ms)
+
+PASS tests/unit/date-helper.test.js
+  utils/date-helper
+    getTodayDateValue
+      √ 返回 YYYY-MM-DD 格式 (1 ms)
+      √ 月份和日期补零
+    getCurrentTimeValue
+      √ 返回 HH:MM 格式
+    normalizeDateValue
+      √ 合法日期原样返回
+      √ 非法日期返回 fallback
+      √ 空值返回 fallback
+    formatDisplayDate
+      √ 今天显示"今天"
+      √ 非今天显示"月日"格式
+      √ 空值返回空字符串
+    formatDisplayDateWithYear
+      √ 今天显示"今天"
+      √ 非今天显示"年月日"格式
+    parseDisplayDateTime
+      √ 解析 YYYY-MM-DD HH:MM 格式
+      √ 解析"今天 HH:MM"格式
+      √ 解析"M月D日 HH:MM"格式 (1 ms)
+      √ 空值返回当前日期时间
+      √ null/undefined 返回当前日期时间
+    getWeekStartDate
+      √ 周一返回本周一
+      √ 周日返回上周一
+      √ 周三返回本周一
+
+PASS tests/unit/core.test.js
+  services/core
+    createRecordId
+      √ 生成带前缀的唯一 ID (1 ms)
+      √ 不同前缀生成不同格式的 ID (1 ms)
+    readStorage / writeStorage
+      √ 写入后可读取相同数据 (1 ms)
+      √ 读取不存在的键返回 fallback
+      √ 写入后读取的是深拷贝，修改不影响原存储
+      √ 写入数组后可正确读取 (1 ms)
+    writeStorageAndInvalidate
+      √ 写入数据并清除相关缓存
+    getRelatedCacheKeys
+      √ records 变更影响 home/recordList/trend
+      √ profile 变更影响 home/me
+      √ 未知键返回空数组
+    isTransientError
+      √ 识别超时错误
+      √ 识别网络错误
+      √ 识别连接重置错误
+      √ 非瞬态错误返回 false
+      √ 空错误返回 false
+    getRetryDelay
+      √ 首次重试延迟在合理范围内 (1 ms)
+      √ 延迟随重试次数指数增长
+      √ 延迟不超过最大值
+    resolveMockData
+      √ local 模式返回默认 mock 数据
+      √ 未知 key 返回空对象
+
+PASS tests/unit/routes-consistency.test.js
+  路由一致性验证（合并后）
+    √ routes 中不包含 report 键
+    √ routes 中包含 trend 键 (1 ms)
+    √ trend 路由指向正确的页面路径
+    √ 所有 TabBar 路由都存在
+    √ 核心子页面路由完整 (1 ms)
+
+PASS tests/unit/records.test.js
+  services/records
+    getRecordStatus
+      √ warn 类型返回建议复测
+      √ 其他类型返回正常
+    buildBloodPressureRecord
+      √ 构建完整的血压记录 (1 ms)
+      √ 无心率时显示横杠
+      √ 高血压记录标记为建议复测
+      √ 使用自定义 recordId
+      √ 云来源记录标记为 cloud (1 ms)
+    buildBloodGlucoseRecord
+      √ 构建完整的血糖记录
+      √ 高血糖标记为建议复测
+    extractCreatedAtDate
+      √ 从 ISO 字符串提取日期
+      √ 从 created_at 字段提取日期
+      √ 从 _id 提取日期（MongoDB ObjectId 格式） (1 ms)
+      √ 从 time 字段提取日期
+      √ 空对象返回空字符串
+      √ 中文日期格式提取日期
+    dedupeRecords
+      √ 按 id 去重 (1 ms)
+      √ 保留首次出现的记录
+      √ 过滤 null 和无 id 的记录
+      √ 空数组返回空数组
+    buildRecordSummary
+      √ 统计本周记录
+      √ 空记录返回零值
+    mapStoredRecordToListItem
+      √ 映射记录到列表项 (4 ms)
+    mapStoredRecordToDetail
+      √ 映射记录到详情 (1 ms)
+      √ 详情包含创建时间
+
+PASS tests/unit/page-data-consistency.test.js
+  DEFAULT_PAGE_DATA 一致性验证（合并后）
+    √ 不包含 report 键
+    √ trend 键包含合并后的完整字段 (1 ms)
+    √ trend.metricOptions 包含血压血糖复合指标和用药指标
+    √ trend.rangeOptions 包含三档时间
+    √ trend 默认值为 7天+血压血糖
+    √ reminder 任务使用 trend 路由 (1 ms)
+    √ reminder 任务标题已更新
+
+Test Suites: 22 passed, 22 total
+Tests:       527 passed, 527 total
+Snapshots:   0 total
+Time:        2.254 s, estimated 3 s
+Ran all test suites.

@@ -1,0 +1,298 @@
+
+> test
+> jest --verbose --runInBand tests/unit/a4-family-write.test.js
+
+FAIL tests/unit/a4-family-write.test.js
+  A4 · 身份与关系
+    × B 为 A 的 active 家属且 bp read+write：代录成功并带审计字段 (2 ms)
+    × 无关系 / revoked / 跨 owner 伪造：拒绝且零写入 (1 ms)
+    × payload 伪造审计字段被忽略
+    × owner 自己不走家属代录路由（行为不变由 owner 路由承担） (1 ms)
+    × owner 查询能看到代录记录（按 ownerOpenId 归属）
+    × revoked 后新写入立即拒绝
+  A4 · 权限矩阵
+    × bp read+write 允许；read-only / write-only / remind-only 拒绝
+    × bg read+write 允许血糖代录
+    × medicine read+write 允许已服/跳过代确认
+    × read-only / write-only medicine 拒绝代确认
+    √ report write、计划管理、记录删除：无家属写路由 (2 ms)
+  A4 · 代确认撤销
+    × B 可撤销自己本次代确认
+    × B 不能撤销 owner 创建的确认 (1 ms)
+    × B 不能撤销其他 member 的确认
+    × 重复撤销：第二次明确拒绝且不异常
+  A4 · homeFamily 写权限下发
+    × homeFamily 响应携带 writePermissions（read+write 才为 true） (3 ms)
+  A4 · 页面家属态写入口
+    × med-list 家属态：medicine write 时显示代确认入口；计划增删改入口仍隐藏 (1 ms)
+    × med-list 家属态 medicine 只读：代确认入口不开放
+    × record-bp 家属态：提交走家属代录路由；云端拒绝不本地假成功
+
+  ● A4 · 身份与关系 › B 为 A 的 active 家属且 bp read+write：代录成功并带审计字段
+
+    TypeError: familyService.familyRecordBloodPressure is not a function
+
+    [0m [90m 182 |[39m   it([32m'B 为 A 的 active 家属且 bp read+write：代录成功并带审计字段'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 183 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mRW[39m[33m,[39m [33mNONE[39m[33m,[39m [33mNONE[39m))] })
+    [31m[1m>[22m[39m[90m 184 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRecordBloodPressure([32m'B'[39m[33m,[39m { systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 185 |[39m     expect(res[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mtrue[39m)
+     [90m 186 |[39m     [36mconst[39m rec [33m=[39m db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mrecords][33m.[39mrows[[35m0[39m]
+     [90m 187 |[39m     expect(rec[33m.[39mownerOpenId)[33m.[39mtoBe([32m'A'[39m)[0m
+
+      at Object.familyRecordBloodPressure (tests/unit/a4-family-write.test.js:184:37)
+
+  ● A4 · 身份与关系 › 无关系 / revoked / 跨 owner 伪造：拒绝且零写入
+
+    TypeError: noRel.familyService.familyRecordBloodPressure is not a function
+
+    [0m [90m 195 |[39m   it([32m'无关系 / revoked / 跨 owner 伪造：拒绝且零写入'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 196 |[39m     [36mconst[39m noRel [33m=[39m build({})
+    [31m[1m>[22m[39m[90m 197 |[39m     [36mawait[39m expect(noRel[33m.[39mfamilyService[33m.[39mfamilyRecordBloodPressure([32m'B'[39m[33m,[39m { systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m }))
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 198 |[39m       [33m.[39mresolves[33m.[39mtoMatchObject({ familyWrite[33m:[39m { allowed[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'noBinding'[39m } })
+     [90m 199 |[39m     expect(noRel[33m.[39mdb[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mrecords][33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)
+     [90m 200 |[39m[0m
+
+      at Object.familyRecordBloodPressure (tests/unit/a4-family-write.test.js:197:38)
+
+  ● A4 · 身份与关系 › payload 伪造审计字段被忽略
+
+    TypeError: familyService.familyRecordBloodPressure is not a function
+
+    [0m [90m 212 |[39m   it([32m'payload 伪造审计字段被忽略'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 213 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mRW[39m[33m,[39m [33mNONE[39m[33m,[39m [33mNONE[39m))] })
+    [31m[1m>[22m[39m[90m 214 |[39m     [36mawait[39m familyService[33m.[39mfamilyRecordBloodPressure([32m'B'[39m[33m,[39m {
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 215 |[39m       systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m[33m,[39m
+     [90m 216 |[39m       ownerOpenId[33m:[39m [32m'X'[39m[33m,[39m createdByMemberOpenId[33m:[39m [32m'Y'[39m[33m,[39m createdByRole[33m:[39m [32m'owner'[39m[33m,[39m _openid[33m:[39m [32m'Z'[39m
+     [90m 217 |[39m     })[0m
+
+      at Object.familyRecordBloodPressure (tests/unit/a4-family-write.test.js:214:25)
+
+  ● A4 · 身份与关系 › owner 自己不走家属代录路由（行为不变由 owner 路由承担）
+
+    TypeError: familyService.familyRecordBloodPressure is not a function
+
+    [0m [90m 225 |[39m   it([32m'owner 自己不走家属代录路由（行为不变由 owner 路由承担）'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 226 |[39m     [36mconst[39m { familyService } [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mRW[39m[33m,[39m [33mNONE[39m[33m,[39m [33mNONE[39m))] })
+    [31m[1m>[22m[39m[90m 227 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRecordBloodPressure([32m'A'[39m[33m,[39m { systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 228 |[39m     expect(res[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mfalse[39m)
+     [90m 229 |[39m   })
+     [90m 230 |[39m[0m
+
+      at Object.familyRecordBloodPressure (tests/unit/a4-family-write.test.js:227:37)
+
+  ● A4 · 身份与关系 › owner 查询能看到代录记录（按 ownerOpenId 归属）
+
+    TypeError: familyService.familyRecordBloodPressure is not a function
+
+    [0m [90m 231 |[39m   it([32m'owner 查询能看到代录记录（按 ownerOpenId 归属）'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 232 |[39m     [36mconst[39m { db[33m,[39m recordService[33m,[39m familyService } [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mRW[39m[33m,[39m [33mRW[39m[33m,[39m [33mNONE[39m))] })
+    [31m[1m>[22m[39m[90m 233 |[39m     [36mawait[39m familyService[33m.[39mfamilyRecordBloodPressure([32m'B'[39m[33m,[39m { systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m })
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 234 |[39m     [36mawait[39m familyService[33m.[39mfamilyRecordBloodGlucose([32m'B'[39m[33m,[39m { glucose[33m:[39m [35m6.4[39m })
+     [90m 235 |[39m     [36mconst[39m list [33m=[39m [36mawait[39m recordService[33m.[39mgetRecordListData([32m'A'[39m[33m,[39m {})
+     [90m 236 |[39m     expect(list[33m.[39mrecords[33m.[39mmap(r [33m=>[39m r[33m.[39mtype)[33m.[39msort())[33m.[39mtoEqual([[32m'bg'[39m[33m,[39m [32m'bp'[39m])[0m
+
+      at Object.familyRecordBloodPressure (tests/unit/a4-family-write.test.js:233:25)
+
+  ● A4 · 身份与关系 › revoked 后新写入立即拒绝
+
+    TypeError: familyService.familyRecordBloodPressure is not a function
+
+    [0m [90m 240 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mRW[39m[33m,[39m [33mNONE[39m[33m,[39m [33mNONE[39m))] })
+     [90m 241 |[39m     db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mfamilyMembers][33m.[39mrows[[35m0[39m][33m.[39mstatus [33m=[39m [32m'revoked'[39m
+    [31m[1m>[22m[39m[90m 242 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRecordBloodPressure([32m'B'[39m[33m,[39m { systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 243 |[39m     expect(res[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mfalse[39m)
+     [90m 244 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mrecords][33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)
+     [90m 245 |[39m   })[0m
+
+      at Object.familyRecordBloodPressure (tests/unit/a4-family-write.test.js:242:37)
+
+  ● A4 · 权限矩阵 › bp read+write 允许；read-only / write-only / remind-only 拒绝
+
+    TypeError: ok.familyService.familyRecordBloodPressure is not a function
+
+    [0m [90m 249 |[39m   it([32m'bp read+write 允许；read-only / write-only / remind-only 拒绝'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 250 |[39m     [36mconst[39m ok [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mRW[39m[33m,[39m [33mNONE[39m[33m,[39m [33mNONE[39m))] })
+    [31m[1m>[22m[39m[90m 251 |[39m     expect(([36mawait[39m ok[33m.[39mfamilyService[33m.[39mfamilyRecordBloodPressure([32m'B'[39m[33m,[39m { systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m }))[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 252 |[39m
+     [90m 253 |[39m     [36mconst[39m ro [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mRO[39m[33m,[39m [33mNONE[39m[33m,[39m [33mNONE[39m))] })
+     [90m 254 |[39m     expect(([36mawait[39m ro[33m.[39mfamilyService[33m.[39mfamilyRecordBloodPressure([32m'B'[39m[33m,[39m { systolic[33m:[39m [35m128[39m[33m,[39m diastolic[33m:[39m [35m78[39m }))[33m.[39mfamilyWrite[33m.[39mreason)[33m.[39mtoBe([32m'scopeDenied'[39m)[0m
+
+      at Object.familyRecordBloodPressure (tests/unit/a4-family-write.test.js:251:36)
+
+  ● A4 · 权限矩阵 › bg read+write 允许血糖代录
+
+    TypeError: familyService.familyRecordBloodGlucose is not a function
+
+    [0m [90m 263 |[39m   it([32m'bg read+write 允许血糖代录'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 264 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mNONE[39m[33m,[39m [33mRW[39m[33m,[39m [33mNONE[39m))] })
+    [31m[1m>[22m[39m[90m 265 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRecordBloodGlucose([32m'B'[39m[33m,[39m { glucose[33m:[39m [35m6.4[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 266 |[39m     expect(res[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mtrue[39m)
+     [90m 267 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mrecords][33m.[39mrows[[35m0[39m][33m.[39mtype)[33m.[39mtoBe([32m'bg'[39m)
+     [90m 268 |[39m   })[0m
+
+      at Object.familyRecordBloodGlucose (tests/unit/a4-family-write.test.js:265:37)
+
+  ● A4 · 权限矩阵 › medicine read+write 允许已服/跳过代确认
+
+    TypeError: familyService.familyConfirmMedication is not a function
+
+    [0m [90m 273 |[39m       medicationPlans[33m:[39m [{ _id[33m:[39m [32m'plan-1'[39m[33m,[39m _openid[33m:[39m [32m'A'[39m[33m,[39m name[33m:[39m [32m'降压药'[39m[33m,[39m dosage[33m:[39m [32m'1片'[39m[33m,[39m times[33m:[39m [[32m'07:00'[39m][33m,[39m status[33m:[39m [32m'启用'[39m }]
+     [90m 274 |[39m     })
+    [31m[1m>[22m[39m[90m 275 |[39m     [36mconst[39m taken [33m=[39m [36mawait[39m familyService[33m.[39mfamilyConfirmMedication([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'log-plan-1-0700'[39m[33m,[39m time[33m:[39m [32m'07:00'[39m[33m,[39m name[33m:[39m [32m'降压药'[39m[33m,[39m dosage[33m:[39m [32m'1片'[39m[33m,[39m status[33m:[39m [32m'taken'[39m })
+     [90m     |[39m                                       [31m[1m^[22m[39m
+     [90m 276 |[39m     expect(taken[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mtrue[39m)
+     [90m 277 |[39m     [36mconst[39m skipped [33m=[39m [36mawait[39m familyService[33m.[39mfamilyConfirmMedication([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'log-plan-1-0700'[39m[33m,[39m time[33m:[39m [32m'07:00'[39m[33m,[39m name[33m:[39m [32m'降压药'[39m[33m,[39m dosage[33m:[39m [32m'1片'[39m[33m,[39m status[33m:[39m [32m'skipped'[39m })
+     [90m 278 |[39m     expect(skipped[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mtrue[39m)[0m
+
+      at Object.familyConfirmMedication (tests/unit/a4-family-write.test.js:275:39)
+
+  ● A4 · 权限矩阵 › read-only / write-only medicine 拒绝代确认
+
+    TypeError: ro.familyService.familyConfirmMedication is not a function
+
+    [0m [90m 286 |[39m   it([32m'read-only / write-only medicine 拒绝代确认'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 287 |[39m     [36mconst[39m ro [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mNONE[39m[33m,[39m [33mNONE[39m[33m,[39m [33mRO[39m))] })
+    [31m[1m>[22m[39m[90m 288 |[39m     expect(([36mawait[39m ro[33m.[39mfamilyService[33m.[39mfamilyConfirmMedication([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'l'[39m[33m,[39m time[33m:[39m [32m'07:00'[39m[33m,[39m name[33m:[39m [32m'药'[39m[33m,[39m status[33m:[39m [32m'taken'[39m }))[33m.[39mfamilyWrite[33m.[39mreason)[33m.[39mtoBe([32m'scopeDenied'[39m)
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 289 |[39m     [36mconst[39m wo [33m=[39m build({ familyMembers[33m:[39m [memberRow(scopesOf([33mNONE[39m[33m,[39m [33mNONE[39m[33m,[39m [33mWO[39m))] })
+     [90m 290 |[39m     expect(([36mawait[39m wo[33m.[39mfamilyService[33m.[39mfamilyConfirmMedication([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'l'[39m[33m,[39m time[33m:[39m [32m'07:00'[39m[33m,[39m name[33m:[39m [32m'药'[39m[33m,[39m status[33m:[39m [32m'taken'[39m }))[33m.[39mfamilyWrite[33m.[39mreason)[33m.[39mtoBe([32m'scopeDenied'[39m)
+     [90m 291 |[39m   })[0m
+
+      at Object.familyConfirmMedication (tests/unit/a4-family-write.test.js:288:36)
+
+  ● A4 · 代确认撤销 › B 可撤销自己本次代确认
+
+    TypeError: familyService.familyRevokeProxyConfirmation is not a function
+
+    [0m [90m 312 |[39m   it([32m'B 可撤销自己本次代确认'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 313 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build(seedConfirm())
+    [31m[1m>[22m[39m[90m 314 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRevokeProxyConfirmation([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'log-plan-1-0700'[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 315 |[39m     expect(res[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mtrue[39m)
+     [90m 316 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mmedicationConfirmations][33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)
+     [90m 317 |[39m   })[0m
+
+      at Object.familyRevokeProxyConfirmation (tests/unit/a4-family-write.test.js:314:37)
+
+  ● A4 · 代确认撤销 › B 不能撤销 owner 创建的确认
+
+    TypeError: familyService.familyRevokeProxyConfirmation is not a function
+
+    [0m [90m 319 |[39m   it([32m'B 不能撤销 owner 创建的确认'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 320 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build(seedConfirm({ createdByMemberOpenId[33m:[39m undefined[33m,[39m createdByRole[33m:[39m undefined }))
+    [31m[1m>[22m[39m[90m 321 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRevokeProxyConfirmation([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'log-plan-1-0700'[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 322 |[39m     expect(res[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mfalse[39m)
+     [90m 323 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mmedicationConfirmations][33m.[39mrows)[33m.[39mtoHaveLength([35m1[39m)
+     [90m 324 |[39m   })[0m
+
+      at Object.familyRevokeProxyConfirmation (tests/unit/a4-family-write.test.js:321:37)
+
+  ● A4 · 代确认撤销 › B 不能撤销其他 member 的确认
+
+    TypeError: familyService.familyRevokeProxyConfirmation is not a function
+
+    [0m [90m 326 |[39m   it([32m'B 不能撤销其他 member 的确认'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 327 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build(seedConfirm({ createdByMemberOpenId[33m:[39m [32m'B2'[39m }))
+    [31m[1m>[22m[39m[90m 328 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRevokeProxyConfirmation([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'log-plan-1-0700'[39m })
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 329 |[39m     expect(res[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mfalse[39m)
+     [90m 330 |[39m     expect(db[33m.[39m_stores[[33mCOLLECTIONS[39m[33m.[39mmedicationConfirmations][33m.[39mrows)[33m.[39mtoHaveLength([35m1[39m)
+     [90m 331 |[39m   })[0m
+
+      at Object.familyRevokeProxyConfirmation (tests/unit/a4-family-write.test.js:328:37)
+
+  ● A4 · 代确认撤销 › 重复撤销：第二次明确拒绝且不异常
+
+    TypeError: familyService.familyRevokeProxyConfirmation is not a function
+
+    [0m [90m 333 |[39m   it([32m'重复撤销：第二次明确拒绝且不异常'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 334 |[39m     [36mconst[39m { db[33m,[39m familyService } [33m=[39m build(seedConfirm())
+    [31m[1m>[22m[39m[90m 335 |[39m     [36mawait[39m familyService[33m.[39mfamilyRevokeProxyConfirmation([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'log-plan-1-0700'[39m })
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 336 |[39m     [36mconst[39m second [33m=[39m [36mawait[39m familyService[33m.[39mfamilyRevokeProxyConfirmation([32m'B'[39m[33m,[39m { logId[33m:[39m [32m'log-plan-1-0700'[39m })
+     [90m 337 |[39m     expect(second[33m.[39mfamilyWrite[33m.[39mallowed)[33m.[39mtoBe([36mfalse[39m)
+     [90m 338 |[39m     expect(second[33m.[39mfamilyWrite[33m.[39mreason)[33m.[39mtoBe([32m'notFound'[39m)[0m
+
+      at Object.familyRevokeProxyConfirmation (tests/unit/a4-family-write.test.js:335:25)
+
+  ● A4 · homeFamily 写权限下发 › homeFamily 响应携带 writePermissions（read+write 才为 true）
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: {"bloodGlucose": false, "bloodPressure": true, "medicine": true, "report": false}
+    Received: undefined
+
+    [0m [90m 347 |[39m     })
+     [90m 348 |[39m     [36mconst[39m data [33m=[39m [36mawait[39m familyService[33m.[39mgetHomeFamilyData([32m'B'[39m)
+    [31m[1m>[22m[39m[90m 349 |[39m     expect(data[33m.[39mwritePermissions)[33m.[39mtoEqual({
+     [90m     |[39m                                   [31m[1m^[22m[39m
+     [90m 350 |[39m       bloodPressure[33m:[39m [36mtrue[39m[33m,[39m bloodGlucose[33m:[39m [36mfalse[39m[33m,[39m medicine[33m:[39m [36mtrue[39m[33m,[39m report[33m:[39m [36mfalse[39m
+     [90m 351 |[39m     })
+     [90m 352 |[39m   })[0m
+
+      at Object.toEqual (tests/unit/a4-family-write.test.js:349:35)
+
+  ● A4 · 页面家属态写入口 › med-list 家属态：medicine write 时显示代确认入口；计划增删改入口仍隐藏
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: undefined
+
+    [0m [90m 418 |[39m     [36mawait[39m page[33m.[39monLoad({ familyView[33m:[39m [32m'1'[39m })
+     [90m 419 |[39m     expect(page[33m.[39mdata[33m.[39misFamilyView)[33m.[39mtoBe([36mtrue[39m)
+    [31m[1m>[22m[39m[90m 420 |[39m     expect(page[33m.[39mdata[33m.[39mfamilyCanConfirm)[33m.[39mtoBe([36mtrue[39m)
+     [90m     |[39m                                        [31m[1m^[22m[39m
+     [90m 421 |[39m     [90m// 代确认走家属路由[39m
+     [90m 422 |[39m     page[33m.[39mhandleConfirmTap({ currentTarget[33m:[39m { dataset[33m:[39m { planId[33m:[39m [32m'plan-1'[39m[33m,[39m logId[33m:[39m [32m'log-1'[39m } } })
+     [90m 423 |[39m     expect(mockApi[33m.[39mfamilyConfirmMedication)[33m.[39mtoHaveBeenCalled()[0m
+
+      at Object.toBe (tests/unit/a4-family-write.test.js:420:40)
+
+  ● A4 · 页面家属态写入口 › med-list 家属态 medicine 只读：代确认入口不开放
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: undefined
+
+    [0m [90m 436 |[39m     [36mconst[39m page [33m=[39m makePage(pageConfigs[[35m0[39m])
+     [90m 437 |[39m     [36mawait[39m page[33m.[39monLoad({ familyView[33m:[39m [32m'1'[39m })
+    [31m[1m>[22m[39m[90m 438 |[39m     expect(page[33m.[39mdata[33m.[39mfamilyCanConfirm)[33m.[39mtoBe([36mfalse[39m)
+     [90m     |[39m                                        [31m[1m^[22m[39m
+     [90m 439 |[39m     page[33m.[39mhandleConfirmTap({ currentTarget[33m:[39m { dataset[33m:[39m { planId[33m:[39m [32m'plan-1'[39m[33m,[39m logId[33m:[39m [32m'log-1'[39m } } })
+     [90m 440 |[39m     expect(mockApi[33m.[39mfamilyConfirmMedication)[33m.[39mnot[33m.[39mtoHaveBeenCalled()
+     [90m 441 |[39m   })[0m
+
+      at Object.toBe (tests/unit/a4-family-write.test.js:438:40)
+
+  ● A4 · 页面家属态写入口 › record-bp 家属态：提交走家属代录路由；云端拒绝不本地假成功
+
+    TypeError: loader is not a function
+
+    [0m [90m 402 |[39m     jest[33m.[39mclearAllMocks()
+     [90m 403 |[39m     mockFactory[33m.[39mloadPageData[33m.[39mmockImplementation([36masync[39m (page[33m,[39m loader) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 404 |[39m       [36mconst[39m d [33m=[39m [36mawait[39m loader()
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 405 |[39m       [33mObject[39m[33m.[39massign(page[33m.[39mdata[33m,[39m d)
+     [90m 406 |[39m       page[33m.[39mdata[33m.[39m_loaded [33m=[39m [36mtrue[39m
+     [90m 407 |[39m       [36mreturn[39m d[0m
+
+      at loader (tests/unit/a4-family-write.test.js:404:23)
+      at Object.loadPageData [as onLoad] (pages/record/record-bp/index.js:31:11)
+      at Object.onLoad (tests/unit/a4-family-write.test.js:446:16)
+
+Test Suites: 1 failed, 1 total
+Tests:       18 failed, 1 passed, 19 total
+Snapshots:   0 total
+Time:        0.656 s
+Ran all test suites matching /tests\\unit\\a4-family-write.test.js/i.
