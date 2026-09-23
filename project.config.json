@@ -122,6 +122,26 @@
       {
         "value": "pages/reminder/reminder",
         "type": "folder"
+      },
+      {
+        "value": "node_modules",
+        "type": "folder"
+      },
+      {
+        "value": "evidence",
+        "type": "folder"
+      },
+      {
+        "value": "tests",
+        "type": "folder"
+      },
+      {
+        "value": ".codex",
+        "type": "folder"
+      },
+      {
+        "value": "package-lock.json",
+        "type": "file"
       }
     ],
     "include": []
