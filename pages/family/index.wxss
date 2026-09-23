@@ -1,4 +1,5 @@
 .family-page {
+  box-sizing: border-box;
   min-height: 100vh;
   padding: 32rpx;
   padding-bottom: 150rpx;
@@ -32,7 +33,24 @@
   flex: 0 0 auto;
 }
 
+/* 页头眉题放大（替代已移除的大标题） */
+.page-head .eyebrow {
+  font-size: 42rpx;
+  font-weight: 800;
+  margin-bottom: 0;
+}
+
+.family-page.ui-scale-large .page-head .eyebrow {
+  font-size: 48rpx;
+}
+
+.family-page.ui-scale-elder .page-head .eyebrow {
+  font-size: 52rpx;
+}
+
 .share-panel {
+  width: 100%;
+  box-sizing: border-box;
   margin-top: 30rpx;
   display: flex;
   align-items: flex-start;
@@ -81,6 +99,7 @@
 
 .member-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18rpx;
 }
 
@@ -92,6 +111,8 @@
 }
 
 .member-card {
+  width: 100%;
+  box-sizing: border-box;
   padding: 26rpx;
 }
 
@@ -184,6 +205,8 @@
 }
 
 .empty-panel {
+  width: 100%;
+  box-sizing: border-box;
   padding: 48rpx 32rpx;
   border-radius: 16rpx;
   border: 1rpx solid #dfe7e1;
@@ -241,4 +264,10 @@
   width: 88rpx;
   height: 88rpx;
   font-size: 34rpx;
+}
+
+/* A7 占位态图标 */
+.state-icon {
+  font-size: 72rpx;
+  margin-bottom: 16rpx;
 }

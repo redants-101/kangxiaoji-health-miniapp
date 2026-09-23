@@ -21,7 +21,19 @@
   </view>
   <view class="subtitle">已授权：{{member.scopeText}}</view>
 
-  <view class="alert-panel">
+  <!-- A6：电话提醒（remind=true 才渲染；read=false+remind=true 时本页仅保留此入口） -->
+  <view class="section" wx:if="{{phoneReminder.remindAllowed}}">
+    <view class="section-title">电话提醒</view>
+    <view class="phone-panel">
+      <block wx:if="{{phoneReminder.canCall}}">
+        <view class="phone-meta">提醒电话 {{phoneReminder.masked}} · 拨打后系统拨号盘会显示完整号码</view>
+        <button class="phone-button" bindtap="handleCallReminder" aria-label="拨打提醒电话">电话提醒</button>
+      </block>
+      <view wx:else class="phone-meta">家人尚未配置提醒电话，可提醒 TA 在授权管理页填写。</view>
+    </view>
+  </view>
+
+  <view class="alert-panel" wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose || readPermissions.medicine}}">
     <view>
       <view class="alert-label">今日关注</view>
       <view class="alert-title">{{todayAlert.title}}</view>
@@ -30,16 +42,23 @@
     <button class="alert-button" bindtap="goMedConfirm" aria-label="查看今日关注详情">查看</button>
   </view>
 
-  <view class="section">
+  <view class="section" wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose || readPermissions.medicine}}">
     <view class="section-title">快捷查看</view>
     <view class="quick-grid">
-      <quick-action icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
-      <quick-action icon="用药" icon-src="/assets/icons/icon-medication.png" title="用药" route="medList" bindactiontap="handleQuickAction" />
-      <quick-action icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
+      <quick-action wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose}}" icon="趋势" icon-src="/assets/icons/icon-trend.png" title="趋势" route="trend" bindactiontap="handleQuickAction" />
+      <quick-action wx:if="{{readPermissions.medicine}}" icon="用药" icon-src="/assets/icons/icon-medication.png" title="用药" route="medList" bindactiontap="handleQuickAction" />
     </view>
   </view>
 
-  <view class="section">
+  <view class="section" wx:if="{{writePermissions.bloodPressure || writePermissions.bloodGlucose}}">
+    <view class="section-title">家属代录</view>
+    <view class="quick-grid">
+      <quick-action wx:if="{{writePermissions.bloodPressure}}" icon="血压" icon-src="/assets/icons/icon-bp.png" title="代录血压" route="recordBp" bindactiontap="handleProxyRecord" />
+      <quick-action wx:if="{{writePermissions.bloodGlucose}}" icon="血糖" icon-src="/assets/icons/icon-bg.png" title="代录血糖" route="recordBg" bindactiontap="handleProxyRecord" />
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{readPermissions.bloodPressure || readPermissions.bloodGlucose}}">
     <view class="section-head">
       <view class="section-title">最新记录</view>
       <button class="link-button" bindtap="goRecordList" aria-label="查看全部记录">全部</button>
@@ -60,7 +79,7 @@
     </view>
   </view>
 
-  <view class="section">
+  <view class="section" wx:if="{{readPermissions.medicine}}">
     <view class="section-title">今日用药</view>
     <view class="medicine-panel">
       <block wx:if="{{medicineLogs && medicineLogs.length}}">
@@ -80,7 +99,7 @@
     </view>
   </view>
 
-  <view class="section report-panel">
+  <view class="section report-panel" wx:if="{{readPermissions.report}}">
     <view>
       <view class="section-title">本周周报</view>
       <view class="report-meta">{{reportSummary}}</view>

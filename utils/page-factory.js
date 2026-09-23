@@ -17,14 +17,17 @@ const {
 
 // 请求去重：记录正在进行的页面加载
 const pendingPageLoads = new Map()
+// A5：单调递增序号替代 Date.now() 组装 loadKey——同毫秒双加载时键也唯一，
+// 先发旧请求晚归不会因键碰撞通过"最新实例"检查而覆盖撤销/改权后的新状态。
+let pageLoadSeq = 0
 
 /**
  * 统一页面跳转方法。
  * @param {string} routeKey routes.js 中定义的路由键名。
  * @returns {void} 无返回值；内部根据目标页面类型调用 wx.switchTab 或 wx.navigateTo。
  */
-function goRoute(routeKey) {
-  const url = routes[routeKey]
+function goRoute(routeKey, query) {
+  const url = routes[routeKey] + (query ? (routes[routeKey].includes('?') ? '&' : '?') + query : '')
   if (!url) {
     wx.showToast({
       title: '页面暂未配置',
@@ -76,7 +79,7 @@ function redirectRoute(routeKey) {
  */
 async function loadPageData(page, loader, pageKey = '') {
   const pagePath = page && page.route ? page.route : (pageKey || 'unknown')
-  const loadKey = `${pagePath}_${Date.now()}`
+  const loadKey = `${pagePath}#${++pageLoadSeq}`
 
   // 记录当前加载实例（允许并发加载，仅最新实例的数据会写入页面）
   pendingPageLoads.set(pagePath, loadKey)

@@ -1,5 +1,5 @@
 const { safeNavigateBack, loadPageData, clearPageLoadState, bindAdaptiveResize, unbindAdaptiveResize } = require('../../../utils/page-factory')
-const { getRecordBgData, saveBloodGlucoseRecord } = require('../../../utils/api')
+const { getRecordBgData, saveBloodGlucoseRecord, familyRecordBloodGlucose } = require('../../../utils/api')
 const { promptSubscribeAfterAction } = require('../../../utils/subscribe-prompt')
 const routes = require('../../../utils/routes')
 
@@ -23,10 +23,15 @@ Page({
     timeManuallySet: false,
     adaptive: {},
     isLoading: false,
-    loadError: ''
+    loadError: '',
+    isFamilyView: false,
+    submitError: ''
   },
 
-  async onLoad() {
+  async onLoad(options = {}) {
+    if (options.familyView === '1' || options.familyView === true) {
+      this.setData({ isFamilyView: true })
+    }
     wx.setNavigationBarTitle({
       title: '血糖记录'
     })
@@ -208,7 +213,17 @@ Page({
         note: form.note
       }
       
-      await saveBloodGlucoseRecord(payload)
+      if (this.data.isFamilyView) {
+        // A4 家属代录：走家属写路由；以云端响应为准，拒绝不本地假成功
+        const res = await familyRecordBloodGlucose(payload)
+        if (res && res.familyWrite && res.familyWrite.allowed === false) {
+          this.setData({ isLoading: false, submitError: res.familyWrite.reason || 'scopeDenied' })
+          wx.showToast({ title: '代录被拒绝：' + (res.familyWrite.reason || '无权限'), icon: 'none' })
+          return
+        }
+      } else {
+        await saveBloodGlucoseRecord(payload)
+      }
       
       wx.showToast({
         title: '记录已保存',

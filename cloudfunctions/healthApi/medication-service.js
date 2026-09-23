@@ -1,25 +1,11 @@
+const { CHINA_TIME_OFFSET_MS, getTodayDateValue, buildLogId } = require('./payload-helpers')
+
 const DEFAULT_TIMES = [
   { value: '07:00', label: '早餐', enabled: false },
   { value: '12:00', label: '午餐', enabled: false },
   { value: '18:00', label: '晚餐', enabled: false },
   { value: '21:00', label: '睡前', enabled: false }
 ]
-
-const CHINA_TIME_OFFSET_MS = 8 * 60 * 60 * 1000
-
-function getTodayDateValue() {
-  // 云函数运行在 UTC 时区，需手动转换为北京时间
-  const now = new Date()
-  const chinaTime = new Date(now.getTime() + CHINA_TIME_OFFSET_MS)
-  const y = chinaTime.getUTCFullYear()
-  const m = String(chinaTime.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(chinaTime.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function buildLogId(planId, time) {
-  return `log-${planId}-${String(time).replace(':', '')}`
-}
 
 function createMedicationService({
   db,
@@ -380,9 +366,11 @@ function createMedicationService({
     }))
   }
 
-  async function confirmMedication(openId, payload) {
+  async function confirmMedication(openId, payload, options = {}) {
     const { logId, time, name, dosage, status, statusText } = validateMedicationConfirmationPayload(payload)
     const todayStr = getTodayDateValue()
+    // A4：家属代确认审计字段（仅家属路由传入；owner 路径不传，行为不变）
+    const audit = options && options.audit ? options.audit : null
 
     // 先查找同一 logId + confirmDate 是否已有记录，有则更新，无则新增（upsert 语义）
     const { data: existing } = await withPerfLog({
@@ -406,7 +394,8 @@ function createMedicationService({
           time,
           name,
           dosage,
-          actionAt: db.serverDate()
+          actionAt: db.serverDate(),
+          ...(audit || {})
         }
       }))
     }
@@ -426,7 +415,8 @@ function createMedicationService({
         statusText,
         confirmDate: todayStr,
         createdAt: db.serverDate(),
-        actionAt: db.serverDate()
+        actionAt: db.serverDate(),
+        ...(audit || {})
       }
     }))
   }

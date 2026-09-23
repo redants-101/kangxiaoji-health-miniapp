@@ -65,28 +65,40 @@ describe('services/family', () => {
       expect(meta.role).toBe('共同管理')
     })
 
-    it('未知关系 → 家属/共同管理', () => {
+    it('第 8 项 other → 家属/共同管理', () => {
       const meta = getRelationMeta('other')
       expect(meta.relation).toBe('家属')
       expect(meta.role).toBe('共同管理')
     })
+
+    it('孙女/孙子 → 主要照护人', () => {
+      expect(getRelationMeta('granddaughter')).toEqual({ relation: '孙女', role: '主要照护人' })
+      expect(getRelationMeta('grandson')).toEqual({ relation: '孙子', role: '主要照护人' })
+    })
+
+    it('兄弟姐妹 → 共同管理；护工 → 协助管理', () => {
+      expect(getRelationMeta('sibling')).toEqual({ relation: '兄弟姐妹', role: '共同管理' })
+      expect(getRelationMeta('caregiver')).toEqual({ relation: '护工', role: '协助管理' })
+    })
+
+    it('未知关系回退首项（女儿/主要照护人）', () => {
+      expect(getRelationMeta('not-a-key')).toEqual({ relation: '女儿', role: '主要照护人' })
+    })
   })
 
   describe('getScopeText', () => {
-    it('返回已启用权限的标题', () => {
+    it('返回 read=true 权限的标题', () => {
       const scopes = [
-        { title: '血压记录', enabled: true },
-        { title: '血糖记录', enabled: true },
-        { title: '用药确认', enabled: false }
+        { title: '血压记录', read: true },
+        { title: '血糖记录', read: true },
+        { title: '用药确认', read: false }
       ]
       expect(getScopeText(scopes)).toBe('血压记录、血糖记录')
     })
 
-    it('无启用权限返回 fallback', () => {
-      const scopes = [
-        { title: '血压记录', enabled: false }
-      ]
-      expect(getScopeText(scopes)).toBe('暂未授权')
+    it('无 read 权限返回 fallback；旧 enabled 不产生文案', () => {
+      expect(getScopeText([{ title: '血压记录', read: false }])).toBe('暂未授权')
+      expect(getScopeText([{ title: '血压记录', enabled: true }])).toBe('暂未授权')
     })
 
     it('非数组返回 fallback', () => {

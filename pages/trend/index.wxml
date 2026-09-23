@@ -4,6 +4,12 @@
     <view class="state-meta">请稍候，系统正在整理近 7 天到 90 天的记录变化。</view>
   </view>
 </view>
+<view wx:elif="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">暂无趋势查看权限</view>
+    <view class="state-meta">对方未向你开放该指标所需的记录查看权限。</view>
+  </view>
+</view>
 <view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
   <view class="state-panel">
     <view class="state-title">趋势数据加载失败</view>

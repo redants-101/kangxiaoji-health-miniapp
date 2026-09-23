@@ -6,28 +6,49 @@ const {
   safeNavigateTo,
   unbindAdaptiveResize
 } = require('../../../utils/page-factory')
-const { getMedListData, deleteMedicationPlan, toggleMedicationPlanStatus, revokeMedicationConfirmation, confirmMedication } = require('../../../utils/api')
+const { getMedListData, deleteMedicationPlan, toggleMedicationPlanStatus, revokeMedicationConfirmation, confirmMedication, familyConfirmMedication, familyRevokeProxyConfirmation } = require('../../../utils/api')
 const { removeSnoozeReminderByLogId } = require('../../../services/snooze')
 const { promptSubscribeAfterAction } = require('../../../utils/subscribe-prompt')
 
 Page({
   data: {
     isLoading: true,
-    loadError: ''
+    loadError: '',
+    isFamilyView: false,
+    familyDenied: false
   },
 
   async loadData() {
-    return loadPageData(this, getMedListData).then(() => {
-      try { this.setData({ _loaded: true }) } catch (e) { /* 页面可能已销毁 */ }
+    return loadPageData(this, () => getMedListData(this.data.isFamilyView || undefined)).then((data) => {
+      try {
+        this.setData({
+          _loaded: true,
+          familyDenied: !!(data && data.familyView && data.familyView.allowed === false),
+          familyCanConfirm: !!(data && data.familyView && data.familyView.writePermissions && data.familyView.writePermissions.medicine)
+        })
+      } catch (e) { /* 页面可能已销毁 */ }
     })
   },
 
-  async onLoad() {
+  async onLoad(options = {}) {
     wx.setNavigationBarTitle({
       title: '用药提醒'
     })
     bindAdaptiveResize(this)
+    // A3 家属只读视图：写入口全部禁用
+    if (options.familyView === '1' || options.familyView === true) {
+      this.setData({ isFamilyView: true })
+    }
     await this.loadData()
+  },
+
+  /** A3：家属视图只读守卫；命中则提示并返回 true。 */
+  _familyReadOnly() {
+    if (this.data.isFamilyView) {
+      wx.showToast({ title: '家属视图为只读', icon: 'none' })
+      return true
+    }
+    return false
   },
 
   onShow() {
@@ -46,6 +67,7 @@ Page({
   },
 
   handleCardTap(event) {
+    if (this._familyReadOnly()) return
     const id = event.currentTarget.dataset.id
     const pendingIndex = event.currentTarget.dataset.pendingIndex
     if (pendingIndex >= 0) {
@@ -60,13 +82,50 @@ Page({
   },
 
   handleConfirmTap(event) {
+    // A4 家属态：代确认（已服）走家属写路由；无写权限时只读提示
+    if (this.data.isFamilyView) {
+      if (!this.data.familyCanConfirm) {
+        this._familyReadOnly()
+        return
+      }
+      this.handleFamilyConfirm(event, 'taken')
+      return
+    }
     const planId = event.currentTarget.dataset.planId
     const logId = event.currentTarget.dataset.logId
     if (!planId) return
     safeNavigateTo(`/pages/medication/med-confirm/index?planId=${planId}&logId=${logId || ''}`)
   },
 
+  /** A4 家属代确认（已服/跳过）；以云端响应为准，拒绝不本地假成功。 */
+  async handleFamilyConfirm(event, status) {
+    const dataset = event.currentTarget.dataset
+    const logId = dataset.logId
+    if (!logId) return
+    try {
+      const res = await familyConfirmMedication({
+        logId,
+        time: dataset.time || '',
+        name: dataset.name || '',
+        dosage: dataset.dosage || '',
+        status
+      })
+      if (res && res.familyWrite && res.familyWrite.allowed === false) {
+        wx.showToast({ title: '代确认被拒绝：' + (res.familyWrite.reason || '无权限'), icon: 'none' })
+        return
+      }
+      wx.showToast({ title: status === 'taken' ? '已确认已服' : '已记录跳过', icon: 'success' })
+      await this.loadData()
+    } catch (error) {
+      wx.showToast({ title: error && error.message ? error.message : '代确认失败', icon: 'none' })
+    }
+  },
+
   handleLogTap(event) {
+    if (this.data.isFamilyView && event.currentTarget.dataset.action !== 'view' && event.currentTarget.dataset.action !== 'none') {
+      this._familyReadOnly()
+      return
+    }
     const action = event.currentTarget.dataset.action
     const logId = event.currentTarget.dataset.logId
     const planId = event.currentTarget.dataset.planId
@@ -109,9 +168,31 @@ Page({
   },
 
   handleRevokeConfirmation(event) {
+    // A4 家属态：仅撤销本人本次代确认（wxml 仅对 canRevokeProxy 项显示按钮）
+    if (this.data.isFamilyView) {
+      const logId = event.currentTarget.dataset.logId
+      if (!logId) return
+      this._familyRevokeProxy(logId)
+      return
+    }
     const logId = event.currentTarget.dataset.logId
     if (!logId) return
     this._doRevoke(logId)
+  },
+
+  /** A4 家属撤销本人代确认；以云端响应为准。 */
+  async _familyRevokeProxy(logId) {
+    try {
+      const res = await familyRevokeProxyConfirmation({ logId })
+      if (res && res.familyWrite && res.familyWrite.allowed === false) {
+        wx.showToast({ title: res.familyWrite.reason === 'notFound' ? '该确认不可撤销' : '撤销被拒绝', icon: 'none' })
+        return
+      }
+      wx.showToast({ title: '已撤销', icon: 'success' })
+      await this.loadData()
+    } catch (error) {
+      wx.showToast({ title: error && error.message ? error.message : '撤销失败', icon: 'none' })
+    }
   },
 
   _revokeByLogId(logId) {
@@ -120,6 +201,7 @@ Page({
   },
 
   async handleBatchConfirm() {
+    if (this._familyReadOnly()) return
     const cards = this.data.todayCards
     if (!cards || !cards.length) return
 
@@ -190,11 +272,13 @@ Page({
   },
 
   editPlan(event) {
+    if (this._familyReadOnly()) return
     const id = event.currentTarget.dataset.id
     safeNavigateTo(id ? `/pages/medication/med-edit/index?id=${id}` : '/pages/medication/med-edit/index')
   },
 
   handlePlanLongPress(event) {
+    if (this._familyReadOnly()) return
     const id = event.currentTarget.dataset.id
     const status = event.currentTarget.dataset.status
     if (!id) return
@@ -214,6 +298,7 @@ Page({
   },
 
   async handleTogglePlan(planId, currentStatus) {
+    if (this._familyReadOnly()) return
     try {
       await toggleMedicationPlanStatus(planId, currentStatus)
       wx.showToast({ title: '状态已更新', icon: 'success' })
@@ -227,6 +312,7 @@ Page({
   },
 
   async handleDeletePlan(planId) {
+    if (this._familyReadOnly()) return
     wx.showModal({
       title: '确认删除该用药计划？',
       content: '删除后，该计划的所有提醒将不再显示。',
@@ -249,10 +335,11 @@ Page({
   },
 
   goMedEdit() {
+    if (this._familyReadOnly()) return
     goRoute('medEdit')
   },
 
   goMedHistory() {
-    safeNavigateTo('/pages/medication/med-history/index')
+    safeNavigateTo('/pages/medication/med-history/index' + (this.data.isFamilyView ? '?familyView=1' : ''))
   }
 })

@@ -401,13 +401,15 @@ function getRecordBgData() {
   return resolveMockData('recordBg').then(normalizeRecordBgData)
 }
 
-function getRecordDetailData(recordId) {
+function getRecordDetailData(recordId, familyView) {
   const payload = recordId ? { recordId } : {}
+  if (familyView) payload.familyView = true
   return resolveMockData('recordDetail', payload).then((remoteData) => normalizeRecordDetailData(remoteData, recordId))
 }
 
-function getRecordListData() {
-  return resolveMockData('recordList').then(normalizeRecordListData)
+function getRecordListData(familyView) {
+  const payload = familyView ? { familyView: true } : {}
+  return resolveMockData('recordList', payload).then(normalizeRecordListData)
 }
 
 function getDataManagementData() {

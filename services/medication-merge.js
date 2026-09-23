@@ -474,8 +474,9 @@ function normalizeMedListData(remoteData) {
   return withMockPageData('medList', remoteData, (baseData, remote) => deepMerge(baseData, remote))
 }
 
-function getMedListData() {
-  return resolveMockData('medList')
+function getMedListData(familyView) {
+  const payload = familyView ? { familyView: true } : {}
+  return resolveMockData('medList', payload)
     .then(normalizeMedListData)
     .then(mergeMedicationPlans)
 }

@@ -3,6 +3,35 @@ const { createPerfLogger, normalizePerfInfo, PERF_LOG_PREFIX } = require('../clo
 const { createMedicationService } = require('../cloudfunctions/healthApi/medication-service')
 const { createFamilyService } = require('../cloudfunctions/healthApi/family-service')
 const { createSettingsDataService } = require('../cloudfunctions/healthApi/settings-data-service')
+const {
+  getTodayDateValue,
+  getRecordStatus,
+  getLimitedString,
+  createAssertOwnedDocument
+} = require('../cloudfunctions/healthApi/payload-helpers')
+const {
+  validateMedicationPlanPayload,
+  validateMedicationConfirmationPayload
+} = require('../cloudfunctions/healthApi/payload-validation')
+const {
+  getDefaultFamilyMember,
+  getFamilyRelationV2,
+  getDefaultInviteScopesV2,
+  getDefaultInviteNoticeRulesV2,
+  normalizeFamilyScopesV2,
+  normalizeNoticeRulesV2,
+  canViewScope,
+  getScopeTextV2,
+  normalizeFamilyAuthPayloadV2,
+  normalizeFamilyInvitePayloadV2,
+  canPerformScopeAction,
+  normalizeContactPhone,
+  maskContactPhone,
+  canCallReminderPhone,
+  validateInviteCodePayload,
+  createProfileDisplayName,
+  createFamilyAccessContext
+} = require('../cloudfunctions/healthApi/family-policy')
 
 const COLLECTIONS = {
   records: 'health_records',
@@ -10,6 +39,7 @@ const COLLECTIONS = {
   medicationConfirmations: 'medication_confirmations',
   familyAuth: 'family_auth',
   familyMembers: 'family_members',
+  inviteAttempts: 'family_invite_attempts',
   reminderSettings: 'reminder_settings',
   privacySettings: 'privacy_settings',
   feedbacks: 'feedbacks',
@@ -74,7 +104,15 @@ class MockCollectionQuery {
     const docs = this.docId
       ? this.db.data[this.name].filter(item => item._id === this.docId)
       : this.db.data[this.name].filter(item => this.db.matches(item, this.query))
-    docs.forEach(doc => Object.assign(doc, clone(data)))
+    docs.forEach((doc) => {
+      Object.entries(data).forEach(([key, value]) => {
+        if (value && value.__op === 'inc') {
+          doc[key] = (typeof doc[key] === 'number' ? doc[key] : 0) + value.value
+        } else {
+          doc[key] = clone(value)
+        }
+      })
+    })
     return Promise.resolve({ stats: { updated: docs.length } })
   }
 
@@ -152,6 +190,12 @@ class MockDb {
       if (expected && expected.__op === 'in') {
         return expected.values.includes(doc[key])
       }
+      if (expected && expected.__op === 'lt') {
+        return typeof doc[key] === 'number' && doc[key] < expected.value
+      }
+      if (expected && expected.__op === 'gt') {
+        return typeof doc[key] === 'number' && doc[key] > expected.value
+      }
       return doc[key] === expected
     })
   }
@@ -167,77 +211,6 @@ function createHarness(data = {}) {
   }
   const { withPerfLog } = createPerfLogger(logger)
   return { db, logs, withPerfLog }
-}
-
-function createDefaults() {
-  const familyScopes = [
-    { key: 'bloodPressure', title: '血压记录', enabled: true },
-    { key: 'bloodGlucose', title: '血糖记录', enabled: true },
-    { key: 'medicine', title: '用药确认', enabled: true },
-    { key: 'report', title: '健康记录周报', enabled: true }
-  ]
-
-  return {
-    getDefaultFamilyMember() {
-      return { name: '家属', relation: '家属', role: '主要照护人', status: '已授权' }
-    },
-    getDefaultFamilyScopes() {
-      return clone(familyScopes)
-    },
-    getDefaultNoticeRules() {
-      return [{ key: 'missedMedicine', title: '用药未确认提醒', enabled: true }]
-    },
-    getDefaultInviteRelations() {
-      return [{ key: 'daughter', label: '女儿', meta: '主要照护人' }]
-    },
-    getScopeText(auth) {
-      const scopes = Array.isArray(auth.scopes) ? auth.scopes : []
-      const enabledTitles = scopes.filter(scope => scope.enabled).map(scope => scope.title)
-      return enabledTitles.length ? enabledTitles.join('、') : '暂未授权'
-    },
-    isRelationScopeEnabled(relation, keys) {
-      const scopes = Array.isArray(relation.scopes) ? relation.scopes : []
-      return scopes.some(scope => keys.includes(scope.key) && scope.enabled)
-    }
-  }
-}
-
-function getLimitedString(value, label, maxLength, required = false) {
-  const text = typeof value === 'string' ? value.trim() : ''
-  if (required && !text) throw new Error(`${label}不能为空`)
-  if (text.length > maxLength) throw new Error(`${label}不能超过 ${maxLength} 个字`)
-  return text
-}
-
-function validateMedicationPlanPayload(payload) {
-  return {
-    id: payload.id || '',
-    name: getLimitedString(payload.name, '药品名称', 50, true),
-    dosage: getLimitedString(payload.dosage, '剂量说明', 80),
-    times: payload.times,
-    subscribe: !!payload.subscribe,
-    startDate: payload.startDate || '今天'
-  }
-}
-
-function validateMedicationConfirmationPayload(payload) {
-  return {
-    logId: getLimitedString(payload.logId, '用药日志ID', 80, true),
-    time: getLimitedString(payload.time, '用药时间', 20, true),
-    name: getLimitedString(payload.name, '药品名称', 50, true),
-    dosage: getLimitedString(payload.dosage, '剂量说明', 80),
-    status: payload.status,
-    statusText: payload.statusText || '已服'
-  }
-}
-
-async function assertOwnedDocument(db, collection, openId, documentId, label) {
-  const { data } = await db.collection(collection)
-    .where({ _id: documentId, _openid: openId })
-    .limit(1)
-    .get()
-  if (!data.length) throw new Error(`${label}不存在或无权操作`)
-  return data[0]
 }
 
 async function testPerfSchema() {
@@ -276,6 +249,7 @@ async function testMedicationService() {
         logId: 'log-plan-1-0',
         status: 'taken',
         statusText: '已服',
+        confirmDate: getTodayDateValue(),
         actionAt: '2026-04-27T07:10:00'
       }
     ]
@@ -285,14 +259,17 @@ async function testMedicationService() {
   const service = createMedicationService({
     db,
     collections: COLLECTIONS,
-    assertOwnedDocument: (...args) => assertOwnedDocument(db, ...args),
+    assertOwnedDocument: createAssertOwnedDocument(db),
     validateMedicationPlanPayload,
     validateMedicationConfirmationPayload,
     withPerfLog
   })
 
   const list = await service.getMedListData('user-1')
-  assert.strictEqual(list.todayLogs[0].statusText, '已服')
+  // 返回结构已由扁平 todayLogs 演进为 todayCards（按计划分组，内含 logs）+ confirmations（已确认流水）
+  assert.ok(Array.isArray(list.todayCards))
+  assert.strictEqual(list.todayCards[0].logs[0].statusText, '已服')
+  assert.strictEqual(list.confirmations[0].statusText, '已服')
   assert.strictEqual(list.plans[0].schedule, '每天 07:00, 21:00')
 
   const saveResult = await service.saveMedicationPlan('user-1', {
@@ -340,6 +317,7 @@ async function testFamilyService() {
         name: '降压药',
         dosage: '1片',
         times: ['07:00'],
+        status: '启用',
         updatedAt: '2026-04-27T07:00:00'
       }
     ],
@@ -349,73 +327,64 @@ async function testFamilyService() {
   })
   db.currentOpenId = 'owner-1'
 
-  const defaults = createDefaults()
+  // 计数包装：仅用于断言 joinFamilyByInvite 复用 ownerName；查询本身走真实工厂。
   let profileLookupCount = 0
+  const lookupProfileDisplayName = createProfileDisplayName({ db, collections: COLLECTIONS })
   async function getProfileDisplayName(openId) {
     profileLookupCount += 1
-    const { data } = await db.collection(COLLECTIONS.profiles).where({ _openid: openId }).limit(1).get()
-    return data[0]?.name || '家人'
+    return lookupProfileDisplayName(openId)
   }
-
-  async function getFamilyAccessContext(openId) {
-    const { data: relations } = await db.collection(COLLECTIONS.familyMembers)
-      .where({ memberOpenId: openId, status: 'active' })
-      .orderBy('updatedAt', 'desc')
-      .limit(1)
-      .get()
-    if (!relations.length) return null
-    return {
-      ownerOpenId: relations[0].ownerOpenId,
-      relation: relations[0]
-    }
-  }
+  const getFamilyAccessContext = createFamilyAccessContext({ db, collections: COLLECTIONS })
 
   const service = createFamilyService({
     db,
-    _: { in: values => ({ __op: 'in', values }) },
+    _: {
+      in: values => ({ __op: 'in', values }),
+      lt: value => ({ __op: 'lt', value }),
+      gt: value => ({ __op: 'gt', value }),
+      inc: value => ({ __op: 'inc', value })
+    },
     collections: COLLECTIONS,
     withPerfLog,
     getProfileDisplayName,
     getFamilyAccessContext,
-    isRelationScopeEnabled: defaults.isRelationScopeEnabled,
-    getScopeText: defaults.getScopeText,
-    getRecordStatus: level => level === 'warn' ? '建议复测' : '正常',
-    getDefaultFamilyMember: defaults.getDefaultFamilyMember,
-    getDefaultFamilyScopes: defaults.getDefaultFamilyScopes,
-    getDefaultNoticeRules: defaults.getDefaultNoticeRules,
-    getDefaultInviteRelations: defaults.getDefaultInviteRelations,
-    normalizeFamilyAuthPayload: payload => ({
-      member: payload.member || defaults.getDefaultFamilyMember(),
-      memberName: payload.memberName || payload.member?.name || '',
-      inviteCode: payload.inviteCode || '',
-      scopes: payload.scopes || defaults.getDefaultFamilyScopes(),
-      noticeRules: payload.noticeRules || defaults.getDefaultNoticeRules(),
-      activities: payload.activities || [],
-      status: payload.status || 'active'
-    }),
-    normalizeFamilyInvitePayload: () => ({
-      relation: { key: 'daughter', label: '女儿', meta: '主要照护人' },
-      scopes: defaults.getDefaultFamilyScopes(),
-      member: {
-        ...defaults.getDefaultFamilyMember(),
-        name: '女儿',
-        relation: '女儿',
-        role: '主要照护人',
-        status: '待加入'
-      }
-    }),
-    validateInviteCodePayload: payload => payload.inviteCode,
+    getRecordStatus,
+    getDefaultFamilyMember,
+    getFamilyRelationV2,
+    getDefaultInviteScopesV2,
+    getDefaultInviteNoticeRulesV2,
+    normalizeFamilyScopesV2,
+    normalizeNoticeRulesV2,
+    canViewScope,
+    getScopeTextV2,
+    normalizeFamilyAuthPayloadV2,
+    normalizeFamilyInvitePayloadV2,
+    canPerformScopeAction,
+    normalizeContactPhone,
+    maskContactPhone,
+    canCallReminderPhone,
+    validateInviteCodePayload,
     getLimitedString,
-    createInviteCode: () => 'INVITE001'
+    // 确定性测试替身：固定邀请码以便断言；不是业务逻辑的复制。
+    createInviteCode: () => 'KXJREGRESS01',
+    getDailyStatsService: () => ({ async updateRecordStats() { return { updated: 0 } }, async getHomeStats() { return { dailyStats: {}, recordStats: {} } } })
   })
 
-  const invite = await service.createFamilyInvite('owner-1', {})
-  assert.strictEqual(invite.inviteCode, 'INVITE001')
+  // 显式提交授权：血压/血糖/用药/周报 read 全开（与后续 homeFamily 断言对应）
+  const invite = await service.createFamilyInvite('owner-1', {
+    scopes: [
+      { key: 'bloodPressure', read: true, remind: true },
+      { key: 'bloodGlucose', read: true, remind: true },
+      { key: 'medicine', read: true, remind: true },
+      { key: 'report', read: true, remind: true }
+    ]
+  })
+  assert.strictEqual(invite.inviteCode, 'KXJREGRESS01')
   assert.strictEqual(db.data[COLLECTIONS.familyAuth][0].ownerName, '王阿姨')
 
   db.currentOpenId = 'member-1'
   profileLookupCount = 0
-  const joinResult = await service.joinFamilyByInvite('member-1', { inviteCode: 'INVITE001' })
+  const joinResult = await service.joinFamilyByInvite('member-1', { inviteCode: 'KXJREGRESS01' })
   assert.strictEqual(joinResult.status, 'active')
   assert.strictEqual(profileLookupCount, 0, 'joinFamilyByInvite 应复用 family_auth.ownerName，避免再次查询 profiles')
 

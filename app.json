@@ -49,7 +49,6 @@
       "root": "pages/family-sub/",
       "name": "family-sub",
       "pages": [
-        "index",
         "family-invite/index",
         "family-join/index",
         "family-join-hint/index",

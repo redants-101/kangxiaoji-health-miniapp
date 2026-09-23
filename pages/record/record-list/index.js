@@ -11,19 +11,24 @@ Page({
     ],
     records: [],
     visibleRecords: [],
-    adaptive: {}
+    adaptive: {},
+    isFamilyView: false,
+    familyDenied: false
   },
 
-  async onLoad() {
+  async onLoad(options = {}) {
     wx.setNavigationBarTitle({
       title: '历史记录'
     })
-    
+    if (options.familyView === '1' || options.familyView === true) {
+      this.setData({ isFamilyView: true })
+    }
     try {
-      const data = await getRecordListData()
+      const data = await getRecordListData(this.data.isFamilyView || undefined)
       this.setData({
         records: data.records || [],
-        visibleRecords: data.records || []
+        visibleRecords: data.records || [],
+        familyDenied: !!(data.familyView && data.familyView.allowed === false)
       })
     } catch (error) {
       wx.showToast({
@@ -47,6 +52,6 @@ Page({
 
   handleRecordTap(event) {
     const id = event.currentTarget.dataset.id
-    safeNavigateTo(`/pages/record/record-detail/index?id=${id}`)
+    safeNavigateTo(`/pages/record/record-detail/index?id=${id}${this.data.isFamilyView ? '&familyView=1' : ''}`)
   }
 })

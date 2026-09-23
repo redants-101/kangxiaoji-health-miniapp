@@ -1,4 +1,11 @@
-<view class="record-list-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+<view wx:if="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">暂无记录查看权限</view>
+    <view class="state-meta">对方未向你开放血压/血糖记录的查看权限。</view>
+  </view>
+</view>
+<view wx:else class="record-list-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view wx:if="{{isFamilyView}}" class="scope-meta">家属视图 · 只读</view>
   <view class="list-header">
     <view class="list-title">历史记录</view>
     <view class="filter-row">

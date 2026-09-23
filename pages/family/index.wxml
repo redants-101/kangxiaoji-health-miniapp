@@ -11,19 +11,20 @@
     <button class="state-button" bindtap="reloadPage">重新加载</button>
   </view>
 </view>
-<!-- 家庭功能开发中，显示敬请期待占位。上线后移除 coming-soon 标签即可恢复下方原始内容 -->
-<coming-soon
-  wx:else
-  title="家庭协同"
-  description="家属共享与授权管理功能正在开发中，上线后你将能邀请家属查看健康记录和用药状态，方便日常陪伴。"
-  icon="👨‍👩‍👧‍👦"
-/>
-<!--
+<!-- A7 运行时回滚开关：familyTabEnabled=false 时回到占位态。
+     开关判定 = 远程配置 appConfig.familyTabEnabled（布尔）优先，缺省按 envVersion：
+     正式发布=关，体验版/开发版=开（utils/feature-flags.js）。开关只控展示，不构成数据授权。 -->
+<view wx:elif="{{!familyTabEnabled}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-icon">👨‍👩‍👧‍👦</view>
+    <view class="state-title">家庭协同开发中</view>
+    <view class="state-meta">上线后你将能邀请家属查看健康记录和用药状态，方便日常陪伴。共享内容仅限你授权的范围，不代表医疗诊断或处理建议，授权可随时撤回。</view>
+  </view>
+</view>
 <view wx:else class="family-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
   <view class="page-head">
     <view>
       <view class="eyebrow">家庭协同</view>
-      <view class="title">家庭</view>
     </view>
   </view>
   <view class="subtitle">授权家属查看记录和提醒状态，方便日常陪伴和复盘。</view>
@@ -54,7 +55,7 @@
             <view class="scope-label">授权范围</view>
             <view class="scope-text">{{item.scope}}</view>
           </view>
-          <view class="member-actions">
+          <view class="member-actions" wx:if="{{item.id}}">
             <button class="secondary-action {{pendingMemberId ? 'is-disabled' : ''}}" data-id="{{item.id}}" disabled="{{!!pendingMemberId}}" bindtap="manageMember" aria-label="管理{{item.name}}的授权权限">管理权限</button>
             <button class="danger-action {{pendingMemberId ? 'is-disabled' : ''}} {{pendingMemberId === item.id ? 'is-loading' : ''}}" data-id="{{item.id}}" disabled="{{!!pendingMemberId}}" loading="{{pendingMemberId === item.id}}" bindtap="revokeMember" aria-label="解除{{item.name}}的授权">解除授权</button>
           </view>
@@ -70,9 +71,8 @@
   </view>
 
   <view class="section">
-    <notice-bar text="你可以随时取消家属授权。家属看到的是记录和提醒状态，不代表医生诊断或治疗建议。" />
+    <notice-bar text="共享内容仅限你授权的范围，你可以随时修改或取消家属授权。家属看到的是记录和提醒状态，不代表医生诊断或治疗建议。" />
   </view>
 
   <fixed-action text="邀请家属" bindactiontap="inviteFamily" />
 </view>
--->

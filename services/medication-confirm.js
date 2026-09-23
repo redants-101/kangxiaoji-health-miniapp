@@ -122,8 +122,9 @@ function normalizeMedHistoryData(remoteData) {
   return withMockPageData('medHistory', remoteData, (baseData, remote) => deepMerge(baseData, remote))
 }
 
-function getMedHistoryData(startDate, endDate) {
+function getMedHistoryData(startDate, endDate, familyView) {
   const payload = {}
+  if (familyView) payload.familyView = true
   if (startDate) payload.startDate = startDate
   if (endDate) payload.endDate = endDate
   return resolveMockData('medHistory', payload)

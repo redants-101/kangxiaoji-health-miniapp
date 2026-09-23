@@ -5,7 +5,9 @@ Page({
   data: {
     record: null,
     details: [],
-    adaptive: {}
+    adaptive: {},
+    isFamilyView: false,
+    familyDenied: false
   },
 
   onUnload() {
@@ -13,16 +15,19 @@ Page({
   },
 
   async onLoad(options) {
-    const { id } = options
+    const { id, familyView } = options
     wx.setNavigationBarTitle({
       title: '记录详情'
     })
-    
+    if (familyView === '1' || familyView === true) {
+      this.setData({ isFamilyView: true })
+    }
     try {
-      const data = await getRecordDetailData(id)
+      const data = await getRecordDetailData(id, this.data.isFamilyView || undefined)
       this.setData({
         record: data.record,
-        details: data.details || []
+        details: data.details || [],
+        familyDenied: !!(data.familyView && data.familyView.allowed === false)
       })
     } catch (error) {
       wx.showToast({
@@ -33,6 +38,11 @@ Page({
   },
 
   handleDelete() {
+    // A3：家属视图只读，禁止删除
+    if (this.data.isFamilyView) {
+      wx.showToast({ title: '家属视图为只读', icon: 'none' })
+      return
+    }
     wx.showModal({
       title: '删除记录',
       content: '确认删除这条记录吗？',

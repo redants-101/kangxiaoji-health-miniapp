@@ -91,7 +91,9 @@ function buildLatestMetrics(records) {
 Page({
   data: {
     isLoading: true,
-    loadError: ''
+    loadError: '',
+    isFamilyView: false,
+    familyDenied: false
   },
 
   /**
@@ -102,12 +104,12 @@ Page({
   async loadData(options) {
     const metric = (options && options.metric) || this.data.activeMetric || 'bpBg'
     const range = (options && options.range) || this.data.activeRange || '7d'
-    const loader = () => getTrendData(metric, range)
+    const loader = () => getTrendData(metric, range, this.data.isFamilyView || undefined)
     const data = await loadPageData(this, loader)
     if (data) {
       // 将 records 转换为 metric-card 数据格式
       const latestMetrics = buildLatestMetrics(this.data.records)
-      this.setData({ latestMetrics })
+      this.setData({ latestMetrics, familyDenied: !!(data.familyView && data.familyView.allowed === false) })
       this.updateChart()
     }
     return data
@@ -123,9 +125,13 @@ Page({
       title: '趋势'
     })
     bindAdaptiveResize(this)
+    // A3 家属只读视图：编译参数或家庭页全局标记
+    const fv = (options && (options.familyView === '1' || options.familyView === true))
+      || !!(getApp() && getApp().globalData && getApp().globalData.familyView === true)
+    if (fv) this.setData({ isFamilyView: true })
     await this.loadData(options || {})
-    // 首次加载完成后，引导授权下周健康周报提醒（事件驱动）
-    this._promptWeeklyReportReminder()
+    // 首次加载完成后，引导授权下周健康周报提醒（事件驱动）；家属视图不引导
+    if (!this.data.isFamilyView) this._promptWeeklyReportReminder()
   },
 
   /**
@@ -158,6 +164,12 @@ Page({
    */
   onShow() {
     autoPreCheck(this)
+    // A3：tabBar 切换不触发 onLoad，需在 onShow 重判家属上下文（全局标记）
+    const app = getApp()
+    const gv = !!(app && app.globalData && app.globalData.familyView === true)
+    if (gv !== !!this.data.isFamilyView) {
+      this.setData({ isFamilyView: gv, familyDenied: false })
+    }
     if (this.data._loaded) {
       markClean('trend')
       this.loadData()
@@ -246,7 +258,7 @@ Page({
   /** @returns {void} 进入历史记录页（用药时跳转历史用药记录，否则跳转记录列表）。 */
   goRecordList() {
     const route = this.data.activeMetric === 'medication' ? 'medHistory' : 'recordList'
-    goRoute(route)
+    goRoute(route, this.data.isFamilyView ? 'familyView=1' : '')
   },
 
   /**

@@ -62,6 +62,16 @@ function clone(v) { return v === undefined || v === null ? v : JSON.parse(JSON.s
  */
 function hasWxStorage() { return typeof wx !== 'undefined' && wx && wx.getStorageSync && wx.setStorageSync }
 function isFailureErrMsg(errMsg) { return errMsg && !String(errMsg).toLowerCase().includes(':ok') }
+/**
+ * 由云函数错误响应构造 Error，附带稳定错误码（A2：页面按 code 分支渲染错误态）。
+ * @param {Object} result 云函数返回对象（含 errMsg，可含 errCode）。
+ * @returns {Error} 带 code 属性的错误对象。
+ */
+function buildCloudError(result) {
+  const error = new Error(result.errMsg)
+  if (result.errCode) error.code = result.errCode
+  return error
+}
 
 /**
  * 从存储中读取指定键的值，优先使用微信存储，回退到内存存储
@@ -190,7 +200,7 @@ function callCloudWithRetry(callData, retries = 2) {
 function requestCloud(action, payload) {
   return callCloudWithRetry({ name: apiConfig.cloudFunctionName, data: { action, payload } })
     .then(result => {
-      if (result && isFailureErrMsg(result.errMsg)) throw new Error(result.errMsg)
+      if (result && isFailureErrMsg(result.errMsg)) throw buildCloudError(result)
       clearCloudReadCache()
       return result
     })
@@ -209,6 +219,25 @@ function createCloudReadCacheKey(key, payload) {
   return `${key}:${JSON.stringify(normalizeCachePayload(payload || {}))}`
 }
 
+// A5 缓存口径（撤销实时生效）：
+// - owner 本人读：60s 内存 TTL；网络性失败可回退过期缓存（离线回显），
+//   但服务端显式拒绝（带 errCode 的错误）绝不回填；
+// - 家族敏感读（family 域 key 或 payload.familyView=true）：零缓存、每次回源、
+//   失败一律上抛——本地缓存不能作为授权依据，家族读永远以服务端
+//   active family_members 关系与当前 scopes 为准。
+const FAMILY_SENSITIVE_KEYS = ['family', 'familyInvite', 'familyJoin', 'familyJoinHint', 'familyAuth', 'homeFamily']
+
+/**
+ * 判断一次云读是否家族敏感（必须每次回源、禁止 stale 回填）。
+ * @param {string} key 云函数读接口标识。
+ * @param {Object} [payload] 读请求载荷。
+ * @returns {boolean}
+ */
+function isFamilySensitiveRead(key, payload) {
+  if (FAMILY_SENSITIVE_KEYS.includes(key)) return true
+  return !!(payload && payload.familyView)
+}
+
 function getCloudReadCache(cacheKey, allowStale = false) {
   const entry = cloudReadCache[cacheKey]
   if (!entry || (!allowStale && entry.expireAt < Date.now())) return null
@@ -224,17 +253,26 @@ function getCloudReadCache(cacheKey, allowStale = false) {
  */
 function requestCloudByKey(key, payload = {}) {
   const cacheKey = createCloudReadCacheKey(key, payload)
-  const cached = getCloudReadCache(cacheKey)
-  if (cached) return Promise.resolve(cached)
+  // A5：家族敏感读零缓存——不读缓存、不写缓存、失败不回填
+  const familySensitive = isFamilySensitiveRead(key, payload)
+  if (!familySensitive) {
+    const cached = getCloudReadCache(cacheKey)
+    if (cached) return Promise.resolve(cached)
+  }
   if (inFlightCloudReads[cacheKey]) return inFlightCloudReads[cacheKey].then(clone)
 
   const request = callCloudWithRetry({ name: apiConfig.cloudFunctionName, data: { key, payload } })
     .then(result => {
-      if (result && isFailureErrMsg(result.errMsg)) throw new Error(result.errMsg)
-      cloudReadCache[cacheKey] = { data: clone(result), expireAt: Date.now() + CLOUD_READ_CACHE_TTL_MS }
+      if (result && isFailureErrMsg(result.errMsg)) throw buildCloudError(result)
+      if (!familySensitive) {
+        cloudReadCache[cacheKey] = { data: clone(result), expireAt: Date.now() + CLOUD_READ_CACHE_TTL_MS }
+      }
       return result
     })
     .catch(err => {
+      // A5：服务端显式拒绝（带 errCode）任何键都不回填旧缓存；
+      // 家族敏感读任何失败都不回填——旧缓存不能在被拒绝后回填页面。
+      if (familySensitive || (err && err.code)) throw err
       const stale = getCloudReadCache(cacheKey, true)
       if (stale) { console.warn(`[Cloud] ${key} 失败，使用缓存`, err); return stale }
       throw err
@@ -308,6 +346,7 @@ module.exports = {
   getRelatedCacheKeys,
   getRetryDelay,
   isDirty,
+  isFamilySensitiveRead,
   isTransientError,
   markClean,
   markDirty,

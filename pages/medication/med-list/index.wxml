@@ -11,7 +11,14 @@
     <button class="state-button" bindtap="reloadPage">重新加载</button>
   </view>
 </view>
+<view wx:elif="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">暂无用药查看权限</view>
+    <view class="state-meta">对方未向你开放用药确认的查看权限。</view>
+  </view>
+</view>
 <view wx:else class="med-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view wx:if="{{isFamilyView}}" class="scope-meta">家属视图 · 只读，不能确认、撤销或管理计划</view>
 
   <view class="section">
     <view class="section-title">今日待确认</view>
@@ -49,9 +56,13 @@
               </view>
             </view>
           </view>
-          <view class="card-action" wx:if="{{item.pendingIndex >= 0}}">
+          <view class="card-action" wx:if="{{item.pendingIndex >= 0 && !familyView}}">
             <view class="action-highlight">{{item.logs[item.pendingIndex].time}} 待确认</view>
             <view class="action-btn" data-plan-id="{{item.id}}" data-log-id="{{item.logs[item.pendingIndex].id}}" bindtap="handleConfirmTap">确认</view>
+          </view>
+          <view class="card-action" wx:if="{{item.pendingIndex >= 0 && familyView && familyCanConfirm}}">
+            <view class="action-btn" data-log-id="{{item.logs[item.pendingIndex].id}}" data-time="{{item.logs[item.pendingIndex].time}}" data-name="{{item.name}}" data-dosage="{{item.dosage}}" data-status="taken" bindtap="handleFamilyConfirm">已服</view>
+            <view class="action-btn" data-log-id="{{item.logs[item.pendingIndex].id}}" data-time="{{item.logs[item.pendingIndex].time}}" data-name="{{item.name}}" data-dosage="{{item.dosage}}" data-status="skipped" bindtap="handleFamilyConfirm">跳过</view>
           </view>
         </view>
       </view>
@@ -119,7 +130,7 @@
               <text class="confirm-status {{item.status === 'taken' ? 'status-taken' : 'status-skipped'}}">{{item.statusText}}</text>
             </view>
           </view>
-          <view class="confirm-revoke" data-log-id="{{item.logId}}" bindtap="handleRevokeConfirmation">撤销</view>
+          <view wx:if="{{!familyView || item.canRevokeProxy}}" class="confirm-revoke" data-log-id="{{item.logId}}" bindtap="handleRevokeConfirmation">撤销</view>
         </view>
       </view>
     </block>
@@ -133,5 +144,5 @@
     <notice-bar text="用药信息由用户自行记录，请按医生或药师指导用药。" />
   </view>
 
-  <fixed-action text="添加用药" bindactiontap="goMedEdit" />
+  <fixed-action wx:if="{{!familyView}}" text="添加用药" bindactiontap="goMedEdit" />
 </view>

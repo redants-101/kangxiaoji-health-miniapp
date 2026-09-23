@@ -15,6 +15,27 @@
     </view>
   </view>
 </block>
+<block wx:elif="{{inviteError}}">
+  <view class="page-state {{adaptive.scaleClass}}">
+    <view class="state-panel">
+      <view class="state-title">{{inviteErrorTitle}}</view>
+      <view class="state-meta">{{inviteError.message}}</view>
+      <button class="state-button" bindtap="reloadPage">重新加载</button>
+    </view>
+  </view>
+</block>
+<block wx:elif="{{noInvite}}">
+  <view class="join-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+    <view class="invite-panel">
+      <view class="eyebrow">家庭邀请</view>
+      <view class="title">{{inviteTitle}}</view>
+      <view class="subtitle">{{inviteSubtitle}}</view>
+    </view>
+    <view class="section">
+      <notice-bar text="通过家人分享的邀请链接打开本页，或获得邀请码后进入，即可在这里查看授权范围并加入家庭。" />
+    </view>
+  </view>
+</block>
 <block wx:else>
   <view class="join-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
   <view class="invite-panel">

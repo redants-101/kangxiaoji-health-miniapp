@@ -4,6 +4,12 @@
     <view class="state-meta">加载完成后可查看历史用药记录。</view>
   </view>
 </view>
+<view wx:elif="{{familyDenied}}" class="page-state {{adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">暂无用药历史查看权限</view>
+    <view class="state-meta">对方未向你开放用药确认的查看权限。</view>
+  </view>
+</view>
 <view wx:elif="{{loadError}}" class="page-state {{adaptive.scaleClass}}">
   <view class="state-panel">
     <view class="state-title">历史记录加载失败</view>

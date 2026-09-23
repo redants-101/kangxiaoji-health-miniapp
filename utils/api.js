@@ -261,6 +261,16 @@ function getHomeFamilyData() {
     .then(medication.mergeHomeFamilyMedicationStatus)
 }
 
+/**
+ * A7：应用级运行时配置（家庭 Tab 回滚开关等）。
+ * 失败/未部署一律返回 null，由端侧 feature-flags 按 envVersion 默认值兜底；
+ * 该结果只影响 Tab 展示，不构成任何数据授权。
+ * @returns {Promise<Object|null>}
+ */
+function getAppConfig() {
+  return resolveMockData('appConfig').catch(() => null)
+}
+
 /** @returns {Promise<Object>} 提醒中心数据，已应用用药状态和提醒开关。 */
 function getReminderData() {
   return settings.getReminderData()
@@ -323,6 +333,7 @@ module.exports = {
   getProfileData: profile.getProfileData,
   getHomeData,
   getHomeFamilyData,
+  getAppConfig,
   getRecordBpData: records.getRecordBpData,
   getRecordBgData: records.getRecordBgData,
   getRecordDetailData: records.getRecordDetailData,
@@ -357,6 +368,12 @@ module.exports = {
   createFamilyInvite: family.createFamilyInvite,
   joinFamilyByInvite: family.joinFamilyByInvite,
   revokeFamilyMember: family.revokeFamilyMember,
+  familyRecordBloodPressure: family.familyRecordBloodPressure,
+  familyRecordBloodGlucose: family.familyRecordBloodGlucose,
+  familyConfirmMedication: family.familyConfirmMedication,
+  familyRevokeProxyConfirmation: family.familyRevokeProxyConfirmation,
+  setFamilyContactPhone: family.setFamilyContactPhone,
+  familyGetReminderPhone: family.familyGetReminderPhone,
   exportUserData: dataRights.exportUserData,
   deleteUserData: dataRights.deleteUserData,
   clearUserAccount: dataRights.clearUserAccount,

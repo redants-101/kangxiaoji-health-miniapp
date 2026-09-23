@@ -1,4 +1,4 @@
-const CHINA_TIME_OFFSET_MS = 8 * 60 * 60 * 1000
+const { CHINA_TIME_OFFSET_MS } = require('./payload-helpers')
 
 /**
  * 将 createdAt（可能是 ISO 时间戳或 Date 对象）转换为北京时间日期字符串 YYYY-MM-DD。
@@ -145,11 +145,19 @@ function createRecordService({ db, _, collections, getRecordStatus, withPerfLog 
     return formatDetailRecord(records[0])
   }
 
-  async function getRecordListData(openId, payload = {}) {
-    const type = payload.type === 'bp' || payload.type === 'bg' ? payload.type : ''
+  async function getRecordListData(openId, payload = {}, options = {}) {
+    // A3：家属视图由闸口层传入 allowedTypes，服务端按 read 授权过滤类型；
+    // payload.type 请求未授权类型时由闸口层拒绝，此处再做一道防御。
+    const allowed = Array.isArray(options.allowedTypes) && options.allowedTypes.length
+      ? options.allowedTypes
+      : null
+    let type = payload.type === 'bp' || payload.type === 'bg' ? payload.type : ''
+    if (type && allowed && !allowed.includes(type)) type = ''
     const limit = Math.min(Math.max(Number(payload.limit) || 20, 1), 50)
     const offset = Math.max(Number(payload.offset) || 0, 0)
-    const condition = type ? { _openid: openId, type } : { _openid: openId }
+    const condition = type
+      ? { _openid: openId, type }
+      : (allowed ? { _openid: openId, type: _.in(allowed) } : { _openid: openId })
 
     const { data = [] } = await withPerfLog({
       routeType: 'key',

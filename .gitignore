@@ -36,3 +36,6 @@ coverage/
 .windsurf/
 codebuddy-plugin/
 rules/
+
+# 敏感截图：含完整手机号与邀请码，仅本地保存，不入库（阶段11勘误轮决定）
+evidence/04-implementation/visual-input/screenshots/A6-P02.png

@@ -37,12 +37,25 @@
       <button class="link-button" bindtap="selectAllScopes" aria-label="全选授权范围">全选</button>
     </view>
     <view class="scope-panel">
-      <view wx:for="{{scopes}}" wx:key="key" class="scope-row">
+      <view wx:for="{{scopes}}" wx:key="key" class="scope-block">
         <view class="scope-main">
           <view class="scope-title">{{item.title}}</view>
           <view class="scope-meta">{{item.meta}}</view>
         </view>
-        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleScope" />
+        <view class="scope-switches">
+          <view class="switch-cell">
+            <text class="switch-label">查看</text>
+            <switch checked="{{item.read}}" color="#168957" data-key="{{item.key}}" data-field="read" bindchange="toggleScope" />
+          </view>
+          <view wx:if="{{item.key !== 'report'}}" class="switch-cell">
+            <text class="switch-label">代录</text>
+            <switch checked="{{item.write}}" color="#168957" data-key="{{item.key}}" data-field="write" bindchange="toggleScope" />
+          </view>
+          <view class="switch-cell">
+            <text class="switch-label">提醒</text>
+            <switch checked="{{item.remind}}" color="#168957" data-key="{{item.key}}" data-field="remind" bindchange="toggleScope" />
+          </view>
+        </view>
       </view>
     </view>
   </view>
@@ -59,12 +72,37 @@
     </view>
   </view>
 
+  <!-- A6 提醒电话（可选）：随生成邀请提交；家属仅在"提醒"权限开启时可见脱敏号并拨打 -->
+  <view class="section">
+    <view class="invite-card">
+      <view class="card-label">提醒电话（可选）</view>
+      <input class="phone-input" type="number" maxlength="11" value="{{contactPhoneInput}}" placeholder="默认老人本人号码，可改为紧急联系人" bindinput="handlePhoneInput" />
+      <view class="phone-agree-row">
+        <checkbox-group bindchange="togglePhoneAgree">
+          <label class="phone-agree-label">
+            <checkbox value="agreed" checked="{{phoneAgreed}}" color="#168957" />
+            <text>同意向家属展示该电话号码用于健康提醒联系（脱敏展示、拨号时按需获取），可随时修改或关闭</text>
+          </label>
+        </checkbox-group>
+      </view>
+      <view class="scope-meta">不填写则家属端不显示电话提醒入口；生成邀请后可在家庭页的授权管理中修改。</view>
+    </view>
+  </view>
+
   <view class="section">
     <notice-bar text="邀请链接 24 小时内有效，仅可绑定 1 位家属。授权范围可在家庭页随时修改或撤销。" />
   </view>
 
+  <view class="section">
+    <button class="primary-button {{submitting ? 'is-loading' : ''}}" disabled="{{submitting}}" loading="{{submitting}}" bindtap="generateInvite" aria-label="生成邀请">生成邀请</button>
+    <view wx:if="{{generateError}}" class="scope-meta">{{generateError}}</view>
+    <view wx:elif="{{inviteCode && draftDirty}}" class="scope-meta">配置已修改，当前展示的是旧邀请码；请重新生成后再复制或分享。</view>
+    <view wx:elif="{{inviteCode}}" class="scope-meta">邀请码：{{inviteCode}}（24 小时内有效）。重新生成将使旧码立即失效。</view>
+    <view wx:else class="scope-meta">尚未生成邀请；生成后才会产生邀请码与分享链接。</view>
+  </view>
+
   <view class="share-actions">
-    <button class="secondary-button" bindtap="copyInvite" aria-label="复制邀请说明">复制邀请说明</button>
-    <button class="primary-button" open-type="share" aria-label="通过微信分享邀请">微信分享</button>
+    <button class="secondary-button" disabled="{{submitting || !inviteCode || draftDirty}}" bindtap="copyInvite" aria-label="复制邀请说明">复制邀请说明</button>
+    <button class="primary-button" disabled="{{submitting || !inviteCode || draftDirty}}" open-type="share" aria-label="通过微信分享邀请">微信分享</button>
   </view>
 </view>

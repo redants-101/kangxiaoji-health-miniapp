@@ -3,12 +3,18 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 20rpx 32rpx 36rpx;
+  padding: 14rpx 32rpx 24rpx;
   background: rgba(248, 250, 248, 0.96);
   border-top: 1rpx solid #dfe7e1;
 }
 
 .action-button {
-  min-height: 104rpx;
+  min-height: 70rpx;
   border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: 1.2;
 }

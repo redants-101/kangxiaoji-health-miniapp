@@ -419,13 +419,13 @@ function mergeMedPlans(cloudPlans) {
  * @param {string} range  时间范围：7d / 30d / 90d
  * @returns {Promise<Object>} 包含摘要、关注项、图表、记录列表等完整数据
  */
-async function getTrendData(metric = 'bpBg', range = '7d') {
+async function getTrendData(metric = 'bpBg', range = '7d', familyView) {
   const days = parseInt(range, 10) || 7
   const isWeekly = range === '7d'
 
   // ─── 用药指标：独立数据分支 ───
   if (metric === 'medication') {
-    return getMedicationTrendData(range, days, isWeekly)
+    return getMedicationTrendData(range, days, isWeekly, familyView)
   }
 
   // ─── 血压血糖指标：原有逻辑 ───
@@ -433,13 +433,14 @@ async function getTrendData(metric = 'bpBg', range = '7d') {
   const chartMetric = metric === 'bpBg' ? 'bloodPressure' : metric
 
   // 并行获取：本地存储记录 + 云端趋势数据 + 云端记录列表（补充本地可能缺失的记录）
+  // A3 家属视图：不混入本人本地记录，远程调用携带 familyView 由服务端按 read 过滤
   const [localRecords, remoteData, listRemoteData] = await Promise.all([
-    Promise.resolve(getStoredRecords()),
-    resolveMockData('trend').catch(err => {
+    Promise.resolve(familyView ? [] : getStoredRecords()),
+    resolveMockData('trend', familyView ? { familyView: true } : undefined).catch(err => {
       console.warn('[Trend] resolveMockData("trend") 失败:', err.message || err)
       return null
     }),
-    resolveMockData('recordList').catch(err => {
+    resolveMockData('recordList', familyView ? { familyView: true } : undefined).catch(err => {
       console.warn('[Trend] resolveMockData("recordList") 失败:', err.message || err)
       return null
     })
@@ -577,7 +578,7 @@ async function getTrendData(metric = 'bpBg', range = '7d') {
  * 用药趋势数据加载（独立分支）。
  * 复用 medHistory 云端接口 + 本地用药计划，计算每日服药率并聚合。
  */
-async function getMedicationTrendData(range, days, isWeekly) {
+async function getMedicationTrendData(range, days, isWeekly, familyView) {
   const now = new Date()
   const todayStr = getTodayDateValue(now)
 
@@ -592,11 +593,11 @@ async function getMedicationTrendData(range, days, isWeekly) {
 
   // 并行获取：云端用药历史 + 首页数据（取 weekMedPlans）
   const [medHistoryData, homeData] = await Promise.all([
-    resolveMockData('medHistory', { startDate, endDate: todayStr }).catch(err => {
+    resolveMockData('medHistory', familyView ? { startDate, endDate: todayStr, familyView: true } : { startDate, endDate: todayStr }).catch(err => {
       console.warn('[Trend/Med] resolveMockData("medHistory") 失败:', err.message || err)
       return null
     }),
-    resolveMockData('home').catch(err => {
+    (familyView ? Promise.resolve(null) : resolveMockData('home')).catch(err => {
       console.warn('[Trend/Med] resolveMockData("home") 失败:', err.message || err)
       return null
     })

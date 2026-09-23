@@ -32,12 +32,25 @@
   <view class="section">
     <view class="section-title">可查看内容</view>
     <view class="scope-panel">
-      <view wx:for="{{scopes}}" wx:key="key" class="scope-row">
+      <view wx:for="{{scopes}}" wx:key="key" class="scope-block">
         <view class="row-main">
           <view class="scope-title">{{item.title}}</view>
           <view class="scope-meta">{{item.meta}}</view>
         </view>
-        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleScope" />
+        <view class="scope-switches">
+          <view class="switch-cell">
+            <text class="switch-label">查看</text>
+            <switch checked="{{item.read}}" color="#168957" data-key="{{item.key}}" data-field="read" bindchange="toggleScope" />
+          </view>
+          <view wx:if="{{item.key !== 'report'}}" class="switch-cell">
+            <text class="switch-label">代录</text>
+            <switch checked="{{item.write}}" color="#168957" data-key="{{item.key}}" data-field="write" bindchange="toggleScope" />
+          </view>
+          <view class="switch-cell">
+            <text class="switch-label">提醒</text>
+            <switch checked="{{item.remind}}" color="#168957" data-key="{{item.key}}" data-field="remind" bindchange="toggleScope" />
+          </view>
+        </view>
       </view>
     </view>
   </view>
@@ -45,28 +58,26 @@
   <view class="section">
     <view class="section-title">提醒给家属</view>
     <view class="scope-panel">
-      <view wx:for="{{noticeRules}}" wx:key="key" class="scope-row">
+      <view wx:for="{{noticeRuleItems}}" wx:key="key" class="scope-row">
         <view class="row-main">
           <view class="scope-title">{{item.title}}</view>
           <view class="scope-meta">{{item.meta}}</view>
         </view>
-        <switch checked="{{item.enabled}}" color="#168957" data-key="{{item.key}}" bindchange="toggleNoticeRule" />
+        <switch checked="{{item.checked}}" color="#168957" data-key="{{item.key}}" bindchange="toggleNoticeRule" />
       </view>
     </view>
   </view>
 
+  <!-- A6 提醒电话：owner 家庭授权配置；家属在"提醒"开启时看到脱敏号并可拨打 -->
   <view class="section">
-    <view class="section-head">
-      <view class="section-title">最近查看</view>
-      <button class="link-button" bindtap="goFamily">返回家庭</button>
-    </view>
-    <view class="activity-panel">
-      <view wx:for="{{activities}}" wx:key="id" class="activity-row">
-        <view class="activity-dot"></view>
-        <view>
-          <view class="activity-title">{{item.title}}</view>
-          <view class="activity-meta">{{item.time}}</view>
-        </view>
+    <view class="section-title">提醒电话</view>
+    <view class="scope-panel">
+      <view class="phone-desc">开启上方任一"提醒"权限后，家属可看到脱敏号码{{contactPhoneMasked ? '（当前：' + contactPhoneMasked + '）' : ''}}并一键拨打；系统拨号盘会显示完整号码。号码仅用于健康提醒联系，可随时修改或清空，关闭提醒或解除授权后家属立即无法再获取。</view>
+      <input class="phone-input" type="number" maxlength="11" value="{{contactPhoneInput}}" placeholder="填写11位手机号，用于提醒" bindinput="handlePhoneInput" />
+      <view wx:if="{{contactPhoneError}}" class="phone-error">{{contactPhoneError}}</view>
+      <view class="phone-actions">
+        <button class="phone-save" loading="{{savingPhone}}" disabled="{{savingPhone}}" bindtap="saveContactPhone">保存电话</button>
+        <button class="phone-clear" disabled="{{!contactPhone || savingPhone}}" bindtap="clearContactPhone">清空</button>
       </view>
     </view>
   </view>
@@ -75,10 +86,6 @@
     <notice-bar text="家属只能看到你授权的记录和提醒状态。康小记不提供诊断、治疗或处方建议。" />
   </view>
 
-  <view class="section">
-    <button class="danger-button {{pendingAction ? 'is-disabled' : ''}} {{pendingAction === 'revoke' ? 'is-loading' : ''}}" disabled="{{!!pendingAction}}" loading="{{pendingAction === 'revoke'}}" bindtap="revokeAuth">解除授权</button>
-  </view>
-
-  <fixed-action text="保存权限" disabled="{{pendingAction === 'revoke'}}" loading="{{pendingAction === 'save'}}" bindactiontap="saveAuth" />
+  <fixed-action text="保存权限" disabled="{{!canEdit}}" loading="{{pendingAction === 'save'}}" bindactiontap="saveAuth" />
   </view>
 </block>

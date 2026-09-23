@@ -39,21 +39,26 @@ Page({
     dateGroups: [],
     visibleGroups: [],
     summary: { totalRecords: 0, takenCount: 0, skippedCount: 0 },
-    adaptive: {}
+    adaptive: {},
+    isFamilyView: false,
+    familyDenied: false
   },
 
   async loadData() {
     const startDate = this.data.startDate || getDateDaysAgo(6)
     const endDate = this.data.endDate || getTodayDateValue()
-    return loadPageData(this, () => getMedHistoryData(startDate, endDate)).then(() => {
+    return loadPageData(this, () => getMedHistoryData(startDate, endDate, this.data.isFamilyView || undefined)).then((data) => {
       this._applyFilter()
-      try { this.setData({ _loaded: true }) } catch (e) { /* 页面可能已销毁 */ }
+      try { this.setData({ _loaded: true, familyDenied: !!(data && data.familyView && data.familyView.allowed === false) }) } catch (e) { /* 页面可能已销毁 */ }
     })
   },
 
-  onLoad() {
+  onLoad(options = {}) {
     wx.setNavigationBarTitle({ title: '历史用药记录' })
     bindAdaptiveResize(this)
+    if (options.familyView === '1' || options.familyView === true) {
+      this.setData({ isFamilyView: true })
+    }
     const startDate = getDateDaysAgo(6)
     const endDate = getTodayDateValue()
     this.setData({ startDate, endDate })

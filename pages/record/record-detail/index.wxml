@@ -1,4 +1,11 @@
-<view class="record-detail-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+<view wx:if="{{familyDenied}}" class="page-state {{adaptive.scaleScaleClass || adaptive.scaleClass}}">
+  <view class="state-panel">
+    <view class="state-title">暂无该记录查看权限</view>
+    <view class="state-meta">对方未向你开放该类型记录的查看权限。</view>
+  </view>
+</view>
+<view wx:else class="record-detail-page {{adaptive.scaleClass}} {{adaptive.layoutClass}}">
+  <view wx:if="{{isFamilyView}}" class="scope-meta">家属视图 · 只读</view>
   <view wx:if="{{!record}}" class="empty-state">
     <view class="empty-icon">📋</view>
     <view class="empty-text">记录不存在</view>
@@ -27,7 +34,7 @@
     </view>
 
     <view class="action-buttons">
-      <button class="danger-button" bindtap="handleDelete">删除记录</button>
+      <button wx:if="{{!familyView}}" class="danger-button" bindtap="handleDelete">删除记录</button>
     </view>
   </view>
 </view>

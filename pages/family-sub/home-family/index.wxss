@@ -71,6 +71,7 @@
 
 .metric-stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18rpx;
   margin-top: 18rpx;
 }
@@ -176,4 +177,35 @@
 .family-home.ui-scale-elder .medicine-status,
 .family-home.ui-scale-elder .report-button {
   align-self: flex-start;
+}
+
+/* A6 电话提醒入口 */
+.phone-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding: 28rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #d8e6de;
+  background: #fff;
+}
+
+.phone-meta {
+  flex: 1;
+  color: #65756d;
+  font-size: 25rpx;
+  line-height: 1.45;
+}
+
+.phone-button {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 32rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: 999rpx;
+  background: #168957;
+  color: #fff;
+  font-size: 28rpx;
 }
